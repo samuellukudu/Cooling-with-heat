@@ -180,7 +180,9 @@ class ControlPanel(QtWidgets.QWidget):
 
     def set_frame(self, frame_idx: int):
         self.current_frame = max(0, min(frame_idx, self.n_frames - 1))
+        self.slider.blockSignals(True)
         self.slider.setValue(self.current_frame)
+        self.slider.blockSignals(False)
         self.label_frame.setText(f"{self.current_frame} / {self.n_frames - 1}")
         self.frame_changed.emit(self.current_frame)
 
