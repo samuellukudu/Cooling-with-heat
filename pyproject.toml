@@ -1,0 +1,23 @@
+[project]
+name = "diffheat"
+version = "0.1.0"
+description = "Differentiable heat equation simulations with JAX"
+requires-python = ">=3.10"
+dependencies = [
+    "jax",
+    "numpy",
+]
+
+[project.optional-dependencies]
+viz = ["pyqt6", "matplotlib"]
+dev = ["pytest", "jupyter"]
+
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["diffheat*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
