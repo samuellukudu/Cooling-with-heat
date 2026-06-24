@@ -111,7 +111,7 @@ def solve_heat_1d(
                 f"dt={dt:.2e} exceeds CFL limit {cfl_limit:.2e}. "
                 f"Solution may be unstable."
             )
-    except (jax.errors.ConcretizationTypeError, TypeError):
+    except jax.errors.ConcretizationTypeError:
         pass
 
     # Pre-compute time array

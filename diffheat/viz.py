@@ -41,6 +41,7 @@ class HeatmapWidget(QtWidgets.QWidget):
         self.grid = None
         self.times = None
         self.current_frame = 0
+        self._colorbar = None
 
     def set_data(self, trajectory: jnp.ndarray, grid: Grid1D, dt: float):
         """Load trajectory data for display.
@@ -55,6 +56,7 @@ class HeatmapWidget(QtWidgets.QWidget):
         self.grid = grid
         self.times = np.arange(len(trajectory)) * dt
         self.current_frame = 0
+        self._colorbar = None
         self._draw()
 
     def set_frame(self, frame_idx: int):
@@ -89,7 +91,10 @@ class HeatmapWidget(QtWidgets.QWidget):
         self.ax_heatmap.set_title(
             f"Temperature Field (t = {self.times[self.current_frame]:.3f})"
         )
-        self.canvas.fig.colorbar(im, ax=self.ax_heatmap, label="Temperature")
+        if self._colorbar is None:
+            self._colorbar = self.canvas.fig.colorbar(im, ax=self.ax_heatmap, label="Temperature")
+        else:
+            self._colorbar.update_normal(im)
 
         # Current frame indicator line
         current_time = self.times[self.current_frame]
@@ -269,7 +274,7 @@ def run_viewer(
         grid: The Grid1D used for the simulation.
         dt: Time step size (for time axis labeling).
     """
-    app = QtWidgets.QApplication(sys.argv)
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication(sys.argv)
     window = ViewerWindow()
     window.set_data(trajectory, grid, dt)
     window.show()

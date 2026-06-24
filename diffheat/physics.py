@@ -28,8 +28,9 @@ def make_laplacian(grid: Grid1D) -> jnp.ndarray:
     diag = array(-2.0 / (dx * dx))
 
     # Off-diagonals: 1 / dx^2
-    # dx varies per cell on non-uniform grids (future-proof)
-    # Upper diagonal uses average of adjacent dx^2
+    # For uniform grids: off-diagonal = 1/dx^2
+    # NOTE: this formula is valid only for uniform grids.
+    # Non-uniform grids require a different finite-difference stencil.
     dx2_left = dx[:-1] * dx[:-1]
     dx2_right = dx[1:] * dx[1:]
     off_diag = array(2.0 / (dx2_left + dx2_right))
