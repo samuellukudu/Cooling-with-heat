@@ -2,6 +2,9 @@
 """Explicit Euler time-stepping for 1D and 2D."""
 import jax.numpy as jnp
 
+from typing import Callable, Optional
+
+from ..mesh.grid2d import Grid2D
 from ..operators.laplacian import make_laplacian
 from ..physics.heat1d import HeatEquation1D, apply_boundary_conditions
 
@@ -34,3 +37,31 @@ def explicit_euler_step(
         dT_dt = dT_dt + eqn.source(eqn.grid.centers, t)
 
     return T + dt * dT_dt
+
+
+def explicit_euler_step_2d(
+    state: jnp.ndarray,
+    rhs_fn: Callable[[jnp.ndarray, Grid2D, float, Optional[dict]], jnp.ndarray],
+    grid: Grid2D,
+    t: float,
+    dt: float,
+    params: Optional[dict] = None,
+) -> jnp.ndarray:
+    """Single explicit Euler time step for an arbitrary 2D system.
+
+    state^{n+1} = state^n + dt * rhs_fn(state^n, grid, t, params)
+
+    Args:
+        state: (nx, ny) field at current timestep.
+        rhs_fn: Right-hand side function.
+            Signature: rhs_fn(state, grid, t, params) -> dstate_dt
+        grid: The 2D grid.
+        t: Current time.
+        dt: Time step size.
+        params: Optional dict of parameters passed to rhs_fn.
+
+    Returns:
+        (nx, ny) field at next timestep.
+    """
+    dstate_dt = rhs_fn(state, grid, t, params)
+    return state + dt * dstate_dt
