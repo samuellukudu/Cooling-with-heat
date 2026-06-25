@@ -94,7 +94,7 @@ def apply_boundary_conditions_2d(
             T[nx - 1, :] + T[1, :] - 2.0 * T[0, :]
         ) / (dx[0] * dx[0])
         correct_x = (
-            T[1, :] - 3.0 * T[0, :] + 2.0 * T_boundary
+            T[1, :] - 3.0 * T[0, :]
         ) / (dx[0] * dx[0])
         L_T = L_T.at[0, :].add(correct_x - incorrect_x)
         b_source = b_source.at[0, :].add(
@@ -106,7 +106,7 @@ def apply_boundary_conditions_2d(
             T[nx - 1, :] + T[1, :] - 2.0 * T[0, :]
         ) / (dx[0] * dx[0])
         correct_x = (
-            T[1, :] - T[0, :] - dT_dn * dx[0]
+            T[1, :] - T[0, :]
         ) / (dx[0] * dx[0])
         L_T = L_T.at[0, :].add(correct_x - incorrect_x)
         b_source = b_source.at[0, :].add(-dT_dn / dx[0])
@@ -118,7 +118,7 @@ def apply_boundary_conditions_2d(
             T[0, :] + T[nx - 2, :] - 2.0 * T[nx - 1, :]
         ) / (dx[nx - 1] * dx[nx - 1])
         correct_x = (
-            T[nx - 2, :] - 3.0 * T[nx - 1, :] + 2.0 * T_boundary
+            T[nx - 2, :] - 3.0 * T[nx - 1, :]
         ) / (dx[nx - 1] * dx[nx - 1])
         L_T = L_T.at[nx - 1, :].add(correct_x - incorrect_x)
         b_source = b_source.at[nx - 1, :].add(
@@ -130,10 +130,10 @@ def apply_boundary_conditions_2d(
             T[0, :] + T[nx - 2, :] - 2.0 * T[nx - 1, :]
         ) / (dx[nx - 1] * dx[nx - 1])
         correct_x = (
-            T[nx - 2, :] - T[nx - 1, :] + dT_dn * dx[nx - 1]
+            T[nx - 2, :] - T[nx - 1, :]
         ) / (dx[nx - 1] * dx[nx - 1])
         L_T = L_T.at[nx - 1, :].add(correct_x - incorrect_x)
-        b_source = b_source.at[nx - 1, :].add(dT_dn / dx[nx - 1])
+        b_source = b_source.at[nx - 1, :].add(-dT_dn / dx[nx - 1])
 
     # --- Bottom boundary (j = 0) ---
     if bc.bottom["kind"] == "dirichlet":
@@ -142,7 +142,7 @@ def apply_boundary_conditions_2d(
             T[:, ny - 1] + T[:, 1] - 2.0 * T[:, 0]
         ) / (dy[0] * dy[0])
         correct_y = (
-            T[:, 1] - 3.0 * T[:, 0] + 2.0 * T_boundary
+            T[:, 1] - 3.0 * T[:, 0]
         ) / (dy[0] * dy[0])
         L_T = L_T.at[:, 0].add(correct_y - incorrect_y)
         b_source = b_source.at[:, 0].add(
@@ -154,7 +154,7 @@ def apply_boundary_conditions_2d(
             T[:, ny - 1] + T[:, 1] - 2.0 * T[:, 0]
         ) / (dy[0] * dy[0])
         correct_y = (
-            T[:, 1] - T[:, 0] - dT_dn * dy[0]
+            T[:, 1] - T[:, 0]
         ) / (dy[0] * dy[0])
         L_T = L_T.at[:, 0].add(correct_y - incorrect_y)
         b_source = b_source.at[:, 0].add(-dT_dn / dy[0])
@@ -166,7 +166,7 @@ def apply_boundary_conditions_2d(
             T[:, 0] + T[:, ny - 2] - 2.0 * T[:, ny - 1]
         ) / (dy[ny - 1] * dy[ny - 1])
         correct_y = (
-            T[:, ny - 2] - 3.0 * T[:, ny - 1] + 2.0 * T_boundary
+            T[:, ny - 2] - 3.0 * T[:, ny - 1]
         ) / (dy[ny - 1] * dy[ny - 1])
         L_T = L_T.at[:, ny - 1].add(correct_y - incorrect_y)
         b_source = b_source.at[:, ny - 1].add(
@@ -178,9 +178,9 @@ def apply_boundary_conditions_2d(
             T[:, 0] + T[:, ny - 2] - 2.0 * T[:, ny - 1]
         ) / (dy[ny - 1] * dy[ny - 1])
         correct_y = (
-            T[:, ny - 2] - T[:, ny - 1] + dT_dn * dy[ny - 1]
+            T[:, ny - 2] - T[:, ny - 1]
         ) / (dy[ny - 1] * dy[ny - 1])
         L_T = L_T.at[:, ny - 1].add(correct_y - incorrect_y)
-        b_source = b_source.at[:, ny - 1].add(dT_dn / dy[ny - 1])
+        b_source = b_source.at[:, ny - 1].add(-dT_dn / dy[ny - 1])
 
     return L_T, b_source

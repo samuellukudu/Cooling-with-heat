@@ -86,3 +86,28 @@ class TestApplyBoundaryConditions2D:
             lambda x: laplacian_2d(x, grid), grid, bc, T
         )
         assert not jnp.isclose(jnp.sum(jnp.abs(b_source)), 0.0)
+
+    def test_linear_field_matching_dirichlet_gives_zero_laplacian(self):
+        """T = a*x + c (y-independent) with matching Dirichlet BCs → L_T + b_source = 0."""
+        a, c = 2.0, 5.0
+        nx, ny = 20, 20
+        grid = Grid2D.uniform(Lx=1.0, Ly=1.0, nx=nx, ny=ny)
+
+        # Dirichlet left/right match the linear field; top/bottom Neumann zero-flux
+        bc = BoundaryCondition2D(
+            left={"kind": "dirichlet", "value": float(c)},
+            right={"kind": "dirichlet", "value": float(a * grid.Lx + c)},
+            bottom={"kind": "neumann", "value": 0.0},
+            top={"kind": "neumann", "value": 0.0},
+        )
+
+        # y-independent linear field: T = a*x + c
+        T = a * grid.X.T + c  # grid.X.T broadcasts to (nx, ny)
+
+        L_T, b_source = apply_boundary_conditions_2d(
+            lambda x: laplacian_2d(x, grid), grid, bc, T
+        )
+
+        # Laplacian of linear field = 0 everywhere (including boundaries)
+        total = L_T + b_source
+        assert jnp.allclose(total, 0.0, atol=1e-2)
