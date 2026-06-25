@@ -83,6 +83,12 @@ def solve_2d(
 
     The entire solve is JIT-compiled and differentiable.
 
+    .. note::
+
+        This solver is equation-agnostic and does not perform automatic CFL
+        checks.  For diffusive systems use ``check_cfl_2d(grid, alpha, dt)``
+        before calling this function.
+
     Args:
         rhs_fn: Right-hand side function.
             Signature: rhs_fn(state, grid, t, params) -> dstate_dt

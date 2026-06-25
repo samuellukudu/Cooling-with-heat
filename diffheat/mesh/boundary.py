@@ -30,11 +30,16 @@ class BoundaryCondition:
 
 @dataclass(frozen=True)
 class BoundaryCondition2D:
-    """Boundary conditions for the 2D heat equation.
+    r"""Boundary conditions for the 2D heat equation.
 
     Each edge is a dict with keys:
         kind: "dirichlet" (fixed temperature) or "neumann" (fixed flux/gradient).
         value: prescribed temperature (Dirichlet) or dT/dn (Neumann, positive = into domain).
+
+    **Neumann sign convention:** ``value`` is the inward normal derivative dT/dn,
+    i.e., positive flux INTO the domain.  On the right (x = Lx) and top (y = Ly)
+    edges this is opposite to the +x / +y coordinate direction.  This is the same
+    "into domain" convention used by the 1D ``BoundaryCondition``.
 
     Args:
         left: dict with "kind" and "value" for the left boundary (x = 0).
@@ -57,21 +62,21 @@ class BoundaryCondition2D:
 
 
 def apply_boundary_conditions_2d(
-    laplacian_fn: Callable[[jnp.ndarray], jnp.ndarray],
+    operator_fn: Callable[[jnp.ndarray], jnp.ndarray],
     grid: "Grid2D",
     bc: BoundaryCondition2D,
     T: jnp.ndarray,
 ) -> tuple[jnp.ndarray, jnp.ndarray]:
-    """Apply 2D boundary conditions by correcting the wrap-around Laplacian output.
+    """Apply 2D boundary conditions by correcting the wrap-around operator output.
 
-    The raw ``laplacian_2d`` uses ``jnp.roll`` which implicitly imposes periodic
-    boundary conditions.  This function replaces the incorrect (periodic) finite-
-    difference stencils at the domain edges with the correct ghost-cell stencils
-    for the prescribed Dirichlet or Neumann conditions.
+    The raw operators (e.g. ``laplacian_2d``) use ``jnp.roll`` which implicitly
+    imposes periodic boundary conditions.  This function replaces the incorrect
+    (periodic) finite-difference stencils at the domain edges with the correct
+    ghost-cell stencils for the prescribed Dirichlet or Neumann conditions.
 
     Args:
-        laplacian_fn: Callable ``T -> L_T`` that computes the raw 2D Laplacian
-                      (e.g. ``lambda T: laplacian_2d(T, grid)``).
+        operator_fn: Callable ``T -> operator(T)`` that computes the raw discrete
+                     operator (e.g. ``lambda T: laplacian_2d(T, grid)``).
         grid: The 2D grid.
         bc: Boundary conditions for the four edges.
         T: (nx, ny) temperature field at cell centers.
@@ -84,7 +89,7 @@ def apply_boundary_conditions_2d(
     dx = grid.dx  # (nx,)
     dy = grid.dy  # (ny,)
 
-    L_T = laplacian_fn(T)
+    L_T = operator_fn(T)
     b_source = jnp.zeros((nx, ny), dtype=L_T.dtype)
 
     # --- Left boundary (i = 0) ---

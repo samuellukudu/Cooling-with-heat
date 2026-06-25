@@ -11,7 +11,6 @@ from diffheat.mesh.boundary import apply_boundary_conditions_2d
 def _make_heat_rhs(alpha, bc):
     """Factory: build a heat equation RHS function for a given diffusivity and BCs."""
     def rhs(T, grid, t, params):
-        L_T = laplacian_2d(T, grid)
         L_T_mod, b_source = apply_boundary_conditions_2d(
             lambda x: laplacian_2d(x, grid), grid, bc, T
         )
