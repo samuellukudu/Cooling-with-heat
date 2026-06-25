@@ -47,3 +47,54 @@ class TestLaplacian2D:
         result = laplacian_2d(T, grid)
         # Result should be symmetric: L[i, j] == L[j, i] for square grid
         assert jnp.allclose(result, result.T, atol=1e-10)
+
+
+class TestGradient2D:
+    def test_gradient_x_shape(self):
+        grid = Grid2D.uniform(Lx=1.0, Ly=1.0, nx=10, ny=15)
+        from diffheat.operators import gradient_x
+        T = jnp.ones((10, 15))
+        result = gradient_x(T, grid)
+        assert result.shape == (10, 15)
+
+    def test_gradient_y_shape(self):
+        grid = Grid2D.uniform(Lx=1.0, Ly=1.0, nx=10, ny=15)
+        from diffheat.operators import gradient_y
+        T = jnp.ones((10, 15))
+        result = gradient_y(T, grid)
+        assert result.shape == (10, 15)
+
+    def test_gradient_2d_returns_tuple(self):
+        grid = Grid2D.uniform(Lx=1.0, Ly=1.0, nx=10, ny=15)
+        from diffheat.operators import gradient_2d
+        T = jnp.ones((10, 15))
+        gx, gy = gradient_2d(T, grid)
+        assert gx.shape == (10, 15)
+        assert gy.shape == (10, 15)
+
+    def test_gradient_x_of_linear_x(self):
+        """dT/dx of T = a*x should be a everywhere."""
+        grid = Grid2D.uniform(Lx=2.0, Ly=1.0, nx=30, ny=15)
+        from diffheat.operators import gradient_x
+        a = 3.0
+        T = a * grid.X.T  # (nx, ny) from (ny, nx) meshgrid
+        result = gradient_x(T, grid)
+        assert jnp.allclose(result[1:-1, 1:-1], a, atol=1e-2)
+
+    def test_gradient_y_of_linear_y(self):
+        """dT/dy of T = b*y should be b everywhere."""
+        grid = Grid2D.uniform(Lx=1.0, Ly=2.0, nx=15, ny=30)
+        from diffheat.operators import gradient_y
+        b = -2.0
+        T = b * grid.Y.T  # (nx, ny)
+        result = gradient_y(T, grid)
+        assert jnp.allclose(result[1:-1, 1:-1], b, atol=1e-2)
+
+    def test_gradient_constant_is_zero(self):
+        """Gradient of constant field should be zero (interior)."""
+        grid = Grid2D.uniform(Lx=1.0, Ly=1.0, nx=20, ny=20)
+        from diffheat.operators import gradient_2d
+        T = jnp.full((20, 20), 5.0)
+        gx, gy = gradient_2d(T, grid)
+        assert jnp.allclose(gx[1:-1, 1:-1], 0.0, atol=1e-10)
+        assert jnp.allclose(gy[1:-1, 1:-1], 0.0, atol=1e-10)
