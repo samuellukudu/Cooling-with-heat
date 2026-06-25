@@ -3,6 +3,7 @@
 import jax.numpy as jnp
 
 from ..mesh.grid1d import Grid1D
+from ..mesh.grid2d import Grid2D
 from ..utils import array
 
 
@@ -33,3 +34,29 @@ def make_laplacian(grid: Grid1D) -> jnp.ndarray:
 
     L = jnp.diag(diag) + jnp.diag(off_diag, k=1) + jnp.diag(off_diag, k=-1)
     return L
+
+
+def laplacian_2d(T: jnp.ndarray, grid: Grid2D) -> jnp.ndarray:
+    """Compute the 2D Laplacian nabla^2 T = partial^2 T/partial x^2 + partial^2 T/partial y^2.
+
+    Uses centered finite differences with a 5-point stencil:
+        (T[i+1,j] + T[i-1,j] - 2*T[i,j]) / dx^2 +
+        (T[i,j+1] + T[i,j-1] - 2*T[i,j]) / dy^2
+
+    Args:
+        T: (nx, ny) temperature field at cell centers.
+        grid: The 2D grid.
+
+    Returns:
+        (nx, ny) Laplacian at cell centers.
+    """
+    dx2 = grid.dx * grid.dx  # (nx,)
+    dy2 = grid.dy * grid.dy  # (ny,)
+
+    # partial^2 T/partial x^2: along axis 0
+    d2T_dx2 = (jnp.roll(T, -1, axis=0) + jnp.roll(T, 1, axis=0) - 2.0 * T) / dx2[:, jnp.newaxis]
+
+    # partial^2 T/partial y^2: along axis 1
+    d2T_dy2 = (jnp.roll(T, -1, axis=1) + jnp.roll(T, 1, axis=1) - 2.0 * T) / dy2[jnp.newaxis, :]
+
+    return d2T_dx2 + d2T_dy2
