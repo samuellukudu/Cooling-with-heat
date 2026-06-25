@@ -7,6 +7,24 @@ from ..mesh.grid2d import Grid2D
 from ..utils import array
 
 
+def laplacian_1d(T: jnp.ndarray, grid: Grid1D) -> jnp.ndarray:
+    """Compute the 1D Laplacian d^2T/dx^2 using centered finite differences.
+
+    Uses ``jnp.roll`` — boundaries are implicitly periodic; correct them
+    with ``apply_boundary_conditions_1d``.
+
+    Args:
+        T: (N,) field at cell centers.
+        grid: The 1D grid.
+
+    Returns:
+        (N,) Laplacian at cell centers.
+    """
+    dx2 = grid.dx * grid.dx  # (N,)
+    d2T_dx2 = (jnp.roll(T, -1) + jnp.roll(T, 1) - 2.0 * T) / dx2
+    return d2T_dx2
+
+
 def make_laplacian(grid: Grid1D) -> jnp.ndarray:
     """Build the (N, N) tridiagonal Laplacian matrix using centered finite differences.
 

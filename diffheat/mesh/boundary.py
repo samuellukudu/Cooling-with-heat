@@ -6,6 +6,7 @@ from typing import Callable
 import jax.numpy as jnp
 
 from ..utils import array
+from .grid1d import Grid1D
 
 
 @dataclass(frozen=True)
@@ -187,5 +188,68 @@ def apply_boundary_conditions_2d(
         ) / (dy[ny - 1] * dy[ny - 1])
         L_T = L_T.at[:, ny - 1].add(correct_y - incorrect_y)
         b_source = b_source.at[:, ny - 1].add(-dT_dn / dy[ny - 1])
+
+    return L_T, b_source
+
+
+def apply_boundary_conditions_1d(
+    operator_fn: Callable[[jnp.ndarray], jnp.ndarray],
+    grid: Grid1D,
+    bc: "BoundaryCondition",
+    T: jnp.ndarray,
+) -> tuple[jnp.ndarray, jnp.ndarray]:
+    """Apply 1D boundary conditions by correcting periodic operator output.
+
+    Same ghost-cell method as the 2D version.  The raw operator (e.g.
+    ``laplacian_1d``) uses ``jnp.roll`` which imposes periodic BCs.
+    This function corrects the edge cells for the prescribed Dirichlet
+    or Neumann conditions.
+
+    Args:
+        operator_fn: Callable ``T -> operator(T)`` (e.g.
+                     ``lambda T: laplacian_1d(T, grid)``).
+        grid: The 1D grid.
+        bc: Boundary conditions.
+        T: (N,) field at cell centers.
+
+    Returns:
+        (L_T, b_source) where ``dT/dt = alpha * (L_T + b_source) + S``.
+        Both have shape ``(N,)``.
+    """
+    n = grid.n_cells
+    dx = grid.dx
+
+    L_T = operator_fn(T)
+    b_source = jnp.zeros(n, dtype=L_T.dtype)
+
+    # --- Left boundary (i = 0) ---
+    if bc.kind == "dirichlet":
+        T_boundary = bc.value[0]
+        incorrect = (T[n - 1] + T[1] - 2.0 * T[0]) / (dx[0] * dx[0])
+        correct = (T[1] - 3.0 * T[0]) / (dx[0] * dx[0])
+        L_T = L_T.at[0].add(correct - incorrect)
+        b_source = b_source.at[0].add(2.0 * T_boundary / (dx[0] * dx[0]))
+    elif bc.kind == "neumann":
+        dT_dn = bc.value[0]
+        incorrect = (T[n - 1] + T[1] - 2.0 * T[0]) / (dx[0] * dx[0])
+        correct = (T[1] - T[0]) / (dx[0] * dx[0])
+        L_T = L_T.at[0].add(correct - incorrect)
+        b_source = b_source.at[0].add(-dT_dn / dx[0])
+
+    # --- Right boundary (i = n - 1) ---
+    if bc.kind == "dirichlet":
+        T_boundary = bc.value[1]
+        incorrect = (T[0] + T[n - 2] - 2.0 * T[n - 1]) / (dx[n - 1] * dx[n - 1])
+        correct = (T[n - 2] - 3.0 * T[n - 1]) / (dx[n - 1] * dx[n - 1])
+        L_T = L_T.at[n - 1].add(correct - incorrect)
+        b_source = b_source.at[n - 1].add(
+            2.0 * T_boundary / (dx[n - 1] * dx[n - 1])
+        )
+    elif bc.kind == "neumann":
+        dT_dn = bc.value[1]
+        incorrect = (T[0] + T[n - 2] - 2.0 * T[n - 1]) / (dx[n - 1] * dx[n - 1])
+        correct = (T[n - 2] - T[n - 1]) / (dx[n - 1] * dx[n - 1])
+        L_T = L_T.at[n - 1].add(correct - incorrect)
+        b_source = b_source.at[n - 1].add(-dT_dn / dx[n - 1])
 
     return L_T, b_source

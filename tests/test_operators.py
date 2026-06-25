@@ -1,7 +1,7 @@
 # tests/test_operators.py
 """Tests for discrete differential operators."""
 import jax.numpy as jnp
-from diffheat.mesh import Grid2D
+from diffheat.mesh import Grid1D, Grid2D
 from diffheat.operators import laplacian_2d
 
 
@@ -141,3 +141,92 @@ class TestDivergence2D:
                                      2.0 * uy1 - 3.0 * uy2, grid)
         expected = 2.0 * div1 - 3.0 * div2
         assert jnp.allclose(div_combined[1:-1, 1:-1], expected[1:-1, 1:-1], atol=1e-2)
+
+
+class TestLaplacian1D:
+    def test_returns_correct_shape(self):
+        grid = Grid1D.uniform(length=1.0, n_cells=20)
+        from diffheat.operators import laplacian_1d
+        from diffheat.mesh import Grid1D as G1
+        T = jnp.ones(20)
+        result = laplacian_1d(T, grid)
+        assert result.shape == (20,)
+
+    def test_constant_field_is_zero_in_interior(self):
+        """Laplacian of a constant field should be zero away from boundaries."""
+        grid = Grid1D.uniform(length=1.0, n_cells=30)
+        from diffheat.operators import laplacian_1d
+        T = jnp.full(30, 2.5)
+        result = laplacian_1d(T, grid)
+        # Interior cells (away from periodic wrap-around) should be ~0
+        assert jnp.allclose(result[2:-2], 0.0, atol=1e-6)
+
+    def test_linear_field_is_zero_in_interior(self):
+        """d^2(ax+b)/dx^2 = 0 away from boundaries."""
+        grid = Grid1D.uniform(length=1.0, n_cells=40)
+        from diffheat.operators import laplacian_1d
+        a, b = 2.0, 1.0
+        T = a * grid.centers + b
+        result = laplacian_1d(T, grid)
+        assert jnp.allclose(result[3:-3], 0.0, atol=1e-3)
+
+    def test_known_quadratic(self):
+        """d^2(x^2)/dx^2 = 2 everywhere."""
+        grid = Grid1D.uniform(length=2.0, n_cells=50)
+        from diffheat.operators import laplacian_1d
+        T = grid.centers ** 2
+        result = laplacian_1d(T, grid)
+        # Interior should be ~2
+        assert jnp.allclose(result[3:-3], 2.0, atol=1e-3)
+
+    def test_uniform_grid_scaling(self):
+        """Laplacian entries should scale as 1/dx^2."""
+        grid_coarse = Grid1D.uniform(length=1.0, n_cells=10)
+        grid_fine = Grid1D.uniform(length=1.0, n_cells=20)
+        from diffheat.operators import laplacian_1d
+        T = grid_coarse.centers ** 2
+        Lc = laplacian_1d(T, grid_coarse)
+        T = grid_fine.centers ** 2
+        Lf = laplacian_1d(T, grid_fine)
+        # Both should be ~2 in interior regardless of resolution
+        assert jnp.allclose(Lc[3:-3], 2.0, atol=1e-3)
+        assert jnp.allclose(Lf[3:-3], 2.0, atol=1e-3)
+
+
+class TestGradient1D:
+    def test_returns_correct_shape(self):
+        grid = Grid1D.uniform(length=1.0, n_cells=25)
+        from diffheat.operators import gradient_1d
+        T = jnp.ones(25)
+        result = gradient_1d(T, grid)
+        assert result.shape == (25,)
+
+    def test_constant_field_is_zero_in_interior(self):
+        """Gradient of constant field should be zero."""
+        grid = Grid1D.uniform(length=1.0, n_cells=30)
+        from diffheat.operators import gradient_1d
+        T = jnp.full(30, 5.0)
+        result = gradient_1d(T, grid)
+        assert jnp.allclose(result[2:-2], 0.0, atol=1e-6)
+
+    def test_gradient_of_linear(self):
+        """d(ax+b)/dx = a."""
+        grid = Grid1D.uniform(length=1.0, n_cells=40)
+        from diffheat.operators import gradient_1d
+        a, b = 3.0, -1.0
+        T = a * grid.centers + b
+        result = gradient_1d(T, grid)
+        assert jnp.allclose(result[2:-2], a, atol=1e-3)
+
+    def test_uniform_grid_scaling(self):
+        """Gradient should be independent of resolution for smooth fields."""
+        grid_coarse = Grid1D.uniform(length=1.0, n_cells=10)
+        grid_fine = Grid1D.uniform(length=1.0, n_cells=20)
+        from diffheat.operators import gradient_1d
+        a = 3.0
+        Tc = a * grid_coarse.centers
+        Tf = a * grid_fine.centers
+        gc = gradient_1d(Tc, grid_coarse)
+        gf = gradient_1d(Tf, grid_fine)
+        assert jnp.allclose(gc[2:-2], a, atol=1e-3)
+        assert jnp.allclose(gf[2:-2], a, atol=1e-3)

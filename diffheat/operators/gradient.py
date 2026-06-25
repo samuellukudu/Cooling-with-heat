@@ -1,8 +1,26 @@
 # diffheat/operators/gradient.py
-"""Gradient operators for 2D scalar fields."""
+"""Gradient operators for 1D and 2D scalar fields."""
 import jax.numpy as jnp
 
+from ..mesh.grid1d import Grid1D
 from ..mesh.grid2d import Grid2D
+
+
+def gradient_1d(T: jnp.ndarray, grid: Grid1D) -> jnp.ndarray:
+    """Compute the 1D gradient dT/dx using centered finite differences.
+
+    Uses ``jnp.roll`` — boundaries are implicitly periodic; correct them
+    with ``apply_boundary_conditions_1d`` if needed.
+
+    Args:
+        T: (N,) field at cell centers.
+        grid: The 1D grid.
+
+    Returns:
+        (N,) gradient at cell centers.
+    """
+    dT_dx = (jnp.roll(T, -1) - jnp.roll(T, 1)) / (2.0 * grid.dx)
+    return dT_dx
 
 
 def gradient_x(T: jnp.ndarray, grid: Grid2D) -> jnp.ndarray:
