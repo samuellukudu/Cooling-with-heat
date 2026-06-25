@@ -1,42 +1,13 @@
-# diffheat/physics.py
-"""Heat equation operators and problem definition."""
+# diffheat/physics/heat1d.py
+"""1D heat equation problem definition."""
 from dataclasses import dataclass
 from typing import Callable, Optional
 
 import jax.numpy as jnp
 
-from .mesh import BoundaryCondition, Grid1D
-from .utils import array
-
-
-def make_laplacian(grid: Grid1D) -> jnp.ndarray:
-    """Build the (N, N) tridiagonal Laplacian matrix using centered finite differences.
-
-    Interior: [1, -2, 1] / dx^2
-    Boundaries: left unmodified (apply_boundary_conditions handles them).
-
-    Args:
-        grid: The 1D grid.
-
-    Returns:
-        (N, N) Laplacian matrix.
-    """
-    n = grid.n_cells
-    dx = grid.dx
-
-    # Diagonal: -2 / dx^2
-    diag = array(-2.0 / (dx * dx))
-
-    # Off-diagonals: 1 / dx^2
-    # For uniform grids: off-diagonal = 1/dx^2
-    # NOTE: this formula is valid only for uniform grids.
-    # Non-uniform grids require a different finite-difference stencil.
-    dx2_left = dx[:-1] * dx[:-1]
-    dx2_right = dx[1:] * dx[1:]
-    off_diag = array(2.0 / (dx2_left + dx2_right))
-
-    L = jnp.diag(diag) + jnp.diag(off_diag, k=1) + jnp.diag(off_diag, k=-1)
-    return L
+from ..mesh.boundary import BoundaryCondition
+from ..mesh.grid1d import Grid1D
+from ..utils import array
 
 
 def apply_boundary_conditions(
@@ -65,30 +36,22 @@ def apply_boundary_conditions(
 
     # --- Left boundary (cell index 0) ---
     if bc.kind == "dirichlet":
-        # T_ghost = 2*T_left - T_0
-        # (T_ghost + T_1 - 2*T_0)/dx^2 = (2*T_left - T_0 + T_1 - 2*T_0)/dx^2
-        #                            = (T_1 - 3*T_0)/dx^2 + 2*T_left/dx^2
         L_mod = L_mod.at[0, 0].set(-3.0 / (dx[0] * dx[0]))
         L_mod = L_mod.at[0, 1].set(1.0 / (dx[0] * dx[0]))
         b_source = b_source.at[0].set(2.0 * bc.value[0] / (dx[0] * dx[0]))
     elif bc.kind == "neumann":
-        # T_ghost = T_0 - dx * (dT/dx)_{left}
-        # (T_ghost + T_1 - 2*T_0)/dx^2 = (T_0 - dx*(dT/dx) + T_1 - 2*T_0)/dx^2
-        #                              = (T_1 - T_0)/dx^2 - (dT/dx)/dx
         L_mod = L_mod.at[0, 0].set(-1.0 / (dx[0] * dx[0]))
         L_mod = L_mod.at[0, 1].set(1.0 / (dx[0] * dx[0]))
         b_source = b_source.at[0].set(-bc.value[0] / dx[0])
 
     # --- Right boundary (cell index n-1) ---
     if bc.kind == "dirichlet":
-        # T_ghost = 2*T_right - T_{n-1}
         L_mod = L_mod.at[n - 1, n - 1].set(-3.0 / (dx[n - 1] * dx[n - 1]))
         L_mod = L_mod.at[n - 1, n - 2].set(1.0 / (dx[n - 1] * dx[n - 1]))
         b_source = b_source.at[n - 1].set(
             2.0 * bc.value[1] / (dx[n - 1] * dx[n - 1])
         )
     elif bc.kind == "neumann":
-        # T_ghost = T_{n-1} + dx * (dT/dx)_{right}
         L_mod = L_mod.at[n - 1, n - 1].set(-1.0 / (dx[n - 1] * dx[n - 1]))
         L_mod = L_mod.at[n - 1, n - 2].set(1.0 / (dx[n - 1] * dx[n - 1]))
         b_source = b_source.at[n - 1].set(bc.value[1] / dx[n - 1])

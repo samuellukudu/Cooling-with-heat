@@ -3,7 +3,8 @@
 import logging
 
 from .mesh import BoundaryCondition, Grid1D
-from .physics import HeatEquation1D, apply_boundary_conditions, make_laplacian
+from .operators import make_laplacian
+from .physics import HeatEquation1D, apply_boundary_conditions
 from .solvers import check_cfl, explicit_euler_step, solve_heat_1d
 from .utils import array, get_default_dtype, get_device
 
