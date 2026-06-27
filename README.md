@@ -195,17 +195,27 @@ any input:
 ```python
 import jax
 
-def final_temperature(alpha):
+grid = Grid1D.uniform(length=1.0, n_cells=100)
+bc = BoundaryCondition(kind="dirichlet", value=jnp.array([100.0, 0.0]))
+T0 = jnp.zeros(grid.n_cells)
+
+def final_mean_temp(alpha):
     """Mean temperature at the end of the simulation, as a function of alpha."""
     eqn = HeatEquation1D(grid=grid, bc=bc, alpha=alpha)
-    traj = solve_heat_1d(eqn, T0, t_span=(0.0, 5.0), dt=0.001)
+    traj = solve_heat_1d(eqn, T0, t_span=(0.0, 0.5), dt=0.0001)
     return jnp.mean(traj[-1])
 
 # d(mean_T) / d(alpha)
-grad_fn = jax.grad(final_temperature)
+grad_fn = jax.grad(final_mean_temp)
 sensitivity = grad_fn(0.01)
 print(f"∂T̄/∂α at α=0.01: {sensitivity:.4f}")
 ```
+
+> **CFL warning:**  The explicit Euler scheme is only stable when
+> `dt ≤ dx² / (2·α)`.  With 100 cells over a 1 m rod, `dx = 0.01` and the
+> worst-case `α = 0.3` gives a limit of `1.6×10⁻⁴` — so `dt = 1×10⁻⁴` is
+> safe.  If you vary `alpha` widely, pick `dt` for the largest `alpha`
+> you'll encounter, or use `check_cfl(grid, alpha, dt)` to verify.
 
 ### Adding a source term
 

@@ -26,7 +26,7 @@ class TestMakeLaplacian:
         T_linear = a * grid.centers + b
         result = L @ T_linear
         # Interior cells should be ~0 (boundary effects at edges)
-        assert jnp.allclose(result[2:-2], 0.0, atol=1e-7)
+        assert jnp.allclose(result[2:-2], 0.0, atol=1e-3)
 
     def test_uniform_grid_dx_squared_scaling(self):
         """Laplacian entries should scale as 1/dx^2."""

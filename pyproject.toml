@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Differentiable heat equation simulations with JAX"
 requires-python = ">=3.10"
 dependencies = [
-    "jax",
+    "jax[cuda12]",
     "numpy",
 ]
 
@@ -21,3 +21,16 @@ include = ["diffheat*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+addopts = [
+    # ROS 2 plugins leak into venvs via PYTHONPATH — suppress them
+    "-p no:ament_copyright",
+    "-p no:ament_flake8",
+    "-p no:ament_lint",
+    "-p no:ament_pep257",
+    "-p no:ament_xmllint",
+    "-p no:launch_ros",
+    "-p no:launch_testing",
+]
+filterwarnings = [
+    "ignore::DeprecationWarning",
+]
