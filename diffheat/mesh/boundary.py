@@ -1,5 +1,5 @@
 # diffheat/mesh/boundary.py
-"""Boundary condition definitions for 1D and 2D heat equations."""
+"""Boundary condition definitions for 1D, 2D, and 3D heat equations."""
 from dataclasses import dataclass
 from typing import Callable
 
@@ -251,5 +251,175 @@ def apply_boundary_conditions_1d(
         correct = (T[n - 2] - T[n - 1]) / (dx[n - 1] * dx[n - 1])
         L_T = L_T.at[n - 1].add(correct - incorrect)
         b_source = b_source.at[n - 1].add(-dT_dn / dx[n - 1])
+
+    return L_T, b_source
+
+
+# ---------------------------------------------------------------------------
+# 3D boundary conditions
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class BoundaryCondition3D:
+    r"""Boundary conditions for the 3D heat equation.
+
+    Each of the six faces is a dict with keys:
+        kind: ``"dirichlet"`` (fixed temperature) or ``"neumann"`` (fixed flux).
+        value: Prescribed temperature (Dirichlet) or ``dT/dn`` (Neumann).
+
+    **Neumann sign convention:** ``value`` is the inward normal derivative
+    ``dT/dn``, i.e., positive flux *into* the domain.  On the positive-side
+    faces (right, top, back) this is opposite to the +x/+y/+z direction.
+
+    Faces:
+        left:   x = 0
+        right:  x = Lx
+        bottom: y = 0
+        top:    y = Ly
+        front:  z = 0
+        back:   z = Lz
+    """
+    left: dict
+    right: dict
+    bottom: dict
+    top: dict
+    front: dict
+    back: dict
+
+    def __post_init__(self):
+        for face in ("left", "right", "bottom", "top", "front", "back"):
+            edge = getattr(self, face)
+            if edge["kind"] not in ("dirichlet", "neumann"):
+                raise ValueError(
+                    f"Unknown boundary kind for {face}: {edge['kind']}"
+                )
+
+
+def apply_boundary_conditions_3d(
+    operator_fn: Callable[[jnp.ndarray], jnp.ndarray],
+    grid: "Grid3D",
+    bc: BoundaryCondition3D,
+    T: jnp.ndarray,
+) -> tuple[jnp.ndarray, jnp.ndarray]:
+    """Apply 3D boundary conditions by correcting the wrap-around operator output.
+
+    The raw ``laplacian_3d`` uses ``jnp.roll`` which implicitly imposes periodic
+    BCs.  This function replaces the incorrect stencils at the six domain faces
+    with ghost-cell stencils for Dirichlet or Neumann conditions.
+
+    Args:
+        operator_fn: Callable ``T -> operator(T)`` (e.g.
+                     ``lambda T: laplacian_3d(T, grid)``).
+        grid: The 3D grid.
+        bc: Boundary conditions for the six faces.
+        T: (nx, ny, nz) temperature field at cell centers.
+
+    Returns:
+        ``(L_T, b_source)`` where ``dT/dt = alpha * (L_T + b_source) + S``.
+        Both have shape ``(nx, ny, nz)``.
+    """
+    nx, ny, nz = grid.nx, grid.ny, grid.nz
+    dx = grid.dx  # (nx,)
+    dy = grid.dy  # (ny,)
+    dz = grid.dz  # (nz,)
+
+    L_T = operator_fn(T)
+    b_source = jnp.zeros((nx, ny, nz), dtype=L_T.dtype)
+
+    # ------------------------------------------------------------------
+    # X-direction faces  (axis 0)
+    # ------------------------------------------------------------------
+
+    # --- Left face (i = 0) ---
+    if bc.left["kind"] == "dirichlet":
+        T_bc = bc.left["value"]
+        incorrect = (T[nx - 1, :, :] + T[1, :, :] - 2.0 * T[0, :, :]) / (dx[0] ** 2)
+        correct = (T[1, :, :] - 3.0 * T[0, :, :]) / (dx[0] ** 2)
+        L_T = L_T.at[0, :, :].add(correct - incorrect)
+        b_source = b_source.at[0, :, :].add(2.0 * T_bc / (dx[0] ** 2))
+    elif bc.left["kind"] == "neumann":
+        dT_dn = bc.left["value"]
+        incorrect = (T[nx - 1, :, :] + T[1, :, :] - 2.0 * T[0, :, :]) / (dx[0] ** 2)
+        correct = (T[1, :, :] - T[0, :, :]) / (dx[0] ** 2)
+        L_T = L_T.at[0, :, :].add(correct - incorrect)
+        b_source = b_source.at[0, :, :].add(-dT_dn / dx[0])
+
+    # --- Right face (i = nx - 1) ---
+    if bc.right["kind"] == "dirichlet":
+        T_bc = bc.right["value"]
+        incorrect = (T[0, :, :] + T[nx - 2, :, :] - 2.0 * T[nx - 1, :, :]) / (dx[nx - 1] ** 2)
+        correct = (T[nx - 2, :, :] - 3.0 * T[nx - 1, :, :]) / (dx[nx - 1] ** 2)
+        L_T = L_T.at[nx - 1, :, :].add(correct - incorrect)
+        b_source = b_source.at[nx - 1, :, :].add(2.0 * T_bc / (dx[nx - 1] ** 2))
+    elif bc.right["kind"] == "neumann":
+        dT_dn = bc.right["value"]
+        incorrect = (T[0, :, :] + T[nx - 2, :, :] - 2.0 * T[nx - 1, :, :]) / (dx[nx - 1] ** 2)
+        correct = (T[nx - 2, :, :] - T[nx - 1, :, :]) / (dx[nx - 1] ** 2)
+        L_T = L_T.at[nx - 1, :, :].add(correct - incorrect)
+        b_source = b_source.at[nx - 1, :, :].add(-dT_dn / dx[nx - 1])
+
+    # ------------------------------------------------------------------
+    # Y-direction faces  (axis 1)
+    # ------------------------------------------------------------------
+
+    # --- Bottom face (j = 0) ---
+    if bc.bottom["kind"] == "dirichlet":
+        T_bc = bc.bottom["value"]
+        incorrect = (T[:, ny - 1, :] + T[:, 1, :] - 2.0 * T[:, 0, :]) / (dy[0] ** 2)
+        correct = (T[:, 1, :] - 3.0 * T[:, 0, :]) / (dy[0] ** 2)
+        L_T = L_T.at[:, 0, :].add(correct - incorrect)
+        b_source = b_source.at[:, 0, :].add(2.0 * T_bc / (dy[0] ** 2))
+    elif bc.bottom["kind"] == "neumann":
+        dT_dn = bc.bottom["value"]
+        incorrect = (T[:, ny - 1, :] + T[:, 1, :] - 2.0 * T[:, 0, :]) / (dy[0] ** 2)
+        correct = (T[:, 1, :] - T[:, 0, :]) / (dy[0] ** 2)
+        L_T = L_T.at[:, 0, :].add(correct - incorrect)
+        b_source = b_source.at[:, 0, :].add(-dT_dn / dy[0])
+
+    # --- Top face (j = ny - 1) ---
+    if bc.top["kind"] == "dirichlet":
+        T_bc = bc.top["value"]
+        incorrect = (T[:, 0, :] + T[:, ny - 2, :] - 2.0 * T[:, ny - 1, :]) / (dy[ny - 1] ** 2)
+        correct = (T[:, ny - 2, :] - 3.0 * T[:, ny - 1, :]) / (dy[ny - 1] ** 2)
+        L_T = L_T.at[:, ny - 1, :].add(correct - incorrect)
+        b_source = b_source.at[:, ny - 1, :].add(2.0 * T_bc / (dy[ny - 1] ** 2))
+    elif bc.top["kind"] == "neumann":
+        dT_dn = bc.top["value"]
+        incorrect = (T[:, 0, :] + T[:, ny - 2, :] - 2.0 * T[:, ny - 1, :]) / (dy[ny - 1] ** 2)
+        correct = (T[:, ny - 2, :] - T[:, ny - 1, :]) / (dy[ny - 1] ** 2)
+        L_T = L_T.at[:, ny - 1, :].add(correct - incorrect)
+        b_source = b_source.at[:, ny - 1, :].add(-dT_dn / dy[ny - 1])
+
+    # ------------------------------------------------------------------
+    # Z-direction faces  (axis 2)
+    # ------------------------------------------------------------------
+
+    # --- Front face (k = 0) ---
+    if bc.front["kind"] == "dirichlet":
+        T_bc = bc.front["value"]
+        incorrect = (T[:, :, nz - 1] + T[:, :, 1] - 2.0 * T[:, :, 0]) / (dz[0] ** 2)
+        correct = (T[:, :, 1] - 3.0 * T[:, :, 0]) / (dz[0] ** 2)
+        L_T = L_T.at[:, :, 0].add(correct - incorrect)
+        b_source = b_source.at[:, :, 0].add(2.0 * T_bc / (dz[0] ** 2))
+    elif bc.front["kind"] == "neumann":
+        dT_dn = bc.front["value"]
+        incorrect = (T[:, :, nz - 1] + T[:, :, 1] - 2.0 * T[:, :, 0]) / (dz[0] ** 2)
+        correct = (T[:, :, 1] - T[:, :, 0]) / (dz[0] ** 2)
+        L_T = L_T.at[:, :, 0].add(correct - incorrect)
+        b_source = b_source.at[:, :, 0].add(-dT_dn / dz[0])
+
+    # --- Back face (k = nz - 1) ---
+    if bc.back["kind"] == "dirichlet":
+        T_bc = bc.back["value"]
+        incorrect = (T[:, :, 0] + T[:, :, nz - 2] - 2.0 * T[:, :, nz - 1]) / (dz[nz - 1] ** 2)
+        correct = (T[:, :, nz - 2] - 3.0 * T[:, :, nz - 1]) / (dz[nz - 1] ** 2)
+        L_T = L_T.at[:, :, nz - 1].add(correct - incorrect)
+        b_source = b_source.at[:, :, nz - 1].add(2.0 * T_bc / (dz[nz - 1] ** 2))
+    elif bc.back["kind"] == "neumann":
+        dT_dn = bc.back["value"]
+        incorrect = (T[:, :, 0] + T[:, :, nz - 2] - 2.0 * T[:, :, nz - 1]) / (dz[nz - 1] ** 2)
+        correct = (T[:, :, nz - 2] - T[:, :, nz - 1]) / (dz[nz - 1] ** 2)
+        L_T = L_T.at[:, :, nz - 1].add(correct - incorrect)
+        b_source = b_source.at[:, :, nz - 1].add(-dT_dn / dz[nz - 1])
 
     return L_T, b_source

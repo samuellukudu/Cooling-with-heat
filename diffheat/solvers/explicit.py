@@ -1,11 +1,12 @@
 # diffheat/solvers/explicit.py
-"""Explicit Euler time-stepping for 1D and 2D."""
+"""Explicit Euler time-stepping for 1D, 2D, and 3D."""
 import jax.numpy as jnp
 
 from typing import Callable, Optional
 
 from ..mesh.grid1d import Grid1D
 from ..mesh.grid2d import Grid2D
+from ..mesh.grid3d import Grid3D
 from ..operators.laplacian import make_laplacian
 from ..physics.heat1d import HeatEquation1D, apply_boundary_conditions
 
@@ -88,6 +89,34 @@ def explicit_euler_step_2d(
 
     Returns:
         (nx, ny) field at next timestep.
+    """
+    dstate_dt = rhs_fn(state, grid, t, params)
+    return state + dt * dstate_dt
+
+
+def explicit_euler_step_3d(
+    state: jnp.ndarray,
+    rhs_fn: Callable[[jnp.ndarray, Grid3D, float, Optional[dict]], jnp.ndarray],
+    grid: Grid3D,
+    t: float,
+    dt: float,
+    params: Optional[dict] = None,
+) -> jnp.ndarray:
+    """Single explicit Euler time step for an arbitrary 3D system.
+
+    state^{n+1} = state^n + dt * rhs_fn(state^n, grid, t, params)
+
+    Args:
+        state: (nx, ny, nz) field at current timestep.
+        rhs_fn: Right-hand side function.
+            Signature: rhs_fn(state, grid, t, params) -> dstate_dt
+        grid: The 3D grid.
+        t: Current time.
+        dt: Time step size.
+        params: Optional dict of parameters passed to rhs_fn.
+
+    Returns:
+        (nx, ny, nz) field at next timestep.
     """
     dstate_dt = rhs_fn(state, grid, t, params)
     return state + dt * dstate_dt

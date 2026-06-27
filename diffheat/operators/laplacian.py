@@ -1,9 +1,10 @@
 # diffheat/operators/laplacian.py
-"""Discrete Laplacian operators for 1D and 2D."""
+"""Discrete Laplacian operators for 1D, 2D, and 3D."""
 import jax.numpy as jnp
 
 from ..mesh.grid1d import Grid1D
 from ..mesh.grid2d import Grid2D
+from ..mesh.grid3d import Grid3D
 from ..utils import array
 
 
@@ -78,3 +79,44 @@ def laplacian_2d(T: jnp.ndarray, grid: Grid2D) -> jnp.ndarray:
     d2T_dy2 = (jnp.roll(T, -1, axis=1) + jnp.roll(T, 1, axis=1) - 2.0 * T) / dy2[jnp.newaxis, :]
 
     return d2T_dx2 + d2T_dy2
+
+
+def laplacian_3d(T: jnp.ndarray, grid: Grid3D) -> jnp.ndarray:
+    r"""Compute the 3D Laplacian :math:`\nabla^2 T`.
+
+    Uses centered finite differences with a 7-point stencil::
+
+        (T[i+1,j,k] + T[i-1,j,k] - 2T[i,j,k]) / dx^2
+      + (T[i,j+1,k] + T[i,j-1,k] - 2T[i,j,k]) / dy^2
+      + (T[i,j,k+1] + T[i,j,k-1] - 2T[i,j,k]) / dz^2
+
+    Uses ``jnp.roll`` — boundaries are implicitly periodic; correct them
+    with ``apply_boundary_conditions_3d``.
+
+    Args:
+        T: (nx, ny, nz) temperature field at cell centers.
+        grid: The 3D grid.
+
+    Returns:
+        (nx, ny, nz) Laplacian at cell centers.
+    """
+    dx2 = grid.dx * grid.dx  # (nx,)
+    dy2 = grid.dy * grid.dy  # (ny,)
+    dz2 = grid.dz * grid.dz  # (nz,)
+
+    # partial^2 T/partial x^2: roll along axis 0
+    d2T_dx2 = (
+        jnp.roll(T, -1, axis=0) + jnp.roll(T, 1, axis=0) - 2.0 * T
+    ) / dx2[:, jnp.newaxis, jnp.newaxis]
+
+    # partial^2 T/partial y^2: roll along axis 1
+    d2T_dy2 = (
+        jnp.roll(T, -1, axis=1) + jnp.roll(T, 1, axis=1) - 2.0 * T
+    ) / dy2[jnp.newaxis, :, jnp.newaxis]
+
+    # partial^2 T/partial z^2: roll along axis 2
+    d2T_dz2 = (
+        jnp.roll(T, -1, axis=2) + jnp.roll(T, 1, axis=2) - 2.0 * T
+    ) / dz2[jnp.newaxis, jnp.newaxis, :]
+
+    return d2T_dx2 + d2T_dy2 + d2T_dz2
