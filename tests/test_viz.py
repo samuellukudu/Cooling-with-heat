@@ -102,3 +102,72 @@ class TestViz2DDataFlow:
 
         widget.set_frame(100)
         assert widget.current_frame == 4
+
+
+class TestViz3DImports:
+    def test_can_import_heatmap3d(self):
+        """Heatmap3DWidget should be importable."""
+        from diffheat.viz.heatmap3d import Heatmap3DWidget
+        assert hasattr(Heatmap3DWidget, "set_data")
+
+    def test_can_import_viewer_window_3d(self):
+        """ViewerWindow3D should be importable from viz module."""
+        from diffheat.viz import ViewerWindow3D
+        assert hasattr(ViewerWindow3D, "set_data")
+
+    def test_run_viewer_3d_exists(self):
+        """run_viewer_3d function should be callable."""
+        from diffheat.viz import run_viewer_3d
+        assert callable(run_viewer_3d)
+
+
+class TestViz3DDataFlow:
+    def test_trajectory_to_numpy_conversion_3d(self):
+        """3D trajectory data should be convertible to numpy for Qt consumption."""
+        from diffheat.mesh import Grid3D
+        grid = Grid3D.uniform(Lx=1.0, Ly=1.0, Lz=1.0, nx=8, ny=6, nz=4)
+        trajectory = jnp.zeros((11, grid.nx, grid.ny, grid.nz))
+
+        traj_np = np.asarray(jnp.asarray(trajectory))
+        assert traj_np.shape == (11, grid.nx, grid.ny, grid.nz)
+        assert not isinstance(traj_np, type(trajectory))
+
+    def test_heatmap3d_widget_init(self):
+        """Heatmap3DWidget can be instantiated and set_data called (no display)."""
+        app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+        from diffheat.viz.heatmap3d import Heatmap3DWidget
+        from diffheat.mesh import Grid3D
+
+        widget = Heatmap3DWidget()
+        assert widget.trajectory is None
+
+        grid = Grid3D.uniform(Lx=1.0, Ly=1.0, Lz=1.0, nx=8, ny=6, nz=4)
+        trajectory = jnp.zeros((5, grid.nx, grid.ny, grid.nz))
+        widget.set_data(trajectory, grid, dt=0.01)
+
+        assert widget.trajectory is not None
+        assert widget.trajectory.shape == (5, grid.nx, grid.ny, grid.nz)
+        assert widget.times is not None
+        assert len(widget.times) == 5
+        assert widget.current_frame == 0
+
+    def test_heatmap3d_set_frame(self):
+        """set_frame should clamp to valid range without crashing."""
+        app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+        from diffheat.viz.heatmap3d import Heatmap3DWidget
+        from diffheat.mesh import Grid3D
+
+        widget = Heatmap3DWidget()
+        grid = Grid3D.uniform(Lx=1.0, Ly=1.0, Lz=1.0, nx=8, ny=6, nz=4)
+        trajectory = jnp.zeros((5, grid.nx, grid.ny, grid.nz))
+        widget.set_data(trajectory, grid, dt=0.01)
+
+        widget.set_frame(2)
+        assert widget.current_frame == 2
+
+        widget.set_frame(-5)
+        assert widget.current_frame == 0
+
+        widget.set_frame(100)
+        assert widget.current_frame == 4
+

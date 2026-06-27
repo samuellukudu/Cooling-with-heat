@@ -6,13 +6,24 @@ The core library remains headless and works without these dependencies.
 """
 from .heatmap1d import HeatmapWidget
 from .heatmap2d import Heatmap2DWidget
-from .window import ViewerWindow, ViewerWindow2D, run_viewer, run_viewer_2d
+from .heatmap3d import Heatmap3DWidget
+from .window import (
+    ViewerWindow,
+    ViewerWindow2D,
+    ViewerWindow3D,
+    run_viewer,
+    run_viewer_2d,
+    run_viewer_3d,
+)
 
 __all__ = [
     "HeatmapWidget",
     "Heatmap2DWidget",
+    "Heatmap3DWidget",
     "ViewerWindow",
     "ViewerWindow2D",
+    "ViewerWindow3D",
     "run_viewer",
     "run_viewer_2d",
+    "run_viewer_3d",
 ]
