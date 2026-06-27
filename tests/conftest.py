@@ -7,6 +7,10 @@ regardless of whether the ROS setup script has been sourced.
 """
 
 import pytest
+import jax
+
+# Enable float64 for JAX to prevent numerical precision issues during CPU tests
+jax.config.update("jax_enable_x64", True)
 
 _ROS_PLUGINS = (
     "ament_copyright",
