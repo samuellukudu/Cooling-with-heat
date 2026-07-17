@@ -8,6 +8,7 @@ from .boundary import (
     apply_boundary_conditions_2d,
     apply_boundary_conditions_3d,
 )
+from .circular import PolarGrid
 from .grid1d import Grid1D
 from .grid2d import Grid2D
 from .grid3d import Grid3D
@@ -16,6 +17,7 @@ __all__ = [
     "Grid1D",
     "Grid2D",
     "Grid3D",
+    "PolarGrid",
     "BoundaryCondition",
     "BoundaryCondition2D",
     "BoundaryCondition3D",

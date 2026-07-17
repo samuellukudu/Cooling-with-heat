@@ -10,14 +10,14 @@ import jax.numpy as jnp
 from ..mesh.grid1d import Grid1D
 from ..mesh.grid2d import Grid2D
 from ..mesh.grid3d import Grid3D
-from ..physics.heat1d import HeatEquation1D
+from ..physics import HeatEquation1D, HeatEquation2D, HeatEquation3D
 from .explicit import (
     explicit_euler_step,
     explicit_euler_step_1d,
     explicit_euler_step_2d,
     explicit_euler_step_3d,
 )
-from .stability import check_cfl
+from .stability import check_cfl, check_cfl_2d, check_cfl_3d
 
 _logger = logging.getLogger(__name__)
 
@@ -252,3 +252,119 @@ def solve_3d(
         [initial_state[jnp.newaxis, :, :, :], traj], axis=0
     )
     return trajectory
+
+
+def solve_heat_2d(
+    eqn: HeatEquation2D,
+    T0: jnp.ndarray,
+    t_span: tuple[float, float],
+    dt: float,
+) -> jnp.ndarray:
+    """Solve the 2D heat equation using explicit Euler with jax.lax.scan.
+
+    The entire solve is JIT-compiled and differentiable. Gradients flow
+    through the full trajectory.
+
+    Args:
+        eqn: Heat equation problem definition.
+        T0: (nx, ny) initial temperature field.
+        t_span: (t_start, t_end) simulation time range.
+        dt: Time step size.
+
+    Returns:
+        (n_steps+1, nx, ny) temperature trajectory. First frame is T0.
+    """
+    t0, t_end = t_span
+    n_steps = int((t_end - t0) / dt)
+
+    if n_steps < 1:
+        raise ValueError(f"t_span too short for dt={dt}: {t_span}")
+
+    # CFL check
+    try:
+        if not check_cfl_2d(eqn.grid, eqn.alpha, dt):
+            dx_min = float(jnp.min(eqn.grid.dx))
+            dy_min = float(jnp.min(eqn.grid.dy))
+            cfl_limit = min(dx_min**2, dy_min**2) / (
+                4.0 * float(jnp.max(jnp.asarray(eqn.alpha)))
+            )
+            _logger.warning(
+                f"dt={dt:.2e} exceeds 2D CFL limit {cfl_limit:.2e}. "
+                f"Solution may be unstable."
+            )
+    except jax.errors.ConcretizationTypeError:
+        pass
+
+    from ..mesh.boundary import apply_boundary_conditions_2d
+    from ..operators import laplacian_2d
+
+    def rhs_fn(T, grid, t, params):
+        L_T, b_source = apply_boundary_conditions_2d(
+            lambda x: laplacian_2d(x, grid), grid, eqn.bc, T
+        )
+        dT_dt = eqn.alpha * (L_T + b_source)
+        if eqn.source is not None:
+            dT_dt = dT_dt + eqn.source(grid.X.T, grid.Y.T, t)
+        return dT_dt
+
+    return solve_2d(rhs_fn, T0, eqn.grid, t_span, dt)
+
+
+def solve_heat_3d(
+    eqn: HeatEquation3D,
+    T0: jnp.ndarray,
+    t_span: tuple[float, float],
+    dt: float,
+    save_every: int = 1,
+) -> jnp.ndarray:
+    """Solve the 3D heat equation using explicit Euler with jax.lax.scan.
+
+    The entire solve is JIT-compiled and differentiable. Gradients flow
+    through the full trajectory.
+
+    Args:
+        eqn: Heat equation problem definition.
+        T0: (nx, ny, nz) initial temperature field.
+        t_span: (t_start, t_end) simulation time range.
+        dt: Time step size.
+        save_every: Save a frame every this many steps.
+
+    Returns:
+        (n_saved+1, nx, ny, nz) temperature trajectory. First frame is T0.
+    """
+    t0, t_end = t_span
+    n_steps = int((t_end - t0) / dt)
+
+    if n_steps < 1:
+        raise ValueError(f"t_span too short for dt={dt}: {t_span}")
+
+    # CFL check
+    try:
+        if not check_cfl_3d(eqn.grid, eqn.alpha, dt):
+            dx_min = float(jnp.min(eqn.grid.dx))
+            dy_min = float(jnp.min(eqn.grid.dy))
+            dz_min = float(jnp.min(eqn.grid.dz))
+            cfl_limit = min(dx_min**2, dy_min**2, dz_min**2) / (
+                6.0 * float(jnp.max(jnp.asarray(eqn.alpha)))
+            )
+            _logger.warning(
+                f"dt={dt:.2e} exceeds 3D CFL limit {cfl_limit:.2e}. "
+                f"Solution may be unstable."
+            )
+    except jax.errors.ConcretizationTypeError:
+        pass
+
+    from ..mesh.boundary import apply_boundary_conditions_3d
+    from ..operators.laplacian import laplacian_3d
+
+    def rhs_fn(T, grid, t, params):
+        L_T, b_source = apply_boundary_conditions_3d(
+            lambda x: laplacian_3d(x, grid), grid, eqn.bc, T
+        )
+        dT_dt = eqn.alpha * (L_T + b_source)
+        if eqn.source is not None:
+            dT_dt = dT_dt + eqn.source(grid.X, grid.Y, grid.Z, t)
+        return dT_dt
+
+    return solve_3d(rhs_fn, T0, eqn.grid, t_span, dt, save_every=save_every)
+
