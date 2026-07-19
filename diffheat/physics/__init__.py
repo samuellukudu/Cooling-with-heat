@@ -1,6 +1,11 @@
 # diffheat/physics/__init__.py
 """Physical problem definitions."""
 from ..operators.laplacian import make_laplacian
+from .advection_diffusion import (
+    AdvectionDiffusion1D,
+    AdvectionDiffusion2D,
+    AdvectionDiffusion3D,
+)
 from .bessel import (
     bessel_j_zero,
     eigenfunction_disc,
@@ -14,6 +19,9 @@ from .wave import WaveEquation1D, WaveEquation2D, WaveEquation3D
 from .telegrapher import TelegrapherEquation1D, TelegrapherEquation2D, TelegrapherEquation3D
 
 __all__ = [
+    "AdvectionDiffusion1D",
+    "AdvectionDiffusion2D",
+    "AdvectionDiffusion3D",
     "HeatEquation1D",
     "HeatEquation2D",
     "HeatEquation3D",

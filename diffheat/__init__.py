@@ -15,6 +15,8 @@ from .mesh import (
 )
 from .operators import (
     advection_1d,
+    advection_2d,
+    advection_3d,
     divergence_2d,
     divergence_3d,
     gradient_1d,
@@ -35,6 +37,9 @@ from .analysis import (
     compute_nodal_lines_disc,
 )
 from .physics import (
+    AdvectionDiffusion1D,
+    AdvectionDiffusion2D,
+    AdvectionDiffusion3D,
     HeatEquation1D,
     HeatEquation2D,
     HeatEquation3D,
@@ -122,6 +127,8 @@ __all__ = [
     "PolarGrid",
     # Operators — 1D
     "advection_1d",
+    "advection_2d",
+    "advection_3d",
     "make_laplacian",
     "laplacian_1d",
     "gradient_1d",
@@ -136,6 +143,10 @@ __all__ = [
     "gradient_y3d",
     "gradient_z3d",
     "divergence_3d",
+    # Physics — Advection-Diffusion
+    "AdvectionDiffusion1D",
+    "AdvectionDiffusion2D",
+    "AdvectionDiffusion3D",
     # Physics — Heat
     "HeatEquation1D",
     "HeatEquation2D",
