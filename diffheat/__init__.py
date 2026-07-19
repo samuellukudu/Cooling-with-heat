@@ -14,6 +14,7 @@ from .mesh import (
     apply_boundary_conditions_3d,
 )
 from .operators import (
+    advection_1d,
     divergence_2d,
     divergence_3d,
     gradient_1d,
@@ -114,6 +115,7 @@ __all__ = [
     # Mesh — Polar
     "PolarGrid",
     # Operators — 1D
+    "advection_1d",
     "make_laplacian",
     "laplacian_1d",
     "gradient_1d",
