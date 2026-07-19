@@ -1,6 +1,6 @@
 # diffheat/operators/__init__.py
 """Discrete differential operators for finite difference PDEs."""
-from .advection import advection_1d
+from .advection import advection_1d, advection_2d, advection_3d
 from .divergence import divergence_2d, divergence_3d
 from .gradient import (
     gradient_1d,
@@ -30,4 +30,6 @@ __all__ = [
     "divergence_2d",
     "divergence_3d",
     "advection_1d",
+    "advection_2d",
+    "advection_3d",
 ]
