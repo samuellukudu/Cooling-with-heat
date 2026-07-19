@@ -49,6 +49,11 @@ from .steady_state import (
     solve_steady_state_3d,
 )
 from .wave import solve_wave_1d, solve_wave_2d, solve_wave_3d
+from .advection_diffusion import (
+    solve_advection_diffusion_1d,
+    solve_advection_diffusion_2d,
+    solve_advection_diffusion_3d,
+)
 from .polar import (
     solve_heat_disc_analytical,
     solve_steady_state_disc,
@@ -99,6 +104,9 @@ __all__ = [
     "find_first_eigenvalue_1d",
     "find_first_eigenvalue_2d",
     "find_first_eigenvalue_3d",
+    "solve_advection_diffusion_1d",
+    "solve_advection_diffusion_2d",
+    "solve_advection_diffusion_3d",
     "solve_heat_disc_analytical",
     "solve_steady_state_disc",
     "solve_steady_state_cylinder_3d",

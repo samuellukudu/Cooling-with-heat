@@ -31,9 +31,9 @@ class Grid3D:
         nx: number of cells in x
         ny: number of cells in y
         nz: number of cells in z
-        X: (nz, ny, nx) 3D meshgrid of x-coordinates at cell centers
-        Y: (nz, ny, nx) 3D meshgrid of y-coordinates at cell centers
-        Z: (nz, ny, nx) 3D meshgrid of z-coordinates at cell centers
+        X: (nx, ny, nz) 3D meshgrid of x-coordinates at cell centers
+        Y: (nx, ny, nz) 3D meshgrid of y-coordinates at cell centers
+        Z: (nx, ny, nz) 3D meshgrid of z-coordinates at cell centers
     """
     x: jnp.ndarray
     y: jnp.ndarray
