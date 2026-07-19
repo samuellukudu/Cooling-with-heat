@@ -99,3 +99,77 @@ class TestAdvection1D:
         grad = jax.grad(sum_sq_adv)(T)
         assert grad.shape == T.shape
         assert not jnp.allclose(grad, 0.0)  # gradient should be non-zero
+
+
+class TestAdvection2D:
+    @pytest.fixture
+    def grid_2d(self):
+        """40x30 grid on [0,2]x[0,1]."""
+        from diffheat.mesh import Grid2D
+        return Grid2D.uniform(Lx=2.0, Ly=1.0, nx=40, ny=30)
+
+    def test_returns_correct_shape(self, grid_2d):
+        from diffheat.operators.advection import advection_2d
+        T = jnp.ones((grid_2d.nx, grid_2d.ny))
+        u_x = jnp.zeros_like(T)
+        u_y = jnp.zeros_like(T)
+        result = advection_2d(T, u_x, u_y, grid_2d.dx, grid_2d.dy)
+        assert result.shape == (grid_2d.nx, grid_2d.ny)
+
+    def test_zero_velocity_returns_zero(self, grid_2d):
+        from diffheat.operators.advection import advection_2d
+        T = jnp.sin(jnp.pi * jnp.arange(grid_2d.nx)[:, None] / grid_2d.nx)
+        u_x = jnp.zeros_like(T)
+        u_y = jnp.zeros_like(T)
+        result = advection_2d(T, u_x, u_y, grid_2d.dx, grid_2d.dy)
+        assert jnp.allclose(result, 0.0)
+
+    def test_uniform_x_flow(self, grid_2d):
+        """With u_x > 0, u_y = 0: result should match 1D advection row-by-row."""
+        from diffheat.operators.advection import advection_2d
+
+        # T varies only in x: T = a * x
+        a = 2.0
+        T = a * grid_2d.x_centers[:, None] * jnp.ones(grid_2d.ny)[None, :]
+        u_x = jnp.full_like(T, 1.5)
+        u_y = jnp.zeros_like(T)
+        dx = float(jnp.mean(grid_2d.dx))
+
+        result = advection_2d(T, u_x, u_y, grid_2d.dx, grid_2d.dy)
+        expected = -1.5 * a  # -u_x * dT/dx
+        # interior x, all y
+        assert jnp.allclose(result[1:-1, :], expected, atol=0.15)
+
+    def test_uniform_y_flow(self, grid_2d):
+        """With u_x = 0, u_y > 0: advection acts only in y."""
+        from diffheat.operators.advection import advection_2d
+
+        # T varies only in y: T = b * y
+        b = 2.0
+        T = b * jnp.ones(grid_2d.nx)[:, None] * grid_2d.y_centers[None, :]
+        u_x = jnp.zeros_like(T)
+        u_y = jnp.full_like(T, 3.0)
+        dy = float(jnp.mean(grid_2d.dy))
+
+        result = advection_2d(T, u_x, u_y, grid_2d.dx, grid_2d.dy)
+        expected = -3.0 * b
+        # all x, interior y
+        assert jnp.allclose(result[:, 1:-1], expected, atol=0.15)
+
+    def test_is_jax_differentiable(self, grid_2d):
+        from diffheat.operators.advection import advection_2d
+
+        # Use a full 2D field and sum of squares to avoid telescoping cancellation
+        X = grid_2d.x_centers[None, :]  # (1, nx), broadcast
+        Y = grid_2d.y_centers[:, None]  # (ny, 1), broadcast
+        T = jnp.sin(jnp.pi * X.T / grid_2d.Lx) * jnp.cos(jnp.pi * Y.T / grid_2d.Ly)
+        u_x = jnp.ones_like(T)
+        u_y = jnp.zeros_like(T)
+
+        def sum_sq_adv(T):
+            adv = advection_2d(T, u_x, u_y, grid_2d.dx, grid_2d.dy)
+            return jnp.sum(adv ** 2)
+
+        grad = jax.grad(sum_sq_adv)(T)
+        assert grad.shape == T.shape
+        assert not jnp.allclose(grad, 0.0)
