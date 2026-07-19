@@ -97,3 +97,92 @@ class TestCFLAdvectionDiffusion3D:
         alpha = 0.01
         dt = 0.0001
         assert check_cfl_advection_diffusion_3d(grid, alpha, 0.0, 0.0, 0.0, dt) == check_cfl_3d(grid, alpha, dt)
+
+
+class TestAdvectionDiffusionPhysics:
+    def test_1d_creation(self):
+        from diffheat.physics.advection_diffusion import AdvectionDiffusion1D
+        from diffheat.mesh import Grid1D, BoundaryCondition
+        import jax.numpy as jnp
+
+        grid = Grid1D.uniform(length=1.0, n_cells=50)
+        bc = BoundaryCondition(kind="dirichlet", value=jnp.array([100.0, 0.0]))
+
+        def velocity(x, t):
+            return jnp.ones_like(x)
+
+        eqn = AdvectionDiffusion1D(grid=grid, bc=bc, alpha=0.01, velocity=velocity)
+        assert eqn.alpha == 0.01
+        assert eqn.grid is grid
+        assert eqn.source is None
+
+    def test_1d_negative_alpha_raises(self):
+        from diffheat.physics.advection_diffusion import AdvectionDiffusion1D
+        from diffheat.mesh import Grid1D, BoundaryCondition
+        import jax.numpy as jnp
+
+        grid = Grid1D.uniform(length=1.0, n_cells=50)
+        bc = BoundaryCondition(kind="dirichlet", value=jnp.array([100.0, 0.0]))
+
+        def velocity(x, t):
+            return jnp.ones_like(x)
+
+        with pytest.raises(ValueError, match="alpha must be positive"):
+            AdvectionDiffusion1D(grid=grid, bc=bc, alpha=-0.01, velocity=velocity)
+
+    def test_1d_with_source(self):
+        from diffheat.physics.advection_diffusion import AdvectionDiffusion1D
+        from diffheat.mesh import Grid1D, BoundaryCondition
+        import jax.numpy as jnp
+
+        grid = Grid1D.uniform(length=1.0, n_cells=50)
+        bc = BoundaryCondition(kind="dirichlet", value=jnp.array([100.0, 0.0]))
+
+        def velocity(x, t):
+            return jnp.ones_like(x)
+
+        def source(x, t):
+            return jnp.exp(-((x - 0.5) ** 2) / 0.01)
+
+        eqn = AdvectionDiffusion1D(grid=grid, bc=bc, alpha=0.01, velocity=velocity, source=source)
+        assert eqn.source is not None
+
+    def test_2d_creation(self):
+        from diffheat.physics.advection_diffusion import AdvectionDiffusion2D
+        from diffheat.mesh import Grid2D, BoundaryCondition2D
+        import jax.numpy as jnp
+
+        grid = Grid2D.uniform(Lx=1.0, Ly=1.0, nx=40, ny=40)
+        bc = BoundaryCondition2D(
+            left={"kind": "dirichlet", "value": 1.0},
+            right={"kind": "dirichlet", "value": 0.0},
+            bottom={"kind": "neumann", "value": 0.0},
+            top={"kind": "neumann", "value": 0.0},
+        )
+
+        def velocity(X, Y, t):
+            return jnp.ones_like(X), jnp.zeros_like(Y)
+
+        eqn = AdvectionDiffusion2D(grid=grid, bc=bc, alpha=0.01, velocity=velocity)
+        assert eqn.alpha == 0.01
+
+    def test_3d_creation(self):
+        from diffheat.physics.advection_diffusion import AdvectionDiffusion3D
+        from diffheat.mesh import Grid3D, BoundaryCondition3D
+        import jax.numpy as jnp
+
+        grid = Grid3D.uniform(Lx=1.0, Ly=1.0, Lz=1.0, nx=20, ny=20, nz=20)
+        bc = BoundaryCondition3D(
+            left={"kind": "dirichlet", "value": 1.0},
+            right={"kind": "dirichlet", "value": 0.0},
+            bottom={"kind": "neumann", "value": 0.0},
+            top={"kind": "neumann", "value": 0.0},
+            front={"kind": "neumann", "value": 0.0},
+            back={"kind": "neumann", "value": 0.0},
+        )
+
+        def velocity(X, Y, Z, t):
+            return jnp.ones_like(X), jnp.zeros_like(Y), jnp.zeros_like(Z)
+
+        eqn = AdvectionDiffusion3D(grid=grid, bc=bc, alpha=0.01, velocity=velocity)
+        assert eqn.alpha == 0.01
