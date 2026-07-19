@@ -39,6 +39,9 @@ from .stability import (
     check_cfl_telegrapher_1d,
     check_cfl_telegrapher_2d,
     check_cfl_telegrapher_3d,
+    check_cfl_advection_diffusion_1d,
+    check_cfl_advection_diffusion_2d,
+    check_cfl_advection_diffusion_3d,
 )
 from .steady_state import (
     solve_steady_state_1d,
@@ -79,6 +82,9 @@ __all__ = [
     "check_cfl_telegrapher_1d",
     "check_cfl_telegrapher_2d",
     "check_cfl_telegrapher_3d",
+    "check_cfl_advection_diffusion_1d",
+    "check_cfl_advection_diffusion_2d",
+    "check_cfl_advection_diffusion_3d",
     "solve_steady_state_1d",
     "solve_steady_state_2d",
     "solve_steady_state_3d",

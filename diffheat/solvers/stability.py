@@ -180,3 +180,108 @@ def check_cfl_telegrapher_3d(
     c = jnp.sqrt(jnp.asarray(alpha) / jnp.asarray(tau))
     return check_cfl_wave_3d(grid, c, dt)
 
+
+# ---------------------------------------------------------------------------
+# Advection-diffusion CFL conditions
+# ---------------------------------------------------------------------------
+
+def check_cfl_advection_diffusion_1d(
+    grid: Grid1D, alpha: float | jnp.ndarray, u_max: float, dt: float
+) -> bool:
+    """Check if dt satisfies the combined advection-diffusion CFL condition.
+
+    dt <= min(dx^2 / (2*alpha), dx / |u|_max)
+
+    Args:
+        grid: The 1D spatial grid.
+        alpha: Thermal diffusivity.
+        u_max: Maximum absolute velocity |u|_max.
+        dt: Time step size.
+
+    Returns:
+        True if stable, False otherwise.
+    """
+    alpha_max = float(jnp.max(jnp.asarray(alpha)))
+    dx_min = float(jnp.min(grid.dx))
+
+    dt_diff = dx_min ** 2 / (2.0 * alpha_max) if alpha_max > 0 else float("inf")
+    dt_adv = dx_min / u_max if u_max > 0 else float("inf")
+    dt_max = min(dt_diff, dt_adv)
+    return bool(dt <= dt_max)
+
+
+def check_cfl_advection_diffusion_2d(
+    grid: Grid2D,
+    alpha: float | jnp.ndarray,
+    u_x_max: float,
+    u_y_max: float,
+    dt: float,
+) -> bool:
+    """Check if dt satisfies the combined 2D advection-diffusion CFL condition.
+
+    dt <= min(min(dx^2, dy^2) / (4*alpha), 1 / (|u_x|_max/dx + |u_y|_max/dy))
+
+    Args:
+        grid: The 2D spatial grid.
+        alpha: Thermal diffusivity.
+        u_x_max: Maximum absolute x-velocity.
+        u_y_max: Maximum absolute y-velocity.
+        dt: Time step size.
+
+    Returns:
+        True if stable, False otherwise.
+    """
+    alpha_max = float(jnp.max(jnp.asarray(alpha)))
+    dx_min = float(jnp.min(grid.dx))
+    dy_min = float(jnp.min(grid.dy))
+
+    dt_diff = min(dx_min**2, dy_min**2) / (4.0 * alpha_max) if alpha_max > 0 else float("inf")
+
+    if u_x_max > 0 or u_y_max > 0:
+        dt_adv = 1.0 / (u_x_max / dx_min + u_y_max / dy_min)
+    else:
+        dt_adv = float("inf")
+
+    dt_max = min(dt_diff, dt_adv)
+    return bool(dt <= dt_max)
+
+
+def check_cfl_advection_diffusion_3d(
+    grid: Grid3D,
+    alpha: float | jnp.ndarray,
+    u_x_max: float,
+    u_y_max: float,
+    u_z_max: float,
+    dt: float,
+) -> bool:
+    """Check if dt satisfies the combined 3D advection-diffusion CFL condition.
+
+    dt <= min(min(dx^2, dy^2, dz^2) / (6*alpha),
+              1 / (|u_x|_max/dx + |u_y|_max/dy + |u_z|_max/dz))
+
+    Args:
+        grid: The 3D spatial grid.
+        alpha: Thermal diffusivity.
+        u_x_max: Maximum absolute x-velocity.
+        u_y_max: Maximum absolute y-velocity.
+        u_z_max: Maximum absolute z-velocity.
+        dt: Time step size.
+
+    Returns:
+        True if stable, False otherwise.
+    """
+    alpha_max = float(jnp.max(jnp.asarray(alpha)))
+    dx_min = float(jnp.min(grid.dx))
+    dy_min = float(jnp.min(grid.dy))
+    dz_min = float(jnp.min(grid.dz))
+
+    dt_diff = min(dx_min**2, dy_min**2, dz_min**2) / (6.0 * alpha_max) if alpha_max > 0 else float("inf")
+
+    if u_x_max > 0 or u_y_max > 0 or u_z_max > 0:
+        dt_adv = 1.0 / (u_x_max / dx_min + u_y_max / dy_min + u_z_max / dz_min)
+    else:
+        dt_adv = float("inf")
+
+    dt_max = min(dt_diff, dt_adv)
+    return bool(dt <= dt_max)
+
