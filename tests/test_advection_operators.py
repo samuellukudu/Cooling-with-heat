@@ -173,3 +173,56 @@ class TestAdvection2D:
         grad = jax.grad(sum_sq_adv)(T)
         assert grad.shape == T.shape
         assert not jnp.allclose(grad, 0.0)
+
+
+class TestAdvection3D:
+    @pytest.fixture
+    def grid_3d(self):
+        """20x15x10 grid on [1,1,1]."""
+        from diffheat.mesh import Grid3D
+        return Grid3D.uniform(Lx=1.0, Ly=1.0, Lz=1.0, nx=20, ny=15, nz=10)
+
+    def test_returns_correct_shape(self, grid_3d):
+        from diffheat.operators.advection import advection_3d
+        T = jnp.ones((grid_3d.nx, grid_3d.ny, grid_3d.nz))
+        u_x = jnp.zeros_like(T)
+        u_y = jnp.zeros_like(T)
+        u_z = jnp.zeros_like(T)
+        result = advection_3d(T, u_x, u_y, u_z, grid_3d.dx, grid_3d.dy, grid_3d.dz)
+        assert result.shape == (grid_3d.nx, grid_3d.ny, grid_3d.nz)
+
+    def test_zero_velocity_returns_zero(self, grid_3d):
+        from diffheat.operators.advection import advection_3d
+        T = jnp.ones((grid_3d.nx, grid_3d.ny, grid_3d.nz))
+        u_x = jnp.zeros_like(T)
+        u_y = jnp.zeros_like(T)
+        u_z = jnp.zeros_like(T)
+        result = advection_3d(T, u_x, u_y, u_z, grid_3d.dx, grid_3d.dy, grid_3d.dz)
+        assert jnp.allclose(result, 0.0)
+
+    def test_uniform_x_flow(self, grid_3d):
+        """With u_x > 0, u_y = u_z = 0: result matches 1D per y-z slice."""
+        from diffheat.operators.advection import advection_3d
+
+        a = 2.0
+        T = a * grid_3d.x_centers[:, None, None] * jnp.ones((1, grid_3d.ny, grid_3d.nz))
+        u_x = jnp.full_like(T, 1.5)
+        u_y = jnp.zeros_like(T)
+        u_z = jnp.zeros_like(T)
+
+        result = advection_3d(T, u_x, u_y, u_z, grid_3d.dx, grid_3d.dy, grid_3d.dz)
+        expected = -1.5 * a
+        assert jnp.allclose(result[1:-1, :, :], expected, atol=0.15)
+
+    def test_is_jax_differentiable(self, grid_3d):
+        from diffheat.operators.advection import advection_3d
+        T = jnp.ones((grid_3d.nx, grid_3d.ny, grid_3d.nz))
+        u_x = jnp.ones_like(T)
+        u_y = jnp.zeros_like(T)
+        u_z = jnp.zeros_like(T)
+
+        def sum_adv(T):
+            return jnp.sum(advection_3d(T, u_x, u_y, u_z, grid_3d.dx, grid_3d.dy, grid_3d.dz))
+
+        grad = jax.grad(sum_adv)(T)
+        assert grad.shape == T.shape

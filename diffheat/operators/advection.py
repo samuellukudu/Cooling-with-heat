@@ -68,3 +68,55 @@ def advection_2d(
     adv_y = -u_y * jnp.where(u_y > 0, backward_diff_y, forward_diff_y)
 
     return adv_x + adv_y
+
+
+def advection_3d(
+    T: jnp.ndarray,
+    u_x: jnp.ndarray,
+    u_y: jnp.ndarray,
+    u_z: jnp.ndarray,
+    dx: float | jnp.ndarray,
+    dy: float | jnp.ndarray,
+    dz: float | jnp.ndarray,
+) -> jnp.ndarray:
+    """Compute -(u_x*dT/dx + u_y*dT/dy + u_z*dT/dz) using first-order upwind.
+
+    Upwinding is applied independently in x, y, and z.
+
+    Args:
+        T: (nx, ny, nz) temperature field at cell centers.
+        u_x: (nx, ny, nz) x-velocity field.
+        u_y: (nx, ny, nz) y-velocity field.
+        u_z: (nx, ny, nz) z-velocity field.
+        dx: x cell width. Scalar or (nx,) array.
+        dy: y cell width. Scalar or (ny,) array.
+        dz: z cell width. Scalar or (nz,) array.
+
+    Returns:
+        (nx, ny, nz) advection term at cell centers.
+    """
+    # --- x-direction upwind ---
+    _dx = dx[:, jnp.newaxis, jnp.newaxis] if isinstance(dx, jnp.ndarray) and dx.ndim >= 1 else dx
+    T_forward_x = jnp.roll(T, -1, axis=0)
+    T_backward_x = jnp.roll(T, 1, axis=0)
+    forward_diff_x = (T_forward_x - T) / _dx
+    backward_diff_x = (T - T_backward_x) / _dx
+    adv_x = -u_x * jnp.where(u_x > 0, backward_diff_x, forward_diff_x)
+
+    # --- y-direction upwind ---
+    _dy = dy[jnp.newaxis, :, jnp.newaxis] if isinstance(dy, jnp.ndarray) and dy.ndim >= 1 else dy
+    T_forward_y = jnp.roll(T, -1, axis=1)
+    T_backward_y = jnp.roll(T, 1, axis=1)
+    forward_diff_y = (T_forward_y - T) / _dy
+    backward_diff_y = (T - T_backward_y) / _dy
+    adv_y = -u_y * jnp.where(u_y > 0, backward_diff_y, forward_diff_y)
+
+    # --- z-direction upwind ---
+    _dz = dz[jnp.newaxis, jnp.newaxis, :] if isinstance(dz, jnp.ndarray) and dz.ndim >= 1 else dz
+    T_forward_z = jnp.roll(T, -1, axis=2)
+    T_backward_z = jnp.roll(T, 1, axis=2)
+    forward_diff_z = (T_forward_z - T) / _dz
+    backward_diff_z = (T - T_backward_z) / _dz
+    adv_z = -u_z * jnp.where(u_z > 0, backward_diff_z, forward_diff_z)
+
+    return adv_x + adv_y + adv_z
