@@ -6,7 +6,8 @@ ML pipeline for heat-driven cooling adsorbent discovery — see
 Layout (stages fill in progressively):
 
 ```
-data/       dataset builders: mp_export.py (Stage 0), isotherms.py, fit_da.py
+data/       dataset builders: mp_export.py (Stage 0); isotherms.py, fit_da.py
+            -> see data/ACQUISITION.md for the concrete external-data plan
 features/   matminer/mofdscribe featurization wrappers -> numpy        (Stage 1)
 models/     sklearn baseline; equinox crystal-graph GNN               (Stages 1-2)
 training/   optax training loop, optuna HPO, experiment tracking      (Stage 2)

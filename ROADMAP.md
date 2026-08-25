@@ -128,7 +128,9 @@ rather than maintaining a second venv.
 
 ## Open Decisions
 
-- [ ] First L1 dataset: CoRE-MOF-based computed set vs ISODB experimental curves?
+- [x] Which L1 dataset first? → **Resolved**: NIST ISODB water isotherms +
+      CoRE MOF + QMOF + IZA/anchors, in that order — concrete plan in
+      [`adsorbent-ml/data/ACQUISITION.md`](adsorbent-ml/data/ACQUISITION.md).
 - [ ] GPU availability for Stage 2+ (Stages 0–1 run fine on CPU)?
 - [ ] Port `cooling_physics.py` to JAX early (gradient diagnostics) or wait for Stage 3?
 - [ ] Parametric framework generator (GeoField-style family) early vs database-screening-first?
