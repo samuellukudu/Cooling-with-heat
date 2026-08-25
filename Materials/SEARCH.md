@@ -1,3 +1,19 @@
+> **Status (2026-08).** All four strategies below have since been decided or
+> built — this document is kept as the strategic rationale:
+>
+> 1. **Multi-Objective Pareto Optimization** — ✅ implemented
+>    (`pareto_optim.py`, `cooling_physics.pareto_target_window`); application
+>    profiles now derive their target windows from Pareto sweeps.
+> 2. **Global Sensitivity Analysis** — ✅ implemented
+>    (`sensitivity_analysis.py`: local elasticity + Monte-Carlo SRC).
+> 3. **Closed-Loop Active Learning** — 📋 planned as Stage 3 of the ML
+>    roadmap (uncertainty-driven shortlisting, GNN surrogate).
+> 4. **Inverse Design (Generative AI)** — ⏸ deliberately deferred until a
+>    validated forward surrogate exists; see [`INVERSE_DESIGN.md`](INVERSE_DESIGN.md)
+>    and the GeoField lessons in [`../ROADMAP.md`](../ROADMAP.md).
+>
+> The ML roadmap itself lives in [`../ROADMAP.md`](../ROADMAP.md).
+
 Moving beyond static, human-defined heuristics (like "density must be between 1.2 and 1.6") is where Materials Informatics (MI) becomes a true predictive science. 
 
 Instead of guessing the optimal physical and chemical properties, we can use specific informatics frameworks to **discover** them. In the context of "cooling with heat," we are trying to optimize the relationship between a material’s microscopic properties (like pore structure and binding energy) and the macroscopic HVAC system performance (like Coefficient of Performance, or COP).
@@ -44,6 +60,11 @@ Traditional screening is "forward design": we search a database of known materia
 ---
 
 ### Decomposing the Next Step
+
+> **Resolved (2026-08):** both options were built — Option A as
+> [`sensitivity_analysis.py`](sensitivity_analysis.py) and Option B as
+> [`pareto_optim.py`](pareto_optim.py). The next step after them is the ML
+> pivot: see [`../ROADMAP.md`](../ROADMAP.md).
 
 To make these concepts concrete, we can implement one of these optimization strategies in Python. 
 

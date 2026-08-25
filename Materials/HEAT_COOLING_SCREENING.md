@@ -1,5 +1,14 @@
 # Heat-Driven Cooling Materials Screening
 
+> **Role update (2026-08).** The project now focuses on **training ML
+> surrogates** for adsorption-property prediction (see [`../ROADMAP.md`](../ROADMAP.md)).
+> This script and its documentation remain valid, but their role has shifted:
+> the MP query layer here is becoming a **one-time data-export tool**
+> (query once → cache structures + metadata → train many times), and the
+> heuristic proxy scorer (`estimate_adsorption_properties`) survives only as
+> an L0 label source for pipeline smoke tests — never as scientific ground
+> truth.
+
 This project is searching for materials that can use heat to create cooling. The most practical first mechanism is an adsorption cooling cycle: a porous solid adsorbs a natural refrigerant such as water at low temperature, then waste heat regenerates the material by desorbing the refrigerant.
 
 ## Application Profiles

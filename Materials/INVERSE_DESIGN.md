@@ -1,3 +1,18 @@
+> **Status (2026-08).** This document is kept as rationale for the
+> long-term direction. Current position:
+>
+> - **Phase 1 (Classical Screening)** — ✅ complete: MP screening, Pareto
+>   target windows, sensitivity analysis (`heat_cooling_screen.py`,
+>   `pareto_optim.py`, `sensitivity_analysis.py`).
+> - **Phase 2 (Property Prediction / GNN)** — 🎯 **the active focus**; the
+>   concrete plan is [`../ROADMAP.md`](../ROADMAP.md).
+> - **Phase 3 (Guided Generation)** — ⏸ deliberately deferred. Supporting
+>   evidence: GeoField's flow-matching model over a reconstruction latent
+>   trained well but generated invalid geometry ("blobs"); free-form
+>   generation needs a deliberately generation-friendly latent. If resumed,
+>   prefer parameter-space generation over an exact parametric framework
+>   family + verifier loop.
+
 Yes, **Generative Inverse Design** is a logical long-term goal. Historically, materials informatics focused on "forward screening"—taking existing databases (like the Materials Project or the Cambridge Structural Database), running ML models to filter them, and finding the best fit. 
 
 The limitation of forward screening is that **you are constrained to what already exists** in those databases. When it comes to complex engineering problems like "cooling with heat" (sorption cooling), the perfect material might not have been synthesized yet. Inverse design allows you to generate completely novel crystal structures specifically optimized for your target HVAC parameters.
@@ -54,6 +69,12 @@ PHASE 1: Classical Screening  ➔  PHASE 2: Property Prediction  ➔  PHASE 3: G
 ---
 
 ### Moving to the Next Concrete Step
+
+> **Resolved (2026-08):** the crystal-graph question was explored in
+> [`crystalline_struct.py`](crystalline_struct.py) (pymatgen → nodes/edges/RBF
+> edge features). That hand-rolled featurizer is now **demoted**: mature
+> libraries (`matminer`, `mofdscribe`) replace it per the roadmap, and it
+> remains only as a learning reference.
 
 As you build toward this, we must first master **Phase 2 (Property Prediction)**. To map atomic structures to our thermodynamic cycle, we need to understand how 3D crystal coordinate files (atoms and bonds) are converted into graphs that a neural network can read.
 

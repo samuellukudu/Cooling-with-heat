@@ -1,5 +1,11 @@
 # diffheat — Differentiable Heat Equation Simulations with JAX
 
+> **Status: frozen (2026-08).** This project has pivoted from building a
+> differentiable-simulation library to **training ML models for heat-driven
+> cooling material discovery**. `diffheat` remains fully functional and is
+> kept as a reference component; new development happens in the adsorbent-ML
+> effort described in [`ROADMAP.md`](ROADMAP.md).
+
 `diffheat` is a differentiable 1D heat-equation solver that is fully compatible with
 JAX's automatic differentiation.  Because gradients flow through every timestep,
 you can **optimise material properties, initial conditions, boundary values, and

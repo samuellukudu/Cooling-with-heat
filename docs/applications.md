@@ -1,5 +1,11 @@
 # diffheat — Application Scenarios
 
+> **Status: frozen (2026-08).** Kept as future reference alongside the
+> frozen `diffheat` library; the project's active focus has moved to
+> ML-driven adsorbent discovery ([`../ROADMAP.md`](../ROADMAP.md)).
+> Note: §3 (Absorption Chiller Cycle) is the scenario most likely to return
+> inside the ML pipeline, as bed-level modeling behind the surrogate.
+
 Tracked applications for future simulation with diffheat. Each entry includes the PDE system, boundary conditions, parameter ranges, and target optimization problem.
 
 The library itself remains general-purpose; these are specific compositions of its operators and solvers.

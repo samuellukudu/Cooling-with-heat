@@ -1,3 +1,9 @@
+> **Status (2026-08).** Reference material for the eventual gradient-guided
+> phase — the premise of building our own differentiable simulation stack is
+> de-emphasized in the current plan. The PyTorch cycle demo below
+> (`differentiable_hvac_cycle`) would be ported to JAX (matching the project
+> stack) only if that phase starts. See [`../ROADMAP.md`](../ROADMAP.md).
+
 There is a profound and highly active connection between **generative inverse design** and **differentiable simulations**. 
 
 In conventional materials science, numerical simulations (like Grand Canonical Monte Carlo to simulate gas adsorption, or thermodynamic solvers to calculate COP) are treated as "black boxes". If you want to know how changing a pore's diameter affects the cycle COP, you have to run a new simulation from scratch and estimate the sensitivity using finite differences. This makes exploring millions of hypothetical structures incredibly slow and limits you to derivative-free optimization methods (like Reinforcement Learning or Genetic Algorithms), which scale poorly in high-dimensional spaces.
