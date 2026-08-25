@@ -6,3 +6,4 @@ __pycache__/
 .remember/
 dist/
 *.egg-info/
+data_cache/
