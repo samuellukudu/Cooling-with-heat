@@ -30,23 +30,25 @@ isotherms, 8.3k adsorbents, 449 adsorbates incl. water).
   <https://adsorption.nist.gov> (isodb + materials registry endpoints) for
   incremental refreshes later.
 
-**Filtering for our task — VERIFIED against the mirror (2026-08):**
+**Filtering for our task — VERIFIED via `nist_isodb.py` export (2026-08):**
 
-- Mirror contains **39,704 isotherms**; parsing all succeeded.
-- **Pure-water isotherms: 1,192**, across **556 unique adsorbents**
-  (+1,214 multicomponent isotherms containing water).
-- **1,093 of the 1,192 fall inside our 280–380 K window.**
+- Mirror holds **39,824 isotherm records** (plus 14,429 registry/bibliography
+  files in `Library/{Adsorbents,Adsorbates,Bibliography}/` — excluded); all
+  parse cleanly.
+- **Pure-water isotherms: 1,221**, across **557 unique adsorbents**
+  (+1,234 multicomponent isotherms containing water).
+- **1,122 of the 1,221 fall inside the 280–380 K window.**
 - Top materials by water-isotherm count are precisely the canonical cooling/
   harvesting set: CuBTC (79), Silicalite MFI (50), ZIF-8 (42), Mg-MOF-74
   (40), zeolite 13X (26), silica gel (25), Na-Y, UiO-66, MIL-100, zeolite A…
 - Uptake units are heterogeneous — normalization is a real work package:
-  mmol/g (493), cm³(STP)/g (194), molecules/unitcell (113), g/g (97),
-  mg/g (54), ml/g, wt%, mol/mol… (`molecules/unitcell` conversions need
-  framework cell composition).
+  mmol/g dominates, then cm³(STP)/g, molecules/unitcell, g/g, mg/g, wt%…
+  (`molecules/unitcell` conversions need framework cell composition).
 
-⚠ Gotcha for the exporter: file naming mixes cases (`isotherm2.json` vs
-`Isotherm4.json`) — filter case-insensitively or you silently lose ~80% of
-the database.
+⚠ Exporter gotchas (all handled in `nist_isodb.py`, worth knowing):
+filename casing varies (`isotherm2.json` / `Isotherm4.json`) and some files
+are misspelled (`isothem10.json`) — never filter by filename; walk
+`Library/<doi>/*.json` and skip the three registry directories.
 
 The ≥100-matched gate for Stage 1 is comfortably cleared on raw volume; the
 binding constraint shifts to name→structure matching coverage.
