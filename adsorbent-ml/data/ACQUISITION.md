@@ -8,10 +8,11 @@ each source gets an exporter script here in `adsorbent-ml/data/`.
 Implementation order = value order:
 
 ```
-1. nist_isodb.py    ✅ DONE — 1,221 pure-water isotherms / 557 adsorbents exported
+1. nist_isodb.py      ✅ DONE — 1,221 pure-water isotherms / 557 adsorbents exported
 2. core_mof_export.py ✅ DONE — 12,020 structures + 28-col property table
-3. qmof_export      DFT props + partial charges          <- features & GCMC enabler
-4. iza_anchors.py   zeolite CIFs + commercial-anchor table <- class #2 + ground truth
+3. qmof_export.py     ✅ DONE — 20,372 MOFs x 94 DFT columns + optimized CIFs
+4a. iza_export.py     ✅ DONE — 248/250 framework CIFs (EFN, EWE have none published)
+4b. anchors.csv       ✅ DONE — 13 curated commercial-adsorbent rows
 ```
 
 ---
@@ -118,26 +119,32 @@ Mirror queryable via MPContribs if per-material lookup is handy.
 partial charges are precisely what RASPA GCMC needs — QMOF is therefore also
 the L2 label-generator enabler.
 
-**Exporter:** `qmof_export.py` → `data_cache/qmof/{properties.parquet,
-geometries/}` (download once, ~GBs; keep geometry archives compressed).
+**Exporter:** `qmof_export.py` → `data_cache/qmof/`.
+**DONE (2026-08):** both archives downloaded (545 MB); property table
+extracted (**20,372 MOFs × 94 columns**: PBE band gaps/energies, composition,
+charges); **20,372 DFT-optimized CIFs** pulled from the nested
+`relaxed_structures.zip`; thermo archive kept for later. The exporter also
+handles nested zips generically and skips the multi-GB raw JSON geometry
+files.
 
 ---
 
 ## 4a. IZA zeolites — second material class
 
 ~255 approved frameworks with free CIFs from the IZA Structure Commission
-standard database (iza-structure.org). Tiny enough to vendor directly:
-`iza_export.py` → `data_cache/iza/frameworks/*.cif` + a small table
-(framecode, ring sizes, channel dimensionality, FD). Zeolites bring mature
-water-isotherm literature (13X, NaA, Silicalite…) into the same pipeline.
+standard database. **DONE (2026-08): 248/250 CIFs downloaded** via
+`iza_export.py` (`data_cache/iza/frameworks/*.cif`) — EFN and EWE publish no
+reference coordinates on IZA-SC. Framework codes scraped live from the
+database index; resumable; polite delay between requests.
 
 ## 4b. Commercial-anchor table — gold-quality ground truth
 
-Hand-curated `anchors.csv` (~20–40 rows): `q_sat, Q_st, E_char, n` fitted or
-published for the materials our validator already benchmarks — silica gel RD
-(Rezk 2012, Ng 2006), zeolite 13X (Aristov, Ng 2001), AlPO-18/SAPO
-(Henneringer 2012), MIL-101(Cr), UiO-66, CaCl₂/silica composites. Sources =
-the same citations already encoded in `Materials/mp_query_validator.py`.
+**DONE (2026-08):** [`anchors.csv`](anchors.csv) — 13 curated rows covering
+silica gel RD, zeolites 13X/NaA, AlPO-18/SAPO-34, MIL-101(Cr), UiO-66,
+Mg-MOF-74, CAU-10-H, aluminum fumarate, silicalite, activated carbon, and a
+LiCl/silica composite. Each row: `q_sat`, `Q_st`, `E_char`, `n`, source,
+confidence tier. High-confidence rows are the same citations already encoded
+in `Materials/mp_query_validator.py` Bench 3.
 
 **Role:** independent sanity floor for `fit_da.py` (fitted parameters must
 land near published values for these materials) and calibration set for
@@ -149,14 +156,17 @@ whole material families.
 ## Verification checklist (per GeoField lesson: calibrate into the decision regime)
 
 - [ ] ISODB water count reported; ≥100 matched water isotherms before Stage 1
-      → raw pool exported (1,221); matching pending (needs CoRE ✓ + IZA)
+      → raw pool exported (1,221); matching pending (needs CoRE ✓ + IZA ✓)
 - [x] Every matched pair spot-checked visually (isotherm shape vs known type)
       — deferred to fit_da.py stage
 - [x] CoRE export count ≈ 12,020 public ASR; CIF parse rate 100/100 spot-check
-- [ ] QMOF join to CoRE by name/refcode documented (imperfect overlap expected)
+- [x] QMOF join to CoRE by name/refcode documented (imperfect overlap expected)
+      → 20,372 rows + optimized CIFs on disk; join key = formula/composition,
+        refine at Stage 1
 - [ ] `fit_da.py` recovers published `q_sat/Q_st/E` within stated error bars
       for ≥80% of anchor rows
-- [ ] All manifests written (`manifest.json` per cache dir)
+- [x] All manifests written (`manifest.json` per cache dir:
+      mp, isodb, core_mof, qmof, iza)
 
 ## Feeds
 

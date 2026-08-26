@@ -1,0 +1,14 @@
+name,class,q_sat_kg_kg,q_st_MJ_kg,e_char_J_mol,n_da,t_range_C,source,confidence,notes
+Silica gel RD,silica gel,0.35,2.5,4500,1.8,20-100,"Rezk et al. 2012 Appl Therm Eng; Aristov 2002",high,"Type-I isotherm; values match Materials/mp_query_validator.py Bench 3"
+Zeolite 13X (NaX),zeolite,0.28,3.5,14000,1.8,20-150,"Ng et al. 2001 Appl Therm Eng; Aristov 2013",high,"Strong binding; regeneration needs >130 C"
+Zeolite NaA (4A),zeolite,0.28,3.8,15000,1.8,20-150,"literature consensus range",medium,"Q_st 65-75 kJ/mol across sources"
+AlPO-18,aluminophosphate,0.30,2.8,8000,1.8,20-120,"Henninger et al. 2012 Prog Colloid Polym Sci",medium,"SAPO-18 similar; validator cpu-profile anchor"
+SAPO-34,aluminophosphate,0.28,2.9,8500,1.8,20-120,"Henninger et al. 2012; literature range",medium,
+MIL-101(Cr),MOF,1.30,0.80,3000,3.5,10-90,"Henninger et al.; AWH literature consensus",low,"S-shaped isotherm: Dubinin-Astakhov fits poorly; treat as qualitative anchor only"
+UiO-66,MOF,0.40,2.7,6000,1.8,20-100,"multiple water-isotherm studies",medium,"q_sat varies 0.35-0.5 with defects/synthesis"
+Mg-MOF-74 (CPO-27-Mg),MOF,0.32,3.0,8000,1.8,15-80,"multiple studies",medium,"High Q_st from open metal sites"
+CAU-10-H,MOF,0.33,2.7,6500,1.8,20-100,"AWH literature (Lenhard; Yoon)",medium,"Common heat-pump/AWH candidate; Type-I"
+Aluminum fumarate,MOF,0.45,2.6,6000,1.8,20-100,"commercial Basolite A520 studies",medium,"Scale-relevant commercial MOF"
+Silicalite (MFI),zeosil,0.11,1.9,3500,1.8,20-100,"hydrophobic-sorbent literature",medium,"Low capacity by design; useful negative control"
+Activated carbon (BPL-type),carbon,0.30,2.2,4000,1.8,20-100,"adsorption-chiller literature",medium,"Broad class; values vary with precursor/activation"
+LiCl/silica SWS-1L,composite salt,0.35,2.9,9000,1.8,20-110,"Aristov SWS-series papers",low,"Salt hydration chemistry; effective DA params are rough"
