@@ -143,3 +143,27 @@ whole material families.
   `cooling_physics.simulate_adsorption_cycle`.
 - Family splits: metal-node/topology families from CoRE/MOFid metadata.
 - Later L2: QMOF charges + RASPA on Stage-3-selected shortlists only.
+
+---
+
+## Evaluated, not adopted
+
+### The Well (Polymathic AI, NeurIPS 2024) — 15 TB of physics simulations
+16 PDE-trajectory datasets (convection, fluids, MHD, acoustics, plasma,
+reaction-diffusion…) on uniform grids; HDF5 + unified loader; per-dataset
+Hugging Face downloads (6.9 GB – 5.1 TB each).
+
+**Verdict: not useful for the current plan — zero materials content.** It
+contains no structures, chemistry, or adsorption data, so it cannot serve T1
+(structure→property) or T2 (property→COP), where all current effort lives.
+
+**Deferred trigger — revisit only when bed-level thermal emulation starts
+(late Stage 3+/4):** its convection/fluid subsets are candidate training or
+benchmark corpora for a neural-operator emulator of transient heat transport
+in adsorber beds (maps to `docs/applications.md` §1 Natural Convection and
+§5 Forced Convection). Pull a single dataset then (~GBs), never the full
+collection.
+
+**Adopt its conventions regardless:** shared HDF5 schema + manifests +
+VRMSE-style metric + published baselines is the template to copy if we
+release our own GCMC-generated L2 dataset.
