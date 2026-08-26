@@ -146,6 +146,43 @@ whole material families.
 
 ---
 
+## Adopted: CoolProp — thermodynamic reference engine
+
+Open-source EOS library (`pip install CoolProp`, v8.0): IAPWS-IF97 water,
+Helmholtz fluids, humid-air psychrometrics (`HAPropsSI`), incompressible
+brines/solutions.
+
+**Role (strictly bounded): trusted reference OUTSIDE the differentiable path.**
+
+```
+cooling_physics.py / diff_hvac_cycle.py  <- analytic + differentiable, stays as-is
+         ^ validated against (never replaced inside the gradient path)
+CoolProp                                  <- compiled lib, no JAX/torch autodiff
+```
+
+Measured agreement of our analytic model vs CoolProp IF97 (0-150 °C grid,
+2026-08):
+
+| Quantity | Our correlation | Max deviation |
+|---|---|---|
+| Saturation pressure | Magnus/Antoine | 2.0 % (150 °C); ~1.1–1.6 % at 80–90 °C regeneration band |
+| Latent heat | Watson | 0.3 % (0 °C), ~exact near 100 °C |
+| Liquid cp | constant 4184 | ±0.3 % over cycle temps |
+
+Planned uses:
+
+1. **Validator upgrade** — dense-grid live reference calls in
+   `Materials/mp_query_validator.py` instead of 7 hardcoded spot values.
+2. **Refrigerant generalization** — optional `refrigerant=` on
+   `simulate_adsorption_cycle` (methanol Psat(35 °C) = 28 kPa, ammonia
+   1350 kPa: working-pair expansion is nearly free).
+3. **Psychrometrics** for the human-comfort/dehumidification profile.
+4. **Absorption escape hatch** — `INCOMP::Libr` if LiBr/water cycles ever enter scope.
+
+Never import it into training/differentiable code paths.
+
+---
+
 ## Evaluated, not adopted
 
 ### The Well (Polymathic AI, NeurIPS 2024) — 15 TB of physics simulations
