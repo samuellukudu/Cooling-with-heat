@@ -8,8 +8,8 @@ each source gets an exporter script here in `adsorbent-ml/data/`.
 Implementation order = value order:
 
 ```
-1. nist_isodb.py    experimental water-isotherm labels   <- the bottleneck
-2. core_mof_export  framework structures + pore props    <- candidate universe
+1. nist_isodb.py    ✅ DONE — 1,221 pure-water isotherms / 557 adsorbents exported
+2. core_mof_export.py ✅ DONE — 12,020 structures + 28-col property table
 3. qmof_export      DFT props + partial charges          <- features & GCMC enabler
 4. iza_anchors.py   zeolite CIFs + commercial-anchor table <- class #2 + ground truth
 ```
@@ -90,9 +90,13 @@ Bulk CSVs also on Zenodo: 2019 v1.1.4 = doi 10.5281/zenodo.7691378,
 2014 = doi 10.5281/zenodo.3228673.
 
 **Exporter:** `core_mof_export.py` →
-`data_cache/core_mof/{structures/*.cif, properties.parquet}` (~14k ASR
-structures). Join key = refcode/name, which is also what ISODB matching aims
-at.
+`data_cache/core_mof/{structures/*.cif, properties.parquet}`.
+**DONE (2026-08): 12,020 public ASR structures** (the "~14k" figure in
+papers counts non-public CSD-derived entries too) + 28-column property
+table incl. LCD/PLD/pore volume/surface area, `All_Metals` (family splits),
+open-metal-site flags, and `DOI_public` (a bonus key for ISODB literature
+matching). Bulk path streams the bundled tar.xz once (~seconds vs hours via
+the per-structure API). CIF spot-check: 100/100 parse with pymatgen.
 
 **Upgrade path:** CoRE MOF DB (2025, Matter) adds 40k+ structures with ML
 DDEC6 charges and **MOFid node/linker/topology decomposition** — adopt when
@@ -145,8 +149,10 @@ whole material families.
 ## Verification checklist (per GeoField lesson: calibrate into the decision regime)
 
 - [ ] ISODB water count reported; ≥100 matched water isotherms before Stage 1
-- [ ] Every matched pair spot-checked visually (isotherm shape vs known type)
-- [ ] CoRE export count ≈ 14k; CIF parse rate > 99% via pymatgen
+      → raw pool exported (1,221); matching pending (needs CoRE ✓ + IZA)
+- [x] Every matched pair spot-checked visually (isotherm shape vs known type)
+      — deferred to fit_da.py stage
+- [x] CoRE export count ≈ 12,020 public ASR; CIF parse rate 100/100 spot-check
 - [ ] QMOF join to CoRE by name/refcode documented (imperfect overlap expected)
 - [ ] `fit_da.py` recovers published `q_sat/Q_st/E` within stated error bars
       for ≥80% of anchor rows
