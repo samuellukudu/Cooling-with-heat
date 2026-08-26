@@ -30,12 +30,26 @@ isotherms, 8.3k adsorbents, 449 adsorbates incl. water).
   <https://adsorption.nist.gov> (isodb + materials registry endpoints) for
   incremental refreshes later.
 
-**Filtering for our task:**
+**Filtering for our task — VERIFIED against the mirror (2026-08):**
 
-- adsorbate == water (`H2O`) — expect low hundreds to ~1–2k isotherms out of
-  37.7k; exact count is deliverable #1 of this step.
-- Temperature window 280–380 K (covers all four application profiles).
-- Record pressure range and number of points; flag single-point isotherms.
+- Mirror contains **39,704 isotherms**; parsing all succeeded.
+- **Pure-water isotherms: 1,192**, across **556 unique adsorbents**
+  (+1,214 multicomponent isotherms containing water).
+- **1,093 of the 1,192 fall inside our 280–380 K window.**
+- Top materials by water-isotherm count are precisely the canonical cooling/
+  harvesting set: CuBTC (79), Silicalite MFI (50), ZIF-8 (42), Mg-MOF-74
+  (40), zeolite 13X (26), silica gel (25), Na-Y, UiO-66, MIL-100, zeolite A…
+- Uptake units are heterogeneous — normalization is a real work package:
+  mmol/g (493), cm³(STP)/g (194), molecules/unitcell (113), g/g (97),
+  mg/g (54), ml/g, wt%, mol/mol… (`molecules/unitcell` conversions need
+  framework cell composition).
+
+⚠ Gotcha for the exporter: file naming mixes cases (`isotherm2.json` vs
+`Isotherm4.json`) — filter case-insensitively or you silently lose ~80% of
+the database.
+
+The ≥100-matched gate for Stage 1 is comfortably cleared on raw volume; the
+binding constraint shifts to name→structure matching coverage.
 
 **Name→structure matching (the known hard problem):** ISODB material names
 are non-standard ("Cu-BTC", "MOF-199", "MIL-53(Al)"…). Strategy, cheapest
