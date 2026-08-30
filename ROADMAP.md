@@ -22,26 +22,37 @@ Two ladders are running in parallel and share one artifact:
   with multi-temperature Q_st; the rest are honestly flagged
   (`data_cache/fits/da_params_qc.md`). These are the Stage-1 training
   labels and the harness material database rows.
-- **harness** — H0 done and verified (Cycle0D oracle with V1 parity
-  < 1e-12; grad/search backends; V7 reproduces the legacy screen's best
-  point on all four profiles; 1,346 tests green). Next: **H1.1–H1.5 — the
-  dynamic 1-D bed**, the risky part, spec in
-  [`harness/DESIGN.md`](harness/DESIGN.md) §12.
+- **harness** — **H0, H1.0–H1.5 and H2.1–H2.3 all done** (2026-08):
+  Cycle0D oracle with V1 parity < 1e-12 (V7 reproduces the legacy
+  screen's best point); the dynamic 1-D bed (V3 oracle limit, V4
+  literature calibration, V5 control gradients); the counter-phase
+  two-bed system with heat recovery (V6) and schedule optimization
+  beating the fixed schedule (H2.2); and the T2 reference rankings over
+  the fitted table (H2.3 — 13X bottom-third on the datacenter profile,
+  as screened). 1,385 tests green.
 
 **Next moves, in order:**
 
-1. H1.1–H1.3 — bed physics + env + the V3 oracle-limit keystone test. *(done)*
-2. H1.4–H1.5 — literature calibration (V4) + first control experiments. *(done)*
-3. H2.1–H2.3 — two-bed system (V6), time-varying-source schedule
-   experiments, and the ISODB materials sweep (the fitted table is ready:
-   553 rows load via the §8.1 loader, 154 with physical q_sat and Q_st) —
-   the T2 ranker the Stage-2 surrogate's top-k hit rate is scored against.
+1. **adsorbent-ml Stage 1** — the tabular baseline (GBDT on featurized
+   structures → `q_sat`, `Q_st`, D–A params) scored against the H2.3
+   reference rankings; its top-k hit rate vs the brute-force shortlists
+   is the business metric.
+2. **H3 (pull-driven)** — the harness-side extensions with standing
+   findings behind them: lumped vapour inventory (Open Question 2 —
+   needed for heat-source-trend fidelity *and* the valve-closed standby
+   the schedule experiments wanted), per-material `k_eff` heads (the
+   §8.1 honesty gap), rl backend on stochastic TwoBed (Open Question 4
+   citation first).
+
+GPU availability stays an open, unblocking question until Stage-2 GNN
+sweeps get large.
 
 **Harness posture (2026-08): the harness is the project's R&D lab** — a
 workbench for posing heat-driven-cooling ideas as cheap, honest experiments
 against any operating scenario. The four application profiles are preset
 scenarios for cross-tool comparability, not the organizing frame; every
-experiment can pass raw setpoints, geometry, and schedules directly.
+experiment can pass raw setpoints, geometry, and schedules directly
+(schedules are data — per-step series, not named applications).
 
 GPU availability stays an open, unblocking question until H2 sweeps get
 large.

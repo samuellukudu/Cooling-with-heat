@@ -729,14 +729,24 @@ notebook reproduces the headline plot.
   surface, and the standby capability is the lumped-vapour-inventory
   extension (Open Question 2). Stochastic source profiles stay deferred
   to the RL experiments (Open Question 4, needs its citation).*
-- **H2.3 — Materials sweep = the T2 ranker.** The fitted ISODB table
-  (H1.0) through `Cycle0D-v0` (all materials) and `Bed1D-v0` (top
-  candidates) per profile → ranked shortlists. This produces the
-  brute-force reference rankings that the adsorbent-ml Stage-2 surrogate's
-  **top-k hit rate** is scored against — where the harness and the ML
-  ladder meet. *Gate: shortlist sanity vs anchors (zeolite 13X ranks
-  poorly on the 60 °C-regeneration datacenter profile — the known
-  screening result); ranking notebook in `harness/`.*
+- **H2.3 — Materials sweep = the T2 ranker.** ✅ done 2026-08.
+  `harness/rank.py` (library) + `harness/ranking_notebook.ipynb`
+  (executed): the honestly-flagged subset of the fitted ISODB table
+  (1221 fits → 553 loadable → 145 usable rows, 21 adsorbents with
+  physical `q_sat` + multi-T `Q_st`) plus the 13 anchors, through
+  `Cycle0D-v0` per profile → ranked shortlists (`score` = profile-
+  weighted normalized COP/SCP); datacenter top-5 refined through
+  `Bed1D-v0` with transport defaults flagged. Artifacts:
+  `data_cache/rankings/cycle0d_sweep.csv` (working copy) and the
+  committed notebook outputs. *Gate — green: zeolite 13X lands in the
+  bottom 30 % on the 60 °C-regeneration datacenter profile (rank 26/34,
+  COP ratio 0.32× silica RD — the known screening result), no zeolite in
+  the datacenter top-10, and the 13X/silica COP ratio improves ≈ 1.6× at
+  the 80 °C-regeneration human profile — the ranking is regeneration-
+  temperature-driven, exactly the system-level signal the Stage-2
+  surrogate's top-k hit rate will be scored against. This produces the
+  brute-force reference rankings where the harness and the ML ladder
+  meet.*
 - **H2.4 — rl backend (optional, pull-driven).** PPO on stochastic
   `TwoBed-v0` behind the `rl` extra, always reported against the mandatory
   floor (best fixed schedule from `search`; V8 posture). Only started if
