@@ -11,6 +11,31 @@
 >   query layer exports candidates, their cycle simulator evaluates them.
 > - Active development happens in adsorbent-ML work (see stage ladder below).
 
+## Where We Are & Next Moves (2026-08)
+
+Two ladders are running in parallel and share one artifact:
+
+- **adsorbent-ml** — Stage 0 data exports done (ISODB: 1,221 pure-water
+  isotherms; CoRE MOF; QMOF; IZA; anchor table). Next: **`fit_da.py`** —
+  Dubinin–Astakhov fits per isotherm → `data_cache/fits/`, which are both
+  the Stage-1 training labels and the harness material parameters.
+- **harness** — H0 done and verified (Cycle0D oracle with V1 parity
+  < 1e-12; grad/search backends; V7 reproduces the legacy screen's best
+  point on all four profiles; 1,333 tests green). Next: **H1 — the dynamic
+  1-D bed**, the risky part, tasks H1.1–H1.5 in
+  [`harness/DESIGN.md`](harness/DESIGN.md) §12.
+
+**Next three moves, in order:**
+
+1. `adsorbent-ml/data/fit_da.py` — one artifact serving both ladders (H1.0).
+2. H1.1–H1.3 — bed physics + env + the V3 oracle-limit keystone test.
+3. H1.4–H1.5 — literature calibration (V4) + first control experiments.
+
+Then H2: two-bed system (V6) and the ISODB materials sweep — which *is*
+the T2 ranker whose brute-force reference rankings the Stage-2 surrogate's
+top-k hit rate is scored against. GPU availability stays an open,
+unblocking question until H2 sweeps get large.
+
 ## North Star
 
 Train surrogates that predict adsorption thermodynamics (`q_sat`, `Q_st`,
@@ -115,6 +140,10 @@ Cooling-with-heat/
 ├── diffheat/            # FROZEN — reference library
 ├── Materials/           # legacy screening + data-export tooling
 ├── docs/
+├── harness/             # differentiable optimization harness (gym-compatible
+│                        #   envs; grad/search/rl backends) — see
+│                        #   harness/DESIGN.md. Provides the T2 ranking loop
+│                        #   and, later, the reward function for T3.
 └── adsorbent-ml/        # NEW home for ML work
     ├── data/            # mp_export.py, isotherms.py, fit_da.py
     ├── features/        # matminer/mofdscribe wrappers → numpy
@@ -132,6 +161,9 @@ rather than maintaining a second venv.
       CoRE MOF + QMOF + IZA/anchors, in that order — concrete plan in
       [`adsorbent-ml/data/ACQUISITION.md`](adsorbent-ml/data/ACQUISITION.md).
 - [ ] GPU availability for Stage 2+ (Stages 0–1 run fine on CPU)?
-- [ ] Port `cooling_physics.py` to JAX early (gradient diagnostics) or wait for Stage 3?
+- [x] Port `cooling_physics.py` to JAX early (gradient diagnostics) or wait for Stage 3?
+      → **Resolved 2026-08**: yes, early — as harness milestone H0
+      (JAX port + oracle parity tests), see
+      [`harness/DESIGN.md`](harness/DESIGN.md).
 - [ ] Parametric framework generator (GeoField-style family) early vs database-screening-first?
 - [ ] Shared-latent multi-head surrogate vs independent per-property models as Stage-2 default?
