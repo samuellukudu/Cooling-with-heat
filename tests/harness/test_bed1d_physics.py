@@ -228,3 +228,36 @@ def test_check_timestep():
     assert limit == pytest.approx(dx ** 2 / (2.0 * k_eff / rho_cp))
     assert bed1d.check_timestep(L_m, n_cells, k_eff, rho_cp, limit)
     assert not bed1d.check_timestep(L_m, n_cells, k_eff, rho_cp, limit * 1.01)
+
+
+# --------------------------------------------------------------------------
+# hx metal-mass accounting (V4 rig mapping): pure bookkeeping — hx must not
+# touch the trajectory, and hx = 1 must reproduce the bare-bed heat input.
+# --------------------------------------------------------------------------
+
+
+def test_hx_metal_mass_accounting():
+    base = dict(
+        q_sat_kg_kg=0.35, q_st_j_kg=2.5e6, e_char_j_mol=4500.0, n_da=1.8,
+        k_ldf_s_1=5.0,
+        rho_s_kg_m3=600.0, c_s_j_kg_k=1000.0, c_pl_j_kg_k=4184.0,
+        k_eff_w_m_k=0.3, h_wall_w_m2_k=300.0, L_m=0.002, n_cells=16,
+        t_evap_c=10.0, t_cond_c=30.0, t_f_ads_c=25.0, t_f_des_c=70.0,
+        t_ads_s=300.0, t_des_s=300.0, dt_s=0.02, n_cycles=3,
+    )
+
+    def run(hx):
+        out = bed1d.simulate_bed(**base, hx_mass_factor=hx)
+        return {k: float(v) for k, v in out["summary"].items()}
+
+    bare, metal = run(1.0), run(2.0)
+    # The metal block is accounting-only: the cooling side is untouched.
+    assert metal["Q_cool_J_kg"] == bare["Q_cool_J_kg"]
+    assert metal["delta_q"] == bare["delta_q"]
+    # It only adds heat input, proportional to (hx - 1).
+    assert metal["Q_in_J_kg"] > bare["Q_in_J_kg"]
+    mid = run(1.5)
+    assert bare["Q_in_J_kg"] < mid["Q_in_J_kg"] < metal["Q_in_J_kg"]
+    # hx = 1 reproduces the bare-bed (pre-V4) accounting exactly.
+    expected_bare_cop = bare["Q_cool_J_kg"] / bare["Q_in_J_kg"]
+    assert bare["COP"] == pytest.approx(expected_bare_cop)

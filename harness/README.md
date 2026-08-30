@@ -35,17 +35,23 @@ Three environments, one oracle:
 
 ## Status
 
-**H0–H1.3 implemented (2026-08).** In place: the package skeleton; the
+**H0–H1.5 implemented (2026-08).** In place: the package skeleton; the
 `Cycle0D-v0` oracle with exact parity against `Materials/cooling_physics.py`
 (V1 < 1e-12); the `grad` and `search` backends with the V7 acceptance test;
 the **dynamic 1-D bed** (`physics/bed1d.py` — RK4-in-scan, exact-exponential
 LDF substep, ghost-cell wall BC) with its V2 conservation gates; the
-`Bed1D-v0` env (§5.2 obs/action/reward) passing `gymnasium.check_env`; and
-the **V3 oracle-limit keystone** — the dynamic bed reproduces the frozen
-equilibrium oracle within 2 % (COP gap 1.55 %, SCP 0.15 %, k/dt-convergence
-< 0.5 %). Import-linter contracts enforced. Next: **H1.4–H1.5** (literature
-calibration, first control experiments), then H2 (two-bed system, ISODB
-sweep) — see [`DESIGN.md`](DESIGN.md) §12.
+`Bed1D-v0` env (§5.2 obs/action/reward) passing `gymnasium.check_env`; the
+**V3 oracle-limit keystone** — the dynamic bed reproduces the frozen
+equilibrium oracle within 2 % (COP gap 1.55 %, SCP 0.15 %); **V4 literature
+calibration** (`calibration.py` + [`benchmarks.md`](benchmarks.md): two
+open-access experimental rigs, standard points calibrated, cycle-time ↔ SCP
+trend reproduced, the T_hs-trend gap attributed to vapour-side dynamics);
+and **H1.5 control experiments** (`Bed1DControls`, V5 gradient gate,
+[`control_notebook.ipynb`](control_notebook.ipynb), the Open Question 3
+decision: hard-valve gradients are blind — soft switching + the
+search-on-switch-times hybrid is the recipe). Import-linter contracts
+enforced. Next: **H2** (two-bed system, datacenter profile, ISODB sweep) —
+see [`DESIGN.md`](DESIGN.md) §12.
 
 ## Target API
 

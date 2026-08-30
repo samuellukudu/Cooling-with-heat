@@ -170,6 +170,7 @@ class Bed1D:
         lam: float = 0.0,
         n_cells: int = BED_N_CELLS,
         dt_phys_s: float | None = None,
+        soft_switch: bool = False,
     ):
         if action_mode not in ("continuous", "discrete"):
             raise ValueError(f"unknown action_mode {action_mode!r}")
@@ -180,6 +181,7 @@ class Bed1D:
         self.n_cycles = int(n_cycles)
         self.lam = float(lam)
         self.n_cells = int(n_cells)
+        self.soft_switch = bool(soft_switch)
 
         self.spec = ProblemSpec(
             name="Bed1D-v0",
@@ -273,6 +275,7 @@ class Bed1D:
             p_evap_pa=p_evap,
             p_cond_pa=p_cond,
             h_fg_evap_j_kg=float(water_h_fg_j_kg(prof.t_evap_c + 273.15)),
+            soft_switch=self.soft_switch,
         )
         return phys
 
@@ -455,6 +458,118 @@ class Bed1D:
                 dtype=np.float32,
             )
         return gym.spaces.Discrete(2)
+
+
+class Bed1DControls:
+    """``Bed1D-v0`` in control space: the §5.2 continuous controls
+    ``(T_f,des, t_switch)`` as the optimizable vector at a fixed design
+    (DESIGN §12 H1.5). Satisfies the harness Problem protocol, so the
+    ``grad``/``search`` backends run on it unchanged.
+
+    Numerics: the episode horizon is *static*, sized for the ``t_switch``
+    upper bound (``n_steps = n_cycles·2·t_switch_hi/dt``), so the scan
+    length never depends on control values and every call is tracer-safe
+    (jittable, differentiable). Shorter switches simply complete more
+    cycles before the horizon; metrics always come from the last
+    ``n_cycles − 1`` completed cycles, i.e. the steady periodic response
+    at the chosen switch time. ``dt_phys_s`` defaults to 30 ms — inside
+    the RK4 conduction limit for the default design (L = 2 mm,
+    k_eff = 0.3, N = 16) and the ``k_LDF·dt`` split bound.
+    """
+
+    def __init__(self, bed: "Bed1D | None" = None, *,
+                 t_switch_bounds: "tuple[float, float] | None" = None,
+                 t_f_bounds: "tuple[float, float] | None" = None,
+                 n_cycles: int = 2,
+                 dt_phys_s: "float | None" = None,
+                 n_steps: "int | None" = None):
+        self.bed = bed if bed is not None else Bed1D()
+        prof = self.bed.profile
+        self.t_switch_bounds = tuple(t_switch_bounds or T_SWITCH_BOUNDS)
+        self.t_f_bounds = tuple(t_f_bounds or
+                                (prof.t_fluid_min_c, prof.t_fluid_max_c))
+        self.n_cycles = int(n_cycles)
+        self.dt_phys_s = float(dt_phys_s) if dt_phys_s is not None else 0.03
+        hi = self.t_switch_bounds[1]
+        self.n_steps = int(n_steps) if n_steps is not None else (
+            int(round(self.n_cycles * 2.0 * hi / self.dt_phys_s)) + 8)
+        lo_t, hi_t = self.t_switch_bounds
+        lo_f, hi_f = self.t_f_bounds
+        # Profile constants are precomputed OUTSIDE the traced path: the
+        # thermo correlations run jnp ops on plain floats, which become
+        # abstract tracers under jit/grad where float() is illegal.
+        prof = self.bed.profile
+        self._p_evap_pa = float(water_sat_pressure_pa(prof.t_evap_c + 273.15))
+        self._p_cond_pa = float(water_sat_pressure_pa(prof.t_cond_c + 273.15))
+        self._h_fg_evap_j_kg = float(water_h_fg_j_kg(prof.t_evap_c + 273.15))
+        self._t_cond_k = float(prof.t_cond_c + 273.15)
+        self._static_phys = self.bed._static_phys()
+        defaults = self.bed.default_controls()
+        self.control_space = DesignSpace(
+            keys=("t_f_des_c", "t_switch_s"),
+            defaults={"t_f_des_c": defaults["t_f_des_c"],
+                      "t_switch_s": defaults["t_ads_s"]},
+            bounds={"t_f_des_c": (lo_f, hi_f), "t_switch_s": (lo_t, hi_t)},
+        )
+        self.spec = ProblemSpec(
+            name="Bed1D-v0-controls",
+            kind="control",
+            action_spec=ActionSpec(kind="continuous", names=("t_f_des_c", "t_switch_s"),
+                                   lo=(lo_f, lo_t), hi=(hi_f, hi_t)),
+            metric_keys=BED_METRIC_KEYS,
+            schema_version=BED1D_SCHEMA_VERSION,
+        )
+
+    @property
+    def design_space(self) -> DesignSpace:
+        return self.control_space
+
+    def _episode(self, t_f_des_c, t_switch_s, *, collect_trace=False):
+        bed = self.bed
+        defaults = bed.design_space.defaults
+        t_init = jnp.full((bed.n_cells,), self._t_cond_k)
+        q_init = da_uptake(t_init, self._p_evap_pa, defaults["q_sat_kg_kg"],
+                           defaults["e_char_j_mol"], defaults["n_da"])
+        carry = bed1d.initial_carry(t_init, q_init,
+                                    t_phase_end_s=t_switch_s,
+                                    n_cycles=self.n_cycles)
+        carry_f, ys = bed1d.advance_carry(
+            carry, (t_switch_s, t_switch_s, t_f_des_c),
+            n_steps=self.n_steps, dt_s=self.dt_phys_s, phys=self._static_phys,
+        )
+        summary = bed1d.summary_from_carry(
+            carry_f, p_evap_pa=self._p_evap_pa, p_cond_pa=self._p_cond_pa,
+            h_fg_evap_j_kg=self._h_fg_evap_j_kg,
+        )
+        return summary, ys
+
+    def metrics_jax(self, design=None, controls=None) -> dict[str, Any]:
+        if controls is not None:
+            raise ValueError("Bed1DControls embeds the controls in its design space")
+        merged = self.control_space.merge(design)
+        summary, _ = self._episode(merged["t_f_des_c"], merged["t_switch_s"])
+        return summary
+
+    def evaluate(self, design=None, controls=None) -> dict[str, float]:
+        return {k: float(v) for k, v in self.metrics_jax(design, controls).items()}
+
+    def rollout(self, design=None, controls=None, *, n_steps: int = 1) -> EpisodeTrace:
+        del n_steps
+        merged = self.control_space.merge(design)
+        summary, ys = self._episode(merged["t_f_des_c"], merged["t_switch_s"],
+                                    collect_trace=True)
+        stride = max(1, self.n_steps // 2048)
+        series = {name: np.asarray(jax.device_get(ys[::stride, i]))
+                  for i, name in enumerate(bed1d.SERIES_CHANNELS)}
+        return EpisodeTrace(series=series,
+                            summary={k: float(v) for k, v in summary.items()})
+
+
+def build_bed1d_controls(**kwargs) -> Bed1DControls:
+    return Bed1DControls(**kwargs)
+
+
+REGISTRIES["envs"].register("Bed1DControls-v0", build_bed1d_controls)
 
 
 def build_bed1d(material: "str | MaterialParams" = "anchor:Silica gel RD",

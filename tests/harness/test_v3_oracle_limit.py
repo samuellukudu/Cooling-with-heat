@@ -41,7 +41,7 @@ BED = dict(
     h_wall_w_m2_k=2000.0,
     L_m=0.002,
     n_cells=16,
-    hx_mass_factor=1.35,
+    hx_mass_factor=1.0,  # bare bed: oracle correspondence is bed-only accounting
     t_evap_c=18.0,
     t_cond_c=35.0,
     t_f_ads_c=35.0,
@@ -62,7 +62,10 @@ def _bed_metrics(k_ldf, dt_s, n_cycles=4):
 
 
 def test_v3_oracle_limit():
-    oracle = Cycle0D(MATERIAL, PROFILE).evaluate({"cycle_time_s": T_SWITCH_S})
+    # hx = 1 on both sides: bare-bed vs bare-oracle accounting (hx is
+    # rig-level metal inventory, not part of the bed↔oracle correspondence).
+    oracle = Cycle0D(MATERIAL, PROFILE).evaluate(
+        {"cycle_time_s": T_SWITCH_S, "hx_mass_factor": 1.0})
     bed = _bed_metrics(k_ldf=5.0, dt_s=0.015)
 
     print(f"\nV3: oracle COP {oracle['COP']:.4f} SCP {oracle['SCP_W_kg']:.1f} | "

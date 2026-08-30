@@ -44,11 +44,15 @@ Energy accounting (per kg adsorbent, mirroring the ``Cycle0D`` oracle):
   adsorption phase only (signed — the valve-flip burst that first pushes
   vapour *to* the evaporator nets out against the later uptake, exactly
   as the oracle's instantaneous-isosteric approximation assumes);
-- heat input: ``Q_in`` accumulates ``hx_mass_factor ×`` the wall-flux
-  integral during the desorption phase only. The per-step identity
+- heat input: the wall-flux integral during the desorption phase, plus —
+  when ``hx_mass_factor > 1`` — the sensible swing of an external
+  metal/water mass lumped at the wall, charged once per cycle with
+  ``(hx−1)·c_eff·(T_des,end − T_des,start)``. ``hx = 1`` is the bare bed
+  (the V3 oracle correspondence). The per-step identity
   ``Σ cap·ΔT·Δx = Φ_wall + ρ_s·Q_st·Σ Δq·Δx`` holds to machine precision
   (the RK4 wall-flux quadrature is the same one the T-update uses), which
-  the V2 tests pin down.
+  the V2 tests pin down; the metal block is per-cycle accounting outside
+  that identity.
 """
 
 from __future__ import annotations
@@ -173,7 +177,11 @@ def step_bed(T, q, t_f_k, p_pa, dt_s, *, dx, q_sat_kg_kg, q_st_j_kg,
     q_star = da_uptake(T, p_pa, q_sat_kg_kg, e_char_j_mol, n_da)
     decay = jnp.exp(-k_ldf_s_1 * dt_s)
     q_new = q_star + (q - q_star) * decay
-    q_dot_avg = (q_new - q) / dt_s
+    # Zero-length steps (the soft-switch part-step split) must be exact
+    # no-ops — value AND cotangent: divide by the safe surrogate in the
+    # dead branch so no inf/NaN ever enters the backward graph.
+    safe_dt = jnp.where(dt_s > 0.0, dt_s, 1.0)
+    q_dot_avg = jnp.where(dt_s > 0.0, (q_new - q) / safe_dt, 0.0)
 
     cap = rho_s_kg_m3 * (c_s_j_kg_k + c_pl_j_kg_k * 0.5 * (q + q_new))
     src = rho_s_kg_m3 * q_dot_avg * q_st_j_kg * dx  # W/m² per cell
@@ -223,6 +231,9 @@ _CARRY_HIST_TADS = 13
 _CARRY_QM_START = 14
 _CARRY_QCOOL_CUM = 15
 _CARRY_QIN_CUM = 16
+_CARRY_T_DES_START = 17
+_CARRY_T_PHASE_START = 18
+_CARRY_DUR_REQ = 19
 
 
 def _push(hist, value):
@@ -252,6 +263,8 @@ def initial_carry(T_init_k, q_init_kg_kg, *, t_phase_end_s, n_cycles):
         jnp.mean(q_init_kg_kg),
         jnp.asarray(0.0),
         jnp.asarray(0.0),
+        jnp.mean(T_init_k),
+        jnp.asarray(0.0),
     )
 
 
@@ -274,6 +287,7 @@ def advance_carry(carry, controls, *, n_steps, dt_s, phys):
     h_fg = phys["h_fg_evap_j_kg"]
     t_f_ads = phys["t_f_ads_c"] + 273.15
     hx = phys["hx_mass_factor"]
+    soft = float(phys.get("soft_switch", 0.0))
     params = {k: phys[k] for k in BED_RHS_PARAMS}
 
     t_ads_x, t_des_x, t_f_des_x = (
@@ -281,27 +295,43 @@ def advance_carry(carry, controls, *, n_steps, dt_s, phys):
     )
 
     def body(carry, x):
-        (T, q, phase, t_abs, t_end, qca, qia, ncyc, hqc, hqi, hdq, hqa, hqd,
-         hta, qms, qcc, qic) = carry
+        (T, q, phase, t_abs, t_end, qca, qia, ncyc, hqc, hqi, hdq, hqa,
+         hqd, hta, qms, qcc, qic, t_des_start, t_phase_start) = carry
         t_ads, t_des, t_f_des = x
         t_f_des = t_f_des + 273.15  # controls arrive in °C (§5.2 action)
         in_ads = phase < 0.5
-        t_f = jnp.where(in_ads, t_f_ads, t_f_des)
-        p_pa = jnp.where(in_ads, p_evap, p_cond)
-
         qm_pre = jnp.mean(q)
-        T_new, q_new, info = step_bed(T, q, t_f, p_pa, dt_s, **params)
-        qm_new = jnp.mean(q_new)
-
-        # Energy accounting, J per kg adsorbent (DESIGN §4.2).
-        # Cooling: h_fg·Δq̄ is already specific (kg/kg uptake swing); the
-        # wall-flux integral is per m² of wall, hence its /m_s.
-        dq_cool = h_fg * (qm_new - qm_pre) * in_ads
-        dq_in = hx * info["wall_flux_integral"] * (1.0 - in_ads) / m_s
-        qca = qca + dq_cool
-        qia = qia + dq_in
-        qcc = qcc + dq_cool
-        qic = qic + dq_in
+        if soft > 0.0:
+            # Soft switching (DESIGN §4.2 gradient diagnostics, Open
+            # Question 3): a substep containing a valve boundary is split
+            # into two part-steps, each integrated with its OWN phase
+            # conditions over its exact fraction of the substep. The
+            # part-step lengths are continuous in the switch time, so the
+            # episode responds smoothly at full physical strength — with
+            # no blended-pressure burst (the D-A is exponentially
+            # sensitive to p; blending p across a substep would create a
+            # spurious dQ/dt ~ k_LDF artifact).
+            duty = jnp.clip((t_end - t_abs) / dt_s, 0.0, 1.0)
+            dt_1 = duty * dt_s
+            ent_ads = 1.0 - in_ads
+            t_f_ent = jnp.where(ent_ads, t_f_ads, t_f_des)
+            p_ent = jnp.where(ent_ads, p_evap, p_cond)
+            t_f_cur = jnp.where(in_ads, t_f_ads, t_f_des)
+            p_cur = jnp.where(in_ads, p_evap, p_cond)
+            T_1, q_1, info_1 = step_bed(T, q, t_f_cur, p_cur, dt_1, **params)
+            T_new, q_new, info_2 = step_bed(T_1, q_1, t_f_ent, p_ent,
+                                            dt_s - dt_1, **params)
+            qm_1 = jnp.mean(q_1)
+            qm_new = jnp.mean(q_new)
+            wall_1 = info_1["wall_flux_integral"]
+            wall_2 = info_2["wall_flux_integral"]
+            wall_flux = wall_1 + wall_2
+        else:
+            t_f = jnp.where(in_ads, t_f_ads, t_f_des)
+            p_pa = jnp.where(in_ads, p_evap, p_cond)
+            T_new, q_new, info = step_bed(T, q, t_f, p_pa, dt_s, **params)
+            qm_new = jnp.mean(q_new)
+            wall_flux = info["wall_flux_integral"]
 
         t_new_abs = t_abs + dt_s
         flip = t_new_abs >= t_end
@@ -313,6 +343,32 @@ def advance_carry(carry, controls, *, n_steps, dt_s, phys):
         flip_a2d = flip * in_ads  # adsorption phase completed
         push = flip * (1.0 - in_ads)  # desorption phase completed = cycle done
         qm_now = jnp.mean(q_new)
+        t_des_start = jnp.where(flip_a2d, jnp.mean(T_new), t_des_start)
+
+        # Energy accounting, J per kg adsorbent (DESIGN §4.2).
+        # Cooling: h_fg·Δq̄ is already specific (kg/kg uptake swing); the
+        # wall-flux integral is per m² of wall, hence its /m_s.
+        # External metal/water mass lumped at the wall (hx_mass_factor > 1)
+        # is charged once per cycle with the desorption-phase sensible
+        # swing. Pure accounting — the T-trajectory is the bed's alone;
+        # hx = 1 reproduces the bare-bed heat input exactly.
+        metal_j_kg = ((hx - 1.0)
+                      * (params["c_s_j_kg_k"] + params["c_pl_j_kg_k"] * qm_now)
+                      * (jnp.mean(T_new) - t_des_start))
+        if soft > 0.0:
+            # Each part is credited to the phase it ran under (J/kg).
+            dq_cool = h_fg * ((qm_1 - qm_pre) * in_ads
+                              + (qm_new - qm_1) * (1.0 - in_ads))
+            dq_in = ((wall_1 * (1.0 - in_ads) + wall_2 * (1.0 - ent_ads))
+                     + metal_j_kg * push) / m_s
+        else:
+            dq_cool = h_fg * (qm_new - qm_pre) * in_ads
+            dq_in = (wall_flux * (1.0 - in_ads) + metal_j_kg * push) / m_s
+        qca = qca + dq_cool
+        qia = qia + dq_in
+        qcc = qcc + dq_cool
+        qic = qic + dq_in
+
         hqa = jnp.where(flip_a2d, _push(hqa, qm_now), hqa)
         hdq = jnp.where(flip_a2d, _push(hdq, qm_now - qms), hdq)
         hqd = jnp.where(push, _push(hqd, qm_now), hqd)
@@ -323,6 +379,7 @@ def advance_carry(carry, controls, *, n_steps, dt_s, phys):
         qia = jnp.where(push, 0.0, qia)
         qms = jnp.where(push, qm_now, qms)
         ncyc = ncyc + push
+        t_phase_start = jnp.where(flip, t_new_abs, t_phase_start)
 
         # Observation-oriented series (post-flip state).
         p_new = jnp.where(phase_new < 0.5, p_evap, p_cond)
@@ -347,7 +404,8 @@ def advance_carry(carry, controls, *, n_steps, dt_s, phys):
         )
         return (
             T_new, q_new, phase_new, t_new_abs, t_end_new, qca, qia, ncyc,
-            hqc, hqi, hdq, hqa, hqd, hta, qms, qcc, qic,
+            hqc, hqi, hdq, hqa, hqd, hta, qms, qcc, qic, t_des_start,
+            t_phase_start,
         ), ys
 
     return jax.lax.scan(body, carry, (t_ads_x, t_des_x, t_f_des_x),
@@ -418,6 +476,7 @@ def simulate_bed(
     q_init_kg_kg=None,
     n_steps=None,
     collect_trace=False,
+    soft_switch=False,
 ):
     """Roll out whole adsorption episodes with :func:`jax.lax.scan`.
 

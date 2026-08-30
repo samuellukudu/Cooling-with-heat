@@ -271,7 +271,13 @@ pre-heating/pre-cooling phase is instantaneous in v1 (valve flips, `P` jumps,
 `ṁ_vap = m_s · d(mean q)/dt` (positive when vapor flows *from* evaporator to
 bed). Heat input during desorption: integral of the wall-side flux plus
 sensible terms — the cycle-level `COP` and `SCP` follow
-(`SCP = Q_cool,cycle / (t_cycle · m_s)`).
+(`SCP = Q_cool,cycle / (t_cycle · m_s)`). Implemented at H1.4: the wall
+flux is credited to the bed only (`hx = 1` is the bare bed, the V3
+oracle correspondence); `hx_mass_factor > 1` adds, once per cycle, the
+desorption-phase sensible swing of an external metal/water mass lumped
+at the wall — `(hx−1)·c_eff·(T_des,end − T_des,start)` — pure
+accounting (the trajectory is untouched), which is what makes `hx` a
+*rig* property: V4 fits it per experimental rig, not per material.
 
 **Numerics.**
 
@@ -298,10 +304,14 @@ sensible terms — the cycle-level `COP` and `SCP` follow
   `Δt ≤ Δx² / (2·α_eff)`; `physics/bed1d.py` exposes a `check_timestep`
   helper (mirroring `diffheat.check_cfl`) so backend sweeps fail loudly.
 - Gradients flow through everything (`jax.grad` on any continuous design or
-  control); discrete valve flips are piecewise-smooth events — switch *times*
-  as continuous parameters give subgradients that work in practice, and a
-  soft-switch option (sigmoid-blended boundary pressures) exists for H1
-  gradient diagnostics.
+  control); discrete valve flips make the episode metric a *staircase* in
+  the switch times — flat between physics substeps, so the only smooth
+  gradient term is the trivial metric/duration scaling (H1 finding). The
+  soft-switch option (`soft_switch=True`) splits boundary substeps into
+  two part-steps, each integrated with its own phase conditions over its
+  exact fraction — episode metrics become continuous in the switch time
+  at full physical strength, with no blended-pressure burst (the D–A is
+  exponentially pressure-sensitive). Verified by V5.
 
 ### 4.3 Env-2 — `TwoBed` (system with switching, heat recovery, profiles)
 
@@ -502,8 +512,8 @@ milestone that needs it; nothing downstream may hand-wave past a red rung.
 | V1 | Property parity: `physics/thermo.py` vs `Materials/cooling_physics.py` | max rel. error < 1e-12 on a dense T-grid (identical formulas); optional CoolProp check < 0.5 % |
 | V2 | Conservation | per-step energy + adsorbate mass residual < 1e-6 (relative, jitted) |
 | V3 | **Oracle limit**: `Bed1D` with `k_LDF → ∞`, long cycle, thin bed → `Cycle0D` | COP/SCP match within 2 % |
-| V4 | Literature: silica-gel/water LDF benchmarks (Sakoda–Suzuki-type model; published chiller data, e.g. the Saha–Koyama series) | COP within ~15 % after calibrating `k_LDF`, `h`, UA within literature ranges; correct trend in cycle-time ↔ SCP sweep |
-| V5 | Gradients: `jax.grad` vs central finite differences on smooth controls | rel. error < 1e-3 at ≥ 10 probe points |
+| V4 | Literature: silica-gel/water LDF benchmarks (Sakoda–Suzuki-type model; published chiller data, e.g. the Saha–Koyama series) | COP within ~15 % after calibrating `k_LDF`, `h`, UA within literature ranges; correct trend in cycle-time ↔ SCP sweep — ✅ implemented: `calibration.py` + `benchmarks.md`; standard points ±1 %/+22 %→refit; cycle-time trend green |
+| V5 | Gradients: `jax.grad` vs central finite differences on smooth controls | rel. error < 1e-3 at ≥ 10 probe points — ✅ implemented: 10 probes on the soft-switched control problem, max rel. err < 1e-3 (`test_v5_control_gradients.py`) |
 | V6 | System sanity: `TwoBed` heat recovery ≥ no-recovery COP; cooling duty continuous across bed switchover | monotone improvements; no duty gaps > 1 dt |
 | V7 | Backend cross-check: `grad` and CMA-ES agree on the `Cycle0D-v0` optimum; reproduce `pareto_target_window`'s best point | same optimum within tolerance |
 | V8 | RL floor: PPO on deterministic `Cycle0D-v0` (single-step wrapper) must NOT beat `search` | codifies the honesty rule |
@@ -630,18 +640,21 @@ Ordered so each task unblocks the next; every task ends with its gate green.
   `Cycle0D` on COP and SCP. *Gate — green: COP gap 1.55 %, SCP gap 0.15 %
   (< 2 %); k_LDF- and dt-convergence < 0.5 %. The residual COP gap is the
   documented isosteric-convention difference (§9).*
-- **H1.4 — Literature calibration (V4).** Silica gel RD against published
-  silica-gel/water LDF chiller data (Sakoda–Suzuki-type model; the
-  Saha–Koyama experimental series): calibrate `k_LDF`, `h` within
-  literature ranges; match COP within ~15 % and reproduce the cycle-time ↔
-  SCP trend. *Gate: `harness/benchmarks.md` with sources, calibrated
-  values, error table.*
-- **H1.5 — First control experiments.** grad backend optimizes `t_switch`
-  and `T_f,des` on `Bed1D-v0`; gradient-vs-finite-difference check (V5 <
-  1e-3); soft-switch go/no-go experiment (resolves Open Question 3);
-  one-page notebook reproducing the headline plot (COP/SCP vs switch
-  time). *Gate: V5 green; notebook in `harness/`; decision recorded in
-  §13.3.*
+- **H1.4 — Literature calibration (V4).** ✅ done 2026-08. Calibrated
+  against two open-access experimental rigs (Uyun+2009 silica gel RD;
+  Sztekler+2021 KD gel), one standard point each, sweeps as predictions.
+  *Gate — green: standard points COP +0.9 %/−0.7 % (Uyun 70 °C); cycle-
+  time ↔ SCP trend reproduced (rise–peak–fall, modelled peak 500–600 s
+  vs measured 500 s); full table, mapping and findings in
+  `harness/benchmarks.md`. Documented v1-scope gap: the heat-source-
+  temperature *trend* needs the lumped vapour inventory (Open Question 2,
+  answered below).*
+- **H1.5 — First control experiments.** ✅ done 2026-08. `Bed1DControls`
+  exposes the §5.2 controls to the backends; V5 gradient-vs-FD gate green
+  (10 probes, < 1e-3, soft switch); headline plot + optimization in
+  `harness/control_notebook.ipynb` (Adam +31 % over defaults; CMA-ES to
+  the grid optimum). *Gate — green; the Open Question 3 decision is
+  recorded in §13.3.*
 
 **H1 accept (cumulative):** V3 within 2 %; benchmark table exists; the
 notebook reproduces the headline plot.
@@ -681,14 +694,28 @@ notebook reproduces the headline plot.
 
 ## 13. Open questions
 
-1. **`k_LDF` priors per material class** — how much literature calibration is
-   enough for V4, and do we fit them from ISODB kinetic isobars where
-   available? (H1 blocker.)
-2. **Isosteric phase modeling** — is the v1 instantaneous-flip approximation
-   within V4 tolerance for short cycles, or is the lumped vapor-inventory
-   option (H2) needed earlier? Decided by the V4 benchmark, not by taste.
-3. **Gradient-through-switching** — subgradient switch-times vs soft-switch
-   vs `search`-on-times hybrid. H1 experiment decides (§6 caveat).
+1. **`k_LDF` priors per material class** — ✅ answered by V4 (2026-08):
+   chiller-level data identify the *bed-level* effective kinetics when the
+   bed is kinetics-limited (k_LDF ≈ 2.5e-4 s⁻¹ for packed RD, 1.5e-3 s⁻¹
+   for finer KD gel — consistent with r⁻² grain scaling) and are
+   uninformative in the heat-transfer-limited regime. Grain-level priors
+   cannot be recovered from cycle data; ISODB kinetic isobars remain the
+   route to grain-level values if ever needed. See `benchmarks.md`.
+2. **Isosteric phase modeling** — ✅ answered by V4 (2026-08): the v1
+   fixed-reservoir-pressure approximation calibrates *point* performance
+   (±1 %) and reproduces cycle-time trends, but the heat-source-
+   temperature *trend* is far too weak (measured SCP ~triples 65→80 °C,
+   model +11 %) — the lumped vapour-inventory option (H2) is needed for
+   T_hs-trend fidelity. See `benchmarks.md` finding 2.
+3. **Gradient-through-switching** — ✅ decided by the H1.5 experiment
+   (2026-08): hard-valve subgradients do **not** exist in any useful sense
+   (the metric is flat between substeps; `jax.grad` returns only the blind
+   metric/duration term and ascent runs the switch time to a bound — the
+   no-go). Soft switching (substep split) gives V5-verified true gradients,
+   but fixed-lr Adam drifts along the ridge near the optimum. **Recipe:
+   `search` on switch times + `grad` on smooth controls** (CMA-ES reached
+   the grid optimum where Adam plateaued ~6 % short), or multi-start grad.
+   See `harness/control_notebook.ipynb` and the V5 tests.
 4. **Stochastic profile spec** — which uncertainties matter for the datacenter
    profile (source temperature variance? load steps?) and what sets their
    magnitudes. Needs one source citation before H2 RL experiments.
