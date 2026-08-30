@@ -556,8 +556,29 @@ Ordered so each task unblocks the next; every task ends with its gate green.
   `data_cache/fits/da_params.csv` with a QC report (fit-RMSE distribution;
   flag S-shaped isotherms — the MIL-101 class — where D–A fits poorly).
   One artifact, two consumers: Stage-1 training labels *and* the harness
-  material database. *Gate: fits exported; median RMSE and flag count
-  documented.*
+  material database.
+
+  **Reusability contract** (library + thin CLI — a general fitter applied
+  1,221 times, not a one-off training script):
+  - `fit_isotherm_da(p, q, T, psat_fn, ...) -> DAFit` — pure function, one
+    isotherm, **adsorbate-agnostic**: the saturation-pressure callable is
+    injected (water's Magnus correlation is only the CLI's default). No
+    ISODB parsing inside — plain arrays in — so CoRE/QMOF computed
+    isotherms and future GCMC (L2) labels reuse it unchanged.
+  - Diagnostics are first-class return values (`rmse`,
+    `flag ∈ {ok, poor_fit, S_shaped, insufficient_points}`, `n_points`),
+    never side prints — they fill the §8.1 columns and drive the QC gate.
+  - `isosteric_heat(isotherms) -> float | None` — Clausius–Clapeyron
+    across ≥ 2 temperatures at matched uptake; `None` + flagged for
+    single-T adsorbents; coverage statistics go to the QC report.
+  - `fit_all(rows) -> DataFrame` batch helper; the CLI
+    (`--mirror --out --qc-report`) stays thin: parse → call library →
+    write.
+  - Unit tests: synthetic noisy D–A curves recover their true parameters;
+    flags fire on synthetic Type-V curves.
+  *Gate: fits exported; median RMSE and flag count documented; and the
+  fitter demonstrably importable/reusable as a library (e.g. from a
+  notebook) without going through the CLI.*
 - **H1.1 — Bed physics core.** `physics/bed1d.py`: 1-D bed energy equation
   with the adsorption-heat source, LDF uptake with the exact-exponential
   substep, D–A isotherm from `thermo.py`, convective wall BC + adiabatic
