@@ -30,12 +30,18 @@ Two ladders are running in parallel and share one artifact:
 
 **Next moves, in order:**
 
-1. H1.1–H1.3 — bed physics + env + the V3 oracle-limit keystone test.
-2. H1.4–H1.5 — literature calibration (V4) + first control experiments.
-3. H2.1–H2.3 — two-bed system (V6) and the ISODB materials sweep (the
-   fitted table is ready: 553 rows load via the §8.1 loader, 154 with
-   physical q_sat and Q_st) — the T2 ranker the Stage-2 surrogate's
-   top-k hit rate is scored against.
+1. H1.1–H1.3 — bed physics + env + the V3 oracle-limit keystone test. *(done)*
+2. H1.4–H1.5 — literature calibration (V4) + first control experiments. *(done)*
+3. H2.1–H2.3 — two-bed system (V6), time-varying-source schedule
+   experiments, and the ISODB materials sweep (the fitted table is ready:
+   553 rows load via the §8.1 loader, 154 with physical q_sat and Q_st) —
+   the T2 ranker the Stage-2 surrogate's top-k hit rate is scored against.
+
+**Harness posture (2026-08): the harness is the project's R&D lab** — a
+workbench for posing heat-driven-cooling ideas as cheap, honest experiments
+against any operating scenario. The four application profiles are preset
+scenarios for cross-tool comparability, not the organizing frame; every
+experiment can pass raw setpoints, geometry, and schedules directly.
 
 GPU availability stays an open, unblocking question until H2 sweeps get
 large.

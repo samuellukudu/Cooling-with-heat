@@ -4,9 +4,20 @@
 > gym-compatible environments.**
 > RL is one of three optimization backends — not the identity of the project.
 >
-> Status: **H0 implemented (2026-08)** — package skeleton, Cycle0D oracle
-> (V1 parity < 1e-12), grad + search backends, V7 acceptance green; see
-> §12 for the milestone ladder and what comes next (H1: the dynamic bed).
+> Status: **H0 + H1 implemented (2026-08)** — package skeleton, Cycle0D
+> oracle (V1 parity < 1e-12), grad + search backends, V7 acceptance green;
+> the dynamic 1-D bed (Bed1D-v0) with V3 oracle limit, V4 literature
+> calibration and V5 control gradients green; H2 (the two-bed system) in
+> progress. See §12 for the milestone ladder.
+
+**Posture: an R&D lab, not an application product.** The harness exists so
+ideas about heat-driven cooling can be posed as cheap, honest experiments —
+"does heat recovery pay?", "which physics approximation matters?", "which
+material property drives system COP?" — against any operating scenario.
+The four application profiles are **preset scenarios** for comparability
+with the legacy screen, never the organizing frame: every experiment can
+pass raw setpoints, geometry, and schedules directly, and no milestone is
+scoped as a feature for one application.
 
 This document specifies the `harness/` package: what it is, its module
 layout, the physics of each environment, the environment interfaces
@@ -318,9 +329,30 @@ accounting (the trajectory is untouched), which is what makes `hx` a
 Two `Bed1D` instances (possibly different materials — the basis for
 composite-bed questions), four valves, optional mass/heat recovery between
 the beds, and a heat-transfer-fluid loop driven by an `ApplicationProfile`
-with an optional **time-varying source schedule** (e.g. data-center coolant
-loop 45–70 °C, diurnal solar 80–90 °C, truck exhaust transients) and a
-chilled-water load with a setpoint.
+or by raw per-step series — the lab posture means the dynamic sources are
+*data* (per-step temperature/request arrays), not named applications.
+
+**Implemented (H2.1).** Counter-phase pair in one `jax.lax.scan`
+(`physics/system.py`): system phase σ ∈ {0, 1} records which bed adsorbs;
+both beds always flip together (phase durations are role-keyed per bed, so
+asymmetric ads/des durations stay consistent). Phases end at their declared
+duration or earlier on a **request bit** — the valve-level hook schedule
+policies (H2.2) use to gate desorption on a time-varying source — subject
+to a minimum dwell. Heat recovery: during the first `t_rec` seconds of
+each phase the beds are disconnected from their fluids (the recovery loop
+owns the circuits) and exchange heat through a lumped `UA_rec` between
+their mean temperatures, applied as exactly antisymmetric per-cell sources
+(conserves `U_A + U_B` to machine precision, free in the `Q_in` books).
+The hot bed is whichever just finished desorbing, so the transfer always
+runs in the productive direction; the v1 machine keeps its vapor valves on
+phase connections during the window (no vapor-pressure dynamics — the
+Open Question 2 lumped inventory is the extension head).
+
+Finding worth keeping: recovery raises COP only when the swings complete
+with slack (the exchanged heat then offsets source draw at unchanged
+swing); in transient-bound regimes the film-off window delays the swings
+and `recovery_gain` goes negative — a throughput-vs-efficiency trade-off
+that schedule optimization should pick the operating regime for.
 
 This is the environment where sequential decision-making is real: the action
 is *when* to switch and *how* to route heat under a time-varying boundary —
@@ -514,7 +546,7 @@ milestone that needs it; nothing downstream may hand-wave past a red rung.
 | V3 | **Oracle limit**: `Bed1D` with `k_LDF → ∞`, long cycle, thin bed → `Cycle0D` | COP/SCP match within 2 % |
 | V4 | Literature: silica-gel/water LDF benchmarks (Sakoda–Suzuki-type model; published chiller data, e.g. the Saha–Koyama series) | COP within ~15 % after calibrating `k_LDF`, `h`, UA within literature ranges; correct trend in cycle-time ↔ SCP sweep — ✅ implemented: `calibration.py` + `benchmarks.md`; standard points ±1 %/+22 %→refit; cycle-time trend green |
 | V5 | Gradients: `jax.grad` vs central finite differences on smooth controls | rel. error < 1e-3 at ≥ 10 probe points — ✅ implemented: 10 probes on the soft-switched control problem, max rel. err < 1e-3 (`test_v5_control_gradients.py`) |
-| V6 | System sanity: `TwoBed` heat recovery ≥ no-recovery COP; cooling duty continuous across bed switchover | monotone improvements; no duty gaps > 1 dt |
+| V6 | System sanity: `TwoBed` heat recovery ≥ no-recovery COP; cooling duty continuous across bed switchover | monotone improvements; no duty gaps > 1 dt — ✅ implemented: recovery raises COP monotonically in `UA_rec`/`t_rec` at unchanged swing; duty continuity made precise for the v1 valve model — the flip burst (present in the single bed too) may make the per-step duty nonpositive for a few τ_kin, so the gate bounds the nonpositive stretch by the burst timescale (never the phase duration) and requires net-positive cooling over any one-phase window (`test_v6_two_bed_system.py`) |
 | V7 | Backend cross-check: `grad` and CMA-ES agree on the `Cycle0D-v0` optimum; reproduce `pareto_target_window`'s best point | same optimum within tolerance |
 | V8 | RL floor: PPO on deterministic `Cycle0D-v0` (single-step wrapper) must NOT beat `search` | codifies the honesty rule |
 
@@ -661,13 +693,29 @@ notebook reproduces the headline plot.
 
 ### H2 — System + materials sweep
 
-- **H2.1 — Two-bed physics.** `physics/system.py` + `envs/two_bed.py`
-  with the §5.3 spec. *Gate: V6 green — heat recovery ≥ no-recovery COP;
-  no cooling-duty gaps across bed switchover.*
-- **H2.2 — Datacenter profile, dynamic.** Time-varying source schedule
-  (45–70 °C loop) + optional seeded stochastic profiles; schedule
-  optimization via `search`/`grad`. *Gate: schedule optimization beats the
-  nominal fixed schedule on the datacenter profile.*
+- **H2.1 — Two-bed physics.** ✅ done 2026-08. `physics/system.py` +
+  `envs/two_bed.py` with the §5.3 spec (v0 continuous action =
+  `(t_switch, T_f,des, t_rec)`; per-step valve bits live at the physics
+  level as request bits for schedule policies; load model deferred).
+  Counter-phase pair, role-keyed asymmetric phase durations, request
+  bits with minimum dwell, film-disconnect heat recovery. *Gate — green
+  (V6): recovery raises COP monotonically in `UA_rec`/`t_rec` (+2 %
+  … +8 % over the swept range, 600 s phases, unchanged swing) with the
+  source draw dropping by exactly the exchanged heat; no duty gaps
+  beyond the documented flip-burst timescale; exchange conserves
+  `U_A + U_B` to 1e-9; system COP/SCP match the `Cycle0D` oracle within
+  2 % in the equilibrium limit. Documented trade-off: in transient-bound
+  regimes (short phases, slow kinetics) recovery goes negative —
+  see §4.3.* Also in this change: `bed1d.step_bed`/`step_episode` gained
+  `extra_source_w_m2` / `wall_film_scale` (the recovery plumbing) with
+  the single-bed paths numerically untouched (V2/V3/V5 still green).
+- **H2.2 — Time-varying sources + schedule policies** *(recast from
+  "datacenter profile, dynamic" per the R&D-lab posture: the milestone is
+  the experiment family, the 45–70 °C coolant loop is one preset
+  instance)*. Source temperature and switching policies as per-step
+  series; schedule optimization via `search`/`grad`. *Gate: schedule
+  optimization beats the nominal fixed schedule on the datacenter loop
+  scenario.*
 - **H2.3 — Materials sweep = the T2 ranker.** The fitted ISODB table
   (H1.0) through `Cycle0D-v0` (all materials) and `Bed1D-v0` (top
   candidates) per profile → ranked shortlists. This produces the

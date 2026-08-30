@@ -161,7 +161,8 @@ def bed_rhs(T, q, t_f_k, p_pa, *, dx, q_sat_kg_kg, q_st_j_kg, e_char_j_mol,
 
 def step_bed(T, q, t_f_k, p_pa, dt_s, *, dx, q_sat_kg_kg, q_st_j_kg,
              e_char_j_mol, n_da, k_ldf_s_1, rho_s_kg_m3, c_s_j_kg_k,
-             c_pl_j_kg_k, k_eff_w_m_k, h_wall_w_m2_k):
+             c_pl_j_kg_k, k_eff_w_m_k, h_wall_w_m2_k, extra_source_w_m2=None,
+             wall_film_scale=None):
     """One full time step: exact-exponential LDF substep + RK4 on T.
 
     The uptake update freezes ``q*`` at the start-of-step state (see
@@ -169,6 +170,19 @@ def step_bed(T, q, t_f_k, p_pa, dt_s, *, dx, q_sat_kg_kg, q_st_j_kg,
     conduction operator with the step-averaged adsorption source and a
     capacity frozen at the midpoint uptake — both constants across the
     RK4 stages, which keeps the per-step energy identity exact.
+
+    ``extra_source_w_m2`` is an optional per-cell energy source [W/m²]
+    added to the bed RHS (the two-bed heat-recovery coupling,
+    ``physics/system.py``). It is frozen across the RK4 stages like
+    ``src``, so the per-step energy identity extends exactly by
+    ``dt·Σ extra`` on the stored-energy side; two beds driven with
+    antisymmetric extras (±Q̇/n_cells) therefore conserve the sum of
+    their stored energies exactly.
+
+    ``wall_film_scale`` (default 1.0) scales the convective wall film —
+    0 disconnects the bed from its fluid (the recovery window owns the
+    circuits), which makes the wall-flux quadrature exactly zero and the
+    bed adiabatic apart from ``extra_source_w_m2``.
 
     Returns ``(T_new, q_new, info)`` where ``info`` carries the RK4
     wall-flux quadrature ``Φ`` [J/m²], the adsorption heat released over
@@ -185,13 +199,15 @@ def step_bed(T, q, t_f_k, p_pa, dt_s, *, dx, q_sat_kg_kg, q_st_j_kg,
 
     cap = rho_s_kg_m3 * (c_s_j_kg_k + c_pl_j_kg_k * 0.5 * (q + q_new))
     src = rho_s_kg_m3 * q_dot_avg * q_st_j_kg * dx  # W/m² per cell
+    extra = 0.0 if extra_source_w_m2 is None else extra_source_w_m2
+    h = h_wall_w_m2_k if wall_film_scale is None else h_wall_w_m2_k * wall_film_scale
 
     def stage(t_s):
         # The wall flux comes from the same stencil evaluation as the
         # stage RHS, so the quadrature below is consistent with the
         # T-update and the per-step energy identity holds exactly.
-        div, wall = _conduction_div(t_s, dx, k_eff_w_m_k, h_wall_w_m2_k, t_f_k)
-        return (div + src) / (cap * dx), wall
+        div, wall = _conduction_div(t_s, dx, k_eff_w_m_k, h, t_f_k)
+        return (div + src + extra) / (cap * dx), wall
 
     a1, w1 = stage(T)
     t2 = T + 0.5 * dt_s * a1
@@ -268,6 +284,156 @@ def initial_carry(T_init_k, q_init_kg_kg, *, t_phase_end_s, n_cycles):
     )
 
 
+def step_episode(carry, x, *, dt_s, phys, extra_source_w_m2=None,
+                 wall_film_scale=None):
+    """One physics substep of an episode carry — the exact per-step body of
+    :func:`advance_carry`'s scan, factored out so multi-bed drivers
+    (:mod:`.system`) can step several carries under one shared clock without
+    duplicating the phase-flip and energy-accounting logic.
+
+    ``carry`` is a bed episode carry (:func:`initial_carry`), ``x =
+    (t_ads_s, t_des_s, t_f_des_c)`` the per-step controls (durations of the
+    phases entering at a flip this step; desorption fluid temperature), and
+    ``phys`` the configuration dict (see :func:`simulate_bed`). A forced
+    flip is expressed by the caller setting the carry's phase end time to
+    the current absolute time before the call (the two-bed request bits do
+    exactly that). ``extra_source_w_m2`` and ``wall_film_scale`` flow to
+    :func:`step_bed` (the two-bed recovery coupling).
+
+    Returns ``(new_carry, ys)`` with ``ys`` shaped ``(len(SERIES_CHANNELS),)``.
+    """
+    dx = phys["dx"]
+    m_s = phys["rho_s_kg_m3"] * phys["L_m"]
+    p_evap = phys["p_evap_pa"]
+    p_cond = phys["p_cond_pa"]
+    h_fg = phys["h_fg_evap_j_kg"]
+    t_f_ads = phys["t_f_ads_c"] + 273.15
+    hx = phys["hx_mass_factor"]
+    soft = float(phys.get("soft_switch", 0.0))
+    params = {k: phys[k] for k in BED_RHS_PARAMS}
+
+    t_ads, t_des, t_f_des = x
+    t_f_des = t_f_des + 273.15  # controls arrive in °C (§5.2 action)
+    (T, q, phase, t_abs, t_end, qca, qia, ncyc, hqc, hqi, hdq, hqa,
+     hqd, hta, qms, qcc, qic, t_des_start, t_phase_start) = carry
+    in_ads = phase < 0.5
+    qm_pre = jnp.mean(q)
+    if soft > 0.0:
+        # Soft switching (DESIGN §4.2 gradient diagnostics, Open
+        # Question 3): a substep containing a valve boundary is split
+        # into two part-steps, each integrated with its OWN phase
+        # conditions over its exact fraction of the substep. The
+        # part-step lengths are continuous in the switch time, so the
+        # episode responds smoothly at full physical strength — with
+        # no blended-pressure burst (the D-A is exponentially
+        # sensitive to p; blending p across a substep would create a
+        # spurious dQ/dt ~ k_LDF artifact).
+        duty = jnp.clip((t_end - t_abs) / dt_s, 0.0, 1.0)
+        dt_1 = duty * dt_s
+        ent_ads = 1.0 - in_ads
+        t_f_ent = jnp.where(ent_ads, t_f_ads, t_f_des)
+        p_ent = jnp.where(ent_ads, p_evap, p_cond)
+        t_f_cur = jnp.where(in_ads, t_f_ads, t_f_des)
+        p_cur = jnp.where(in_ads, p_evap, p_cond)
+        T_1, q_1, info_1 = step_bed(T, q, t_f_cur, p_cur, dt_1, **params,
+                                    extra_source_w_m2=extra_source_w_m2,
+                                    wall_film_scale=wall_film_scale)
+        T_new, q_new, info_2 = step_bed(T_1, q_1, t_f_ent, p_ent,
+                                        dt_s - dt_1, **params,
+                                        extra_source_w_m2=extra_source_w_m2,
+                                        wall_film_scale=wall_film_scale)
+        qm_1 = jnp.mean(q_1)
+        qm_new = jnp.mean(q_new)
+        wall_1 = info_1["wall_flux_integral"]
+        wall_2 = info_2["wall_flux_integral"]
+        wall_flux = wall_1 + wall_2
+    else:
+        t_f = jnp.where(in_ads, t_f_ads, t_f_des)
+        p_pa = jnp.where(in_ads, p_evap, p_cond)
+        T_new, q_new, info = step_bed(T, q, t_f, p_pa, dt_s, **params,
+                                      extra_source_w_m2=extra_source_w_m2,
+                                      wall_film_scale=wall_film_scale)
+        qm_new = jnp.mean(q_new)
+        wall_flux = info["wall_flux_integral"]
+
+    t_new_abs = t_abs + dt_s
+    flip = t_new_abs >= t_end
+    entering = 1.0 - phase
+    dur_enter = jnp.where(entering < 0.5, t_ads, t_des)
+    t_end_new = jnp.where(flip, t_end + dur_enter, t_end)
+    phase_new = jnp.where(flip, entering, phase)
+
+    flip_a2d = flip * in_ads  # adsorption phase completed
+    push = flip * (1.0 - in_ads)  # desorption phase completed = cycle done
+    qm_now = jnp.mean(q_new)
+    t_des_start = jnp.where(flip_a2d, jnp.mean(T_new), t_des_start)
+
+    # Energy accounting, J per kg adsorbent (DESIGN §4.2).
+    # Cooling: h_fg·Δq̄ is already specific (kg/kg uptake swing); the
+    # wall-flux integral is per m² of wall, hence its /m_s.
+    # External metal/water mass lumped at the wall (hx_mass_factor > 1)
+    # is charged once per cycle with the desorption-phase sensible
+    # swing. Pure accounting — the T-trajectory is the bed's alone;
+    # hx = 1 reproduces the bare-bed heat input exactly. Heat received
+    # through ``extra_source_w_m2`` (inter-bed recovery) is free by
+    # construction: it is a transfer from the twin bed, not source input.
+    metal_j_kg = ((hx - 1.0)
+                  * (params["c_s_j_kg_k"] + params["c_pl_j_kg_k"] * qm_now)
+                  * (jnp.mean(T_new) - t_des_start))
+    if soft > 0.0:
+        # Each part is credited to the phase it ran under (J/kg).
+        dq_cool = h_fg * ((qm_1 - qm_pre) * in_ads
+                          + (qm_new - qm_1) * (1.0 - in_ads))
+        dq_in = ((wall_1 * (1.0 - in_ads) + wall_2 * (1.0 - ent_ads))
+                 + metal_j_kg * push) / m_s
+    else:
+        dq_cool = h_fg * (qm_new - qm_pre) * in_ads
+        dq_in = (wall_flux * (1.0 - in_ads) + metal_j_kg * push) / m_s
+    qca = qca + dq_cool
+    qia = qia + dq_in
+    qcc = qcc + dq_cool
+    qic = qic + dq_in
+
+    hqa = jnp.where(flip_a2d, _push(hqa, qm_now), hqa)
+    hdq = jnp.where(flip_a2d, _push(hdq, qm_now - qms), hdq)
+    hqd = jnp.where(push, _push(hqd, qm_now), hqd)
+    hqc = jnp.where(push, _push(hqc, qca), hqc)
+    hqi = jnp.where(push, _push(hqi, qia), hqi)
+    hta = jnp.where(push, _push(hta, t_ads), hta)
+    qca = jnp.where(push, 0.0, qca)
+    qia = jnp.where(push, 0.0, qia)
+    qms = jnp.where(push, qm_now, qms)
+    ncyc = ncyc + push
+    t_phase_start = jnp.where(flip, t_new_abs, t_phase_start)
+
+    # Observation-oriented series (post-flip state).
+    p_new = jnp.where(phase_new < 0.5, p_evap, p_cond)
+    q_star_mean = jnp.mean(da_uptake(T_new, p_new, phys["q_sat_kg_kg"],
+                                     phys["e_char_j_mol"], phys["n_da"]))
+    dur_new = jnp.where(phase_new < 0.5, t_ads, t_des)
+    elapsed = t_new_abs - (t_end_new - dur_new)
+    ys = jnp.stack(
+        (
+            T_new[0],
+            jnp.mean(T_new),
+            jnp.max(T_new),
+            qm_new,
+            q_star_mean,
+            p_new / p_evap,
+            jnp.where(phase_new < 0.5, t_f_ads, t_f_des),
+            phase_new,
+            elapsed / dur_new,
+            dq_cool,
+            dq_in,
+        )
+    )
+    return (
+        T_new, q_new, phase_new, t_new_abs, t_end_new, qca, qia, ncyc,
+        hqc, hqi, hdq, hqa, hqd, hta, qms, qcc, qic, t_des_start,
+        t_phase_start,
+    ), ys
+
+
 def advance_carry(carry, controls, *, n_steps, dt_s, phys):
     """Advance an episode carry by ``n_steps`` physics steps under constant
     per-call controls ``controls = (t_ads_s, t_des_s, t_f_des_c)``.
@@ -280,136 +446,34 @@ def advance_carry(carry, controls, *, n_steps, dt_s, phys):
     Returns ``(new_carry, ys)`` with ``ys`` shaped ``(n_steps,
     len(SERIES_CHANNELS))``.
     """
-    dx = phys["dx"]
-    m_s = phys["rho_s_kg_m3"] * phys["L_m"]
-    p_evap = phys["p_evap_pa"]
-    p_cond = phys["p_cond_pa"]
-    h_fg = phys["h_fg_evap_j_kg"]
-    t_f_ads = phys["t_f_ads_c"] + 273.15
-    hx = phys["hx_mass_factor"]
-    soft = float(phys.get("soft_switch", 0.0))
-    params = {k: phys[k] for k in BED_RHS_PARAMS}
-
     t_ads_x, t_des_x, t_f_des_x = (
         jnp.full((n_steps,), c) for c in controls
     )
 
-    def body(carry, x):
-        (T, q, phase, t_abs, t_end, qca, qia, ncyc, hqc, hqi, hdq, hqa,
-         hqd, hta, qms, qcc, qic, t_des_start, t_phase_start) = carry
-        t_ads, t_des, t_f_des = x
-        t_f_des = t_f_des + 273.15  # controls arrive in °C (§5.2 action)
-        in_ads = phase < 0.5
-        qm_pre = jnp.mean(q)
-        if soft > 0.0:
-            # Soft switching (DESIGN §4.2 gradient diagnostics, Open
-            # Question 3): a substep containing a valve boundary is split
-            # into two part-steps, each integrated with its OWN phase
-            # conditions over its exact fraction of the substep. The
-            # part-step lengths are continuous in the switch time, so the
-            # episode responds smoothly at full physical strength — with
-            # no blended-pressure burst (the D-A is exponentially
-            # sensitive to p; blending p across a substep would create a
-            # spurious dQ/dt ~ k_LDF artifact).
-            duty = jnp.clip((t_end - t_abs) / dt_s, 0.0, 1.0)
-            dt_1 = duty * dt_s
-            ent_ads = 1.0 - in_ads
-            t_f_ent = jnp.where(ent_ads, t_f_ads, t_f_des)
-            p_ent = jnp.where(ent_ads, p_evap, p_cond)
-            t_f_cur = jnp.where(in_ads, t_f_ads, t_f_des)
-            p_cur = jnp.where(in_ads, p_evap, p_cond)
-            T_1, q_1, info_1 = step_bed(T, q, t_f_cur, p_cur, dt_1, **params)
-            T_new, q_new, info_2 = step_bed(T_1, q_1, t_f_ent, p_ent,
-                                            dt_s - dt_1, **params)
-            qm_1 = jnp.mean(q_1)
-            qm_new = jnp.mean(q_new)
-            wall_1 = info_1["wall_flux_integral"]
-            wall_2 = info_2["wall_flux_integral"]
-            wall_flux = wall_1 + wall_2
-        else:
-            t_f = jnp.where(in_ads, t_f_ads, t_f_des)
-            p_pa = jnp.where(in_ads, p_evap, p_cond)
-            T_new, q_new, info = step_bed(T, q, t_f, p_pa, dt_s, **params)
-            qm_new = jnp.mean(q_new)
-            wall_flux = info["wall_flux_integral"]
+    return jax.lax.scan(
+        lambda c, x: step_episode(c, x, dt_s=dt_s, phys=phys),
+        carry,
+        (t_ads_x, t_des_x, t_f_des_x),
+        length=n_steps,
+    )
 
-        t_new_abs = t_abs + dt_s
-        flip = t_new_abs >= t_end
-        entering = 1.0 - phase
-        dur_enter = jnp.where(entering < 0.5, t_ads, t_des)
-        t_end_new = jnp.where(flip, t_end + dur_enter, t_end)
-        phase_new = jnp.where(flip, entering, phase)
 
-        flip_a2d = flip * in_ads  # adsorption phase completed
-        push = flip * (1.0 - in_ads)  # desorption phase completed = cycle done
-        qm_now = jnp.mean(q_new)
-        t_des_start = jnp.where(flip_a2d, jnp.mean(T_new), t_des_start)
+def cycle_totals_from_carry(carry):
+    """Per-kg episode totals over the last ``n_cycles − 1`` completed cycles
+    (the first cycle is warm-up — see :func:`summary_from_carry`).
 
-        # Energy accounting, J per kg adsorbent (DESIGN §4.2).
-        # Cooling: h_fg·Δq̄ is already specific (kg/kg uptake swing); the
-        # wall-flux integral is per m² of wall, hence its /m_s.
-        # External metal/water mass lumped at the wall (hx_mass_factor > 1)
-        # is charged once per cycle with the desorption-phase sensible
-        # swing. Pure accounting — the T-trajectory is the bed's alone;
-        # hx = 1 reproduces the bare-bed heat input exactly.
-        metal_j_kg = ((hx - 1.0)
-                      * (params["c_s_j_kg_k"] + params["c_pl_j_kg_k"] * qm_now)
-                      * (jnp.mean(T_new) - t_des_start))
-        if soft > 0.0:
-            # Each part is credited to the phase it ran under (J/kg).
-            dq_cool = h_fg * ((qm_1 - qm_pre) * in_ads
-                              + (qm_new - qm_1) * (1.0 - in_ads))
-            dq_in = ((wall_1 * (1.0 - in_ads) + wall_2 * (1.0 - ent_ads))
-                     + metal_j_kg * push) / m_s
-        else:
-            dq_cool = h_fg * (qm_new - qm_pre) * in_ads
-            dq_in = (wall_flux * (1.0 - in_ads) + metal_j_kg * push) / m_s
-        qca = qca + dq_cool
-        qia = qia + dq_in
-        qcc = qcc + dq_cool
-        qic = qic + dq_in
-
-        hqa = jnp.where(flip_a2d, _push(hqa, qm_now), hqa)
-        hdq = jnp.where(flip_a2d, _push(hdq, qm_now - qms), hdq)
-        hqd = jnp.where(push, _push(hqd, qm_now), hqd)
-        hqc = jnp.where(push, _push(hqc, qca), hqc)
-        hqi = jnp.where(push, _push(hqi, qia), hqi)
-        hta = jnp.where(push, _push(hta, t_ads), hta)
-        qca = jnp.where(push, 0.0, qca)
-        qia = jnp.where(push, 0.0, qia)
-        qms = jnp.where(push, qm_now, qms)
-        ncyc = ncyc + push
-        t_phase_start = jnp.where(flip, t_new_abs, t_phase_start)
-
-        # Observation-oriented series (post-flip state).
-        p_new = jnp.where(phase_new < 0.5, p_evap, p_cond)
-        q_star_mean = jnp.mean(da_uptake(T_new, p_new, phys["q_sat_kg_kg"],
-                                         phys["e_char_j_mol"], phys["n_da"]))
-        dur_new = jnp.where(phase_new < 0.5, t_ads, t_des)
-        elapsed = t_new_abs - (t_end_new - dur_new)
-        ys = jnp.stack(
-            (
-                T_new[0],
-                jnp.mean(T_new),
-                jnp.max(T_new),
-                qm_new,
-                q_star_mean,
-                p_new / p_evap,
-                jnp.where(phase_new < 0.5, t_f_ads, t_f_des),
-                phase_new,
-                elapsed / dur_new,
-                dq_cool,
-                dq_in,
-            )
-        )
-        return (
-            T_new, q_new, phase_new, t_new_abs, t_end_new, qca, qia, ncyc,
-            hqc, hqi, hdq, hqa, hqd, hta, qms, qcc, qic, t_des_start,
-            t_phase_start,
-        ), ys
-
-    return jax.lax.scan(body, carry, (t_ads_x, t_des_x, t_f_des_x),
-                        length=n_steps)
+    Raw sums, no per-cycle normalization: ``delta_q``/``q_ads``/``q_des``
+    still need dividing by the cycle count. Exposed for multi-bed drivers
+    that recombine per-bed books in absolute energy terms.
+    """
+    return {
+        "Q_cool_J_kg": jnp.sum(carry[_CARRY_HIST_QCOOL][1:]),
+        "Q_in_J_kg": jnp.sum(carry[_CARRY_HIST_QIN][1:]),
+        "t_ads_s": jnp.sum(carry[_CARRY_HIST_TADS][1:]),
+        "delta_q": jnp.sum(carry[_CARRY_HIST_DQ][1:]),
+        "q_ads": jnp.sum(carry[_CARRY_HIST_QADS][1:]),
+        "q_des": jnp.sum(carry[_CARRY_HIST_QDES][1:]),
+    }
 
 
 def summary_from_carry(carry, *, p_evap_pa, p_cond_pa, h_fg_evap_j_kg):
@@ -419,28 +483,23 @@ def summary_from_carry(carry, *, p_evap_pa, p_cond_pa, h_fg_evap_j_kg):
     cycle is warm-up: the episode starts on the adsorption isotherm, so
     its swing is zero by construction).
     """
-    hqc = carry[_CARRY_HIST_QCOOL]
-    hqi = carry[_CARRY_HIST_QIN]
-    hdq = carry[_CARRY_HIST_DQ]
-    hqa = carry[_CARRY_HIST_QADS]
-    hqd = carry[_CARRY_HIST_QDES]
-    hta = carry[_CARRY_HIST_TADS]
+    totals = cycle_totals_from_carry(carry)
+    q_cool = totals["Q_cool_J_kg"]
+    q_in = totals["Q_in_J_kg"]
+    t_ads = totals["t_ads_s"]
 
-    q_cool = jnp.sum(hqc[1:])
-    q_in = jnp.sum(hqi[1:])
-    t_ads = jnp.sum(hta[1:])
     safe_qin = jnp.where(q_in > 0.0, q_in, 1.0)
     cop = jnp.where(q_in > 0.0, q_cool / safe_qin, 0.0)
     safe_t = jnp.where(t_ads > 0.0, t_ads, 1.0)
     scp = jnp.where(t_ads > 0.0, q_cool / safe_t, 0.0)
-    n_last = hqc.shape[0] - 1
+    n_last = carry[_CARRY_HIST_QCOOL].shape[0] - 1
     safe_n = max(n_last, 1)
     return {
         "COP": cop,
         "SCP_W_kg": scp,
-        "delta_q": jnp.sum(hdq[1:]) / safe_n,
-        "q_ads": jnp.sum(hqa[1:]) / safe_n,
-        "q_des": jnp.sum(hqd[1:]) / safe_n,
+        "delta_q": totals["delta_q"] / safe_n,
+        "q_ads": totals["q_ads"] / safe_n,
+        "q_des": totals["q_des"] / safe_n,
         "P_evap_kPa": p_evap_pa / 1000.0,
         "P_cond_kPa": p_cond_pa / 1000.0,
         "h_fg_MJ_kg": h_fg_evap_j_kg / 1e6,
@@ -567,10 +626,12 @@ __all__ = [
     "advance_carry",
     "bed_rhs",
     "check_timestep",
+    "cycle_totals_from_carry",
     "initial_carry",
     "max_timestep",
     "simulate_bed",
     "step_bed",
+    "step_episode",
     "summary_from_carry",
     "volumetric_capacity",
 ]
