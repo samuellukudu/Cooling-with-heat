@@ -241,13 +241,20 @@ vapor pressure `P(t)` set by the valve, phase ∈ {ads, des}.
 **Governing equations.**
 
 ```
-bed energy:   (c_s + c_pl·q)·ρ_s · ∂T/∂t = ∂/∂x( k_eff · ∂T/∂x ) − ρ_s·q̇·Q_st
+bed energy:   (c_s + c_pl·q)·ρ_s · ∂T/∂t = ∂/∂x( k_eff · ∂T/∂x ) + ρ_s·q̇·Q_st
 uptake (LDF): q̇(x,t) = k_LDF · ( q*(T(x,t), P(t)) − q(x,t) )
 isotherm:     q*(T,P) = q_sat · exp( −(A/E)^n ),  A = R·T·ln( P_sat(T)/P )
 wall BC:      −k_eff·∂T/∂x |_{x=0} = h·( T_f(t) − T(0,t) )      [convective]
               ∂T/∂x |_{x=L} = 0                                  [adiabatic]
 valve:        ads → P = P_sat(T_evap);  des → P = P_sat(T_cond)
 ```
+
+Source sign (fixed at implementation, H1.1): adsorption (q̇ > 0) *heats*
+the bed. With the adsorbed-phase enthalpy convention `h_a = h_g − Q_st`
+this form is the exact bed energy balance — the vapour-enthalpy and
+storage cross-terms cancel identically — which is what makes the
+desorption-phase wall-flux integral reduce to the `Cycle0D` heat-input
+accounting in the equilibrium limit (V3).
 
 `Q_st` = isosteric heat [J/kg water]; `c_s, ρ_s, k_eff` = solid effective
 properties; `h, T_f(t)` = film coefficient and heat-transfer-fluid
@@ -272,8 +279,21 @@ sensible terms — the cycle-level `COP` and `SCP` follow
   `jax.lax.scan` (whole episode = one scan: `jit`-able, `vmap`-able).
 - **Stiffness control.** LDF uptake is integrated with an exact exponential
   sub-update per step given frozen `q*`:
-  `q_{n+1} = q* + (q_n − q*)·exp(−k_LDF·Δt)`. This relaxes the `k·Δt` bound
-  that would otherwise force absurdly small steps at high `k_LDF`.
+  `q_{n+1} = q* + (q_n − q*)·exp(−k_LDF·Δt)`. This removes the `k·Δt < 2`
+  explicit-Euler bound of the uptake ODE itself (any `k·Δt` is stable in
+  `q`). The remaining limit is the two-way adsorption-heat ↔ temperature
+  coupling of the split scheme: linearising the one-step map gives roughly
+  `|Q_st/cap · dq*/dT|·(1 − e^{−k_LDF·Δt}) ≲ 2`, i.e. `k_LDF·Δt ≲ 0.25`
+  for typical parameters. The equilibrium limit V3 exercises is therefore
+  τ_kin = 1/k_LDF ≪ cycle time (k-convergence asserted in the V3 test),
+  not literally k_LDF → ∞.
+- **Swing self-limiting (observed at H1.2/1.3).** During a swing the
+  adsorption heat adds `ρ_s·Q_st·|dq*/dT|` (~10×) to the effective heat
+  capacity, stretching the swing time constant to `τ ≈ L²/α_eff` with
+  `α_eff = k_eff/cap_eff`. Endpoint completion therefore needs
+  `t_phase ≫ τ_eff` (strong `h`, thin bed, or long phases) — the dynamic
+  system's COP can be non-monotone in `q_sat` under transients, and SCP
+  comparisons across cycle times must complete swings to be meaningful.
 - Conduction step respects the diffheat CFL rule of thumb
   `Δt ≤ Δx² / (2·α_eff)`; `physics/bed1d.py` exposes a `check_timestep`
   helper (mirroring `diffheat.check_cfl`) so backend sweeps fail loudly.
@@ -490,7 +510,13 @@ milestone that needs it; nothing downstream may hand-wave past a red rung.
 
 V3 is the keystone: it ties the dynamic model to the canonical equilibrium
 model by construction, so "the harness agrees with the screening tool" is a
-test, not a claim.
+test, not a claim. Implemented (H1.3): the limit is taken as τ_kin ≪ cycle
+time with k- and dt-convergence asserted; the residual ~1.5 % COP gap is
+the documented trajectory-convention difference (the oracle books the
+desorption sensible heat at the frozen adsorption uptake `q_ads·c_pl·ΔT`
+— exact for its instantaneous-isosteric trajectory — while the dynamic bed
+integrates `c_pl·∫q*(T, P_cond) dT` along the coupled trajectory; the
+cooling side and SCP match exactly).
 
 ---
 
@@ -582,22 +608,28 @@ Ordered so each task unblocks the next; every task ends with its gate green.
   *Gate: fits exported; median RMSE and flag count documented; and the
   fitter demonstrably importable/reusable as a library (e.g. from a
   notebook) without going through the CLI.*
-- **H1.1 — Bed physics core.** `physics/bed1d.py`: 1-D bed energy equation
-  with the adsorption-heat source, LDF uptake with the exact-exponential
-  substep, D–A isotherm from `thermo.py`, convective wall BC + adiabatic
-  far BC; RK4 inside `jax.lax.scan`; `check_timestep` stability helper.
-  *Gate (V2 + unit): pure-conduction limit matches the analytic
-  semi-infinite slab; uptake ODE matches its exponential solution;
-  per-step energy/mass residual < 1e-6.*
-- **H1.2 — Bed env + gym wrapper.** `envs/bed1d.py` with the §5.2
-  observation/action/reward spec; jitted rollout for the grad backend;
-  Gymnasium wrapper (numpy boundary) passing
-  `gymnasium.utils.env_checker.check_env`. *Gate: check_env clean; episode
-  metrics schema stable (schema version constant).*
-- **H1.3 — Oracle limit (V3, keystone).** `k_LDF → ∞`, long cycle, thin
-  bed → `Cycle0D` within 2 % on COP and SCP. This ties the dynamic model
-  to the canonical equilibrium model by construction. *Gate: V3 test
-  green.*
+- **H1.1 — Bed physics core.** ✅ done 2026-08. `physics/bed1d.py`: 1-D bed
+  energy equation with the adsorption-heat source (sign fixed — see §4.2),
+  LDF uptake with the exact-exponential substep, D–A isotherm from
+  `thermo.py`, ghost-cell convective wall BC + adiabatic far BC; RK4 inside
+  `jax.lax.scan`; `check_timestep` stability helper.
+  *Gate (V2 + unit) — green: pure-conduction limit matches the analytic
+  semi-infinite slab (max profile error 0.29 % of the 50 K step); uptake
+  matches its exponential solution at any k·Δt (incl. k·Δt = 500);
+  per-step energy identity and semi-discrete telescoping hold to ~1e-10
+  relative; RK4 order 4 verified against expm of the semi-discrete system.*
+- **H1.2 — Bed env + gym wrapper.** ✅ done 2026-08. `envs/bed1d.py` with
+  the §5.2 observation/action/reward spec (registered `Bed1D-v0` in both
+  the harness and Gymnasium registries); jitted whole-episode rollout for
+  the grad backend (gradients flow through the scan); Gymnasium wrapper
+  (`Bed1DGymEnv`) passing `check_env`. *Gate — green: check_env clean;
+  metrics schema versioned (`BED1D_SCHEMA_VERSION = 1`); rollout and
+  stepwise paths agree to 1e-6.*
+- **H1.3 — Oracle limit (V3, keystone).** ✅ done 2026-08. Equilibrium
+  limit (τ_kin = 0.2 s vs 600 s phases, h = 2000 W/m²K, 2 mm bed) →
+  `Cycle0D` on COP and SCP. *Gate — green: COP gap 1.55 %, SCP gap 0.15 %
+  (< 2 %); k_LDF- and dt-convergence < 0.5 %. The residual COP gap is the
+  documented isosteric-convention difference (§9).*
 - **H1.4 — Literature calibration (V4).** Silica gel RD against published
   silica-gel/water LDF chiller data (Sakoda–Suzuki-type model; the
   Saha–Koyama experimental series): calibrate `k_LDF`, `h` within
