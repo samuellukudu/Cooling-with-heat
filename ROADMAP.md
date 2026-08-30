@@ -16,25 +16,29 @@
 Two ladders are running in parallel and share one artifact:
 
 - **adsorbent-ml** — Stage 0 data exports done (ISODB: 1,221 pure-water
-  isotherms; CoRE MOF; QMOF; IZA; anchor table). Next: **`fit_da.py`** —
-  Dubinin–Astakhov fits per isotherm → `data_cache/fits/`, which are both
-  the Stage-1 training labels and the harness material parameters.
+  isotherms; CoRE MOF; QMOF; IZA; anchor table) **and H1.0 done**:
+  `fit_da.py` (reusable library + thin CLI) fit D–A parameters to the
+  water isotherms — 386 usable fits (median nRMSE 2.8%), 24 adsorbents
+  with multi-temperature Q_st; the rest are honestly flagged
+  (`data_cache/fits/da_params_qc.md`). These are the Stage-1 training
+  labels and the harness material database rows.
 - **harness** — H0 done and verified (Cycle0D oracle with V1 parity
   < 1e-12; grad/search backends; V7 reproduces the legacy screen's best
-  point on all four profiles; 1,333 tests green). Next: **H1 — the dynamic
-  1-D bed**, the risky part, tasks H1.1–H1.5 in
+  point on all four profiles; 1,346 tests green). Next: **H1.1–H1.5 — the
+  dynamic 1-D bed**, the risky part, spec in
   [`harness/DESIGN.md`](harness/DESIGN.md) §12.
 
-**Next three moves, in order:**
+**Next moves, in order:**
 
-1. `adsorbent-ml/data/fit_da.py` — one artifact serving both ladders (H1.0).
-2. H1.1–H1.3 — bed physics + env + the V3 oracle-limit keystone test.
-3. H1.4–H1.5 — literature calibration (V4) + first control experiments.
+1. H1.1–H1.3 — bed physics + env + the V3 oracle-limit keystone test.
+2. H1.4–H1.5 — literature calibration (V4) + first control experiments.
+3. H2.1–H2.3 — two-bed system (V6) and the ISODB materials sweep (the
+   fitted table is ready: 553 rows load via the §8.1 loader, 154 with
+   physical q_sat and Q_st) — the T2 ranker the Stage-2 surrogate's
+   top-k hit rate is scored against.
 
-Then H2: two-bed system (V6) and the ISODB materials sweep — which *is*
-the T2 ranker whose brute-force reference rankings the Stage-2 surrogate's
-top-k hit rate is scored against. GPU availability stays an open,
-unblocking question until H2 sweeps get large.
+GPU availability stays an open, unblocking question until H2 sweeps get
+large.
 
 ## North Star
 

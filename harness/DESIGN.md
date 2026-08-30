@@ -550,13 +550,16 @@ not done.
 
 Ordered so each task unblocks the next; every task ends with its gate green.
 
-- **H1.0 — Shared labels artifact (adsorbent-ml, do first).**
+- **H1.0 — Shared labels artifact (adsorbent-ml, do first) — ✅ done 2026-08.**
   `adsorbent-ml/data/fit_da.py` fits D–A parameters (`q_sat`, `E`, `n`) to
   the 1,221 ISODB water isotherms and writes the §8.1 schema to
   `data_cache/fits/da_params.csv` with a QC report (fit-RMSE distribution;
   flag S-shaped isotherms — the MIL-101 class — where D–A fits poorly).
   One artifact, two consumers: Stage-1 training labels *and* the harness
-  material database.
+  material database. *Gate met: 386 usable fits, median nRMSE 0.028;
+  24 adsorbents with multi-T Q_st; flag/unit/q_sat-physical breakdown in
+  `data_cache/fits/da_params_qc.md`; the loader side consumed it via
+  `harness.load_materials_csv` (553 rows, §8.1).*
 
   **Reusability contract** (library + thin CLI — a general fitter applied
   1,221 times, not a one-off training script):

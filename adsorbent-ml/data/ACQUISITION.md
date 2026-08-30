@@ -13,11 +13,12 @@ Implementation order = value order:
 3. qmof_export.py     ✅ DONE — 20,372 MOFs x 94 DFT columns + optimized CIFs
 4a. iza_export.py     ✅ DONE — 248/250 framework CIFs (EFN, EWE have none published)
 4b. anchors.csv       ✅ DONE — 13 curated commercial-adsorbent rows
-5. fit_da.py          ▶ NEXT — adsorbate-agnostic D–A fitting library + thin CLI
-                         over these exports (reusability contract:
-                         ../../harness/DESIGN.md §12 H1.0); output feeds
-                         both Stage-1 training labels and the harness
-                         material database
+5. fit_da.py          ✅ DONE — D–A fits: 386/1,221 water isotherms usable
+                         (median nRMSE 2.8%; 24 adsorbents with Q_st from
+                         multi-T coverage); da_params.csv + QC report in
+                         data_cache/fits/. Library reusable per
+                         ../../harness/DESIGN.md §12 H1.0 (adsorbate- and
+                         unit-agnostic core; CLI is thin)
 ```
 
 ---
