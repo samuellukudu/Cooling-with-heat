@@ -1,0 +1,34 @@
+[project]
+name = "harness"
+version = "0.1.0"
+description = "A differentiable optimization harness for heat-driven cooling, with gym-compatible environments"
+requires-python = ">=3.10"
+dependencies = [
+    "jax[cpu]",
+    "numpy",
+    "gymnasium>=0.29",
+    "optax>=0.2",
+    "cma>=3.2",
+    "optuna>=3.6",
+]
+
+[project.optional-dependencies]
+rl = ["stable-baselines3>=2.0", "torch"]
+cool = ["CoolProp"]
+viz = ["matplotlib"]
+dev = ["pytest>=8", "import-linter>=2.0"]
+
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+# The import package is `harness/` itself (this directory), which lives one
+# level below the repository root — hence the package-dir mapping. The
+# include filter keeps setuptools from picking up the sibling `diffheat`
+# package, which belongs to the root distribution.
+[tool.setuptools]
+package-dir = { "" = ".." }
+
+[tool.setuptools.packages.find]
+where = [".."]
+include = ["harness*"]

@@ -6,11 +6,18 @@ requires-python = ">=3.10"
 dependencies = [
     "jax[cuda12]",
     "numpy",
+    "harness",
 ]
 
 [project.optional-dependencies]
 viz = ["pyqt6", "matplotlib"]
 dev = ["pytest", "jupyter"]
+
+[tool.uv.workspace]
+members = ["harness"]
+
+[tool.uv.sources]
+harness = { workspace = true }
 
 [build-system]
 requires = ["setuptools>=64"]
@@ -40,4 +47,32 @@ dev = [
     "matplotlib>=3.10.9",
     "pyqt6>=6.11.0",
     "pytest>=9.1.1",
+    "import-linter>=2.0",
 ]
+
+[tool.importlinter]
+root_packages = ["harness"]
+include_external_packages = true
+
+[[tool.importlinter.contracts]]
+name = "physics stays pure: no env/backend/data/optimizer imports"
+type = "forbidden"
+source_modules = ["harness.physics"]
+forbidden_modules = [
+    "harness.envs",
+    "harness.backends",
+    "harness.materials",
+    "harness.profiles",
+    "harness.registry",
+    "harness.report",
+    "gymnasium",
+    "optax",
+    "cma",
+    "optuna",
+]
+
+[[tool.importlinter.contracts]]
+name = "envs never import backends or report"
+type = "forbidden"
+source_modules = ["harness.envs"]
+forbidden_modules = ["harness.backends", "harness.report"]
