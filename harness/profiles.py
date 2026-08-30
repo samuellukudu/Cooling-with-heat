@@ -9,11 +9,14 @@ cross-tool comparability; harness physics does not consume them.
 
 Dynamic envs additionally use ``t_fluid_min_c`` / ``t_fluid_max_c`` as the
 heat-transfer-fluid actuator band; ``source_schedule`` / ``load_schedule``
-arrive with the dynamic envs (H2+) and are ``None`` for steady use.
+arrive with the dynamic envs (H2+) and are ``None`` for steady use. A
+schedule is plain data — ``t [s] -> °C / kW`` — and experiments may pass
+their own directly; the registered profiles are presets, not the frame.
 """
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from typing import Callable
 
@@ -54,6 +57,19 @@ def get_profile(key_or_profile: "str | ApplicationProfile") -> ApplicationProfil
     if not isinstance(value, ApplicationProfile):
         raise TypeError(f"harness.profiles factory for {key_or_profile!r} returned {type(value).__name__}")
     return value
+
+
+def datacenter_coolant_loop(period_s: float = 14400.0) -> Callable:
+    """Data-center coolant-loop source schedule: 45–70 °C sinusoid.
+
+    The warm-water coolant loop temperature follows the IT load with a
+    peak-to-peak swing across the profile's actuator band. ``period_s``
+    parameterizes the load cycle (the built-in profile uses 4 h; the
+    H2.2 gate experiment compresses it for CI speed — same shape).
+    """
+    def schedule(t_s):
+        return 57.5 + 12.5 * math.sin(2.0 * math.pi * t_s / period_s)
+    return schedule
 
 
 # Steady setpoints, weights and notes are copied verbatim from
@@ -130,6 +146,26 @@ BUILTIN_PROFILES = {
         t_fluid_min_c=45.0,
         t_fluid_max_c=70.0,
         notes="Hard low-grade heat case: candidates must regenerate from warm liquid loops around 45-70 C.",
+    ),
+    # Dynamic variant of the datacenter scenario: same setpoints and
+    # weights, plus the time-varying coolant-loop source schedule (H2.2).
+    "datacenter_dynamic": ApplicationProfile(
+        name="datacenter_dynamic",
+        description="Data-center waste-heat cooling, time-varying coolant loop",
+        t_evap_c=16.0,
+        t_cond_c=35.0,
+        t_des_c=60.0,
+        cycle_time_s=300.0,
+        cop_weight=0.35,
+        scp_weight=0.30,
+        stability_weight=0.20,
+        conductivity_weight=0.10,
+        density_weight=0.05,
+        pareto_weight=0.20,
+        t_fluid_min_c=45.0,
+        t_fluid_max_c=70.0,
+        source_schedule=datacenter_coolant_loop(period_s=14400.0),
+        notes="Same scenario as 'datacenter' with the 45-70 C coolant loop following the IT load on a 4 h period; schedules are data — pass your own to the envs.",
     ),
 }
 

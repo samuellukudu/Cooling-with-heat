@@ -712,10 +712,23 @@ notebook reproduces the headline plot.
 - **H2.2 — Time-varying sources + schedule policies** *(recast from
   "datacenter profile, dynamic" per the R&D-lab posture: the milestone is
   the experiment family, the 45–70 °C coolant loop is one preset
-  instance)*. Source temperature and switching policies as per-step
-  series; schedule optimization via `search`/`grad`. *Gate: schedule
-  optimization beats the nominal fixed schedule on the datacenter loop
-  scenario.*
+  instance)*. ✅ done 2026-08. `TwoBedSchedule` (`envs/two_bed.py`) poses
+  the schedule as five policy parameters — source-following setpoint,
+  request threshold, phase duration, recovery window, minimum dwell —
+  over a static per-step source series; the `datacenter_dynamic` profile
+  ships the 45–70 °C loop schedule as a preset and any callable is
+  accepted. *Gate — green: CMA-ES (budget 80, deterministic) beats the
+  nominal fixed schedule by ≈ 7 % on the profile-weighted objective for
+  a 60–85 °C source swing (COP +17 %, SCP +9 %). Finding: at the optimum
+  the request-gating is blocked — on a band where every source level
+  gives a positive swing, the win is source-following + faster cycling +
+  recovery, not gating. On the datacenter 45–70 °C loop with silica gel
+  RD the band bottom is degenerate (zero swing below ≈ 60 °C
+  regeneration) and the v1 machine — which has no valve-closed standby —
+  cannot coast out of it: a materials marginality for the H2.3 sweep to
+  surface, and the standby capability is the lumped-vapour-inventory
+  extension (Open Question 2). Stochastic source profiles stay deferred
+  to the RL experiments (Open Question 4, needs its citation).*
 - **H2.3 — Materials sweep = the T2 ranker.** The fitted ISODB table
   (H1.0) through `Cycle0D-v0` (all materials) and `Bed1D-v0` (top
   candidates) per profile → ranked shortlists. This produces the

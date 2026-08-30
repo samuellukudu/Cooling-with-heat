@@ -54,7 +54,7 @@ within the declared per-bed design bounds (same rule as Bed1D).
 from __future__ import annotations
 
 import functools
-from typing import Any, Mapping
+from typing import Any, Callable, Mapping
 
 import gymnasium as gym
 import jax
@@ -490,6 +490,189 @@ def build_two_bed(material: "str | MaterialParams" = "anchor:Silica gel RD",
 
 
 REGISTRIES["envs"].register("TwoBed-v0", build_two_bed)
+
+
+class TwoBedSchedule:
+    """``TwoBed`` under a time-varying heat source: source-gated switching
+    schedules as the optimizable design (DESIGN §12 H2.2).
+
+    The R&D question this problem poses: a fixed regeneration schedule
+    wastes desorption phases whenever the heat source is too cold for a
+    useful swing (on the datacenter loop, desorbing below ~55 °C against a
+    35 °C condenser yields ~nothing), while a policy that *gates
+    desorption on the source temperature* and follows the source up to its
+    cap should beat it. The schedule is data plus five policy parameters:
+
+    - ``t_set_c``: desorption fluid setpoint; the fluid temperature is
+      ``min(t_set_c, source(t))`` — a machine cannot heat above what the
+      loop delivers (per-step series, precomputed from ``source_schedule``);
+    - ``t_thresh_c``: request-bit threshold — desorption is *requested*
+      only while ``source(t) ≥ t_thresh`` (the physics enforces it through
+      the valve-bit hook);
+    - ``t_half_s``: phase duration (timeout for both system phases);
+    - ``t_rec_s``: heat-recovery window;
+    - ``t_dwell_s``: minimum dwell for request flips — the nominal fixed
+      schedule is the point where the dwell blocks all requests.
+
+    The nominal fixed schedule is the default point:
+    ``(t_des_c, t_fluid_min, cycle_time_s, 0, blocking dwell)`` — fixed
+    setpoint capped by availability, no gating, no recovery. The gate
+    experiment (H2.2) optimizes all five with ``search`` (the request
+    threshold makes the objective a staircase in the switch parameters —
+    the Open Question 3 recipe says search on switch times).
+
+    The horizon is static wall-clock time (``horizon_s`` / ``dt_phys_s``
+    steps), independent of the policy, so every call is jit-safe; the
+    metrics ring holds the last ``n_ring_cycles`` completed cycles and
+    uncompleted slots dilute COP and SCP equally (the ratio cancels).
+    """
+
+    POLICY_KEYS = ("t_set_c", "t_thresh_c", "t_half_s", "t_rec_s", "t_dwell_s")
+
+    def __init__(self, bed: "TwoBed | None" = None, *,
+                 source_schedule: "Callable[[float], float] | None" = None,
+                 horizon_s: float = 3600.0,
+                 t_f_cap_c: "float | None" = None,
+                 t_half_bounds: "tuple[float, float] | None" = None,
+                 dt_phys_s: "float | None" = None,
+                 n_ring_cycles: "int | None" = None,
+                 n_cells: "int | None" = None):
+        import numpy as np
+
+        self.bed = bed if bed is not None else TwoBed()
+        prof = self.bed.profile
+        self.source_schedule = source_schedule or prof.source_schedule
+        if self.source_schedule is None:
+            raise ValueError("TwoBedSchedule needs a source_schedule (or a profile with one)")
+        self.horizon_s = float(horizon_s)
+        self.dt_phys_s = float(dt_phys_s) if dt_phys_s is not None else self.bed.dt_phys_s
+        self.n_steps = int(round(self.horizon_s / self.dt_phys_s))
+        self.t_f_cap_c = float(t_f_cap_c) if t_f_cap_c is not None else prof.t_fluid_max_c
+        self.t_half_bounds = tuple(t_half_bounds or (120.0, 900.0))
+
+        # Static scenario data: the source series at physics resolution.
+        t_grid = np.arange(self.n_steps) * self.dt_phys_s
+        s_c = np.asarray([float(self.source_schedule(t)) for t in t_grid])
+        self._s_jnp = jnp.asarray(s_c)
+        self._t_f_avail_jnp = jnp.asarray(np.minimum(s_c, self.t_f_cap_c))
+
+        self.n_ring_cycles = int(n_ring_cycles) if n_ring_cycles is not None else (
+            int(np.ceil(self.horizon_s / (2.0 * self.t_half_bounds[0]))))
+        if n_cells is not None:
+            raise ValueError("TwoBedSchedule uses the bed's n_cells; build the TwoBed with n_cells=")
+
+        lo_t, hi_t = self.t_half_bounds
+        nominal = self.nominal_controls()
+        self.control_space = DesignSpace(
+            keys=self.POLICY_KEYS,
+            defaults=nominal,
+            bounds={
+                "t_set_c": (prof.t_cond_c + 15.0, prof.t_fluid_max_c),
+                "t_thresh_c": (prof.t_fluid_min_c, prof.t_fluid_max_c),
+                "t_half_s": (lo_t, hi_t),
+                "t_rec_s": (0.0, min(240.0, hi_t / 2.0)),
+                "t_dwell_s": (30.0, max(1800.0, 2.0 * hi_t)),
+            },
+        )
+        self.spec = ProblemSpec(
+            name="TwoBedSchedule-v0",
+            kind="control",
+            action_spec=ActionSpec(
+                kind="continuous",
+                names=self.POLICY_KEYS,
+                lo=tuple(self.control_space.bounds[k][0] for k in self.POLICY_KEYS),
+                hi=tuple(self.control_space.bounds[k][1] for k in self.POLICY_KEYS),
+            ),
+            metric_keys=_NO_COUNTERFACTUAL_KEYS,
+            schema_version=TWO_BED_SCHEMA_VERSION,
+        )
+        self._metrics_jit = jax.jit(self._metrics_impl)
+
+    @property
+    def design_space(self) -> DesignSpace:
+        return self.control_space
+
+    def nominal_controls(self) -> dict[str, float]:
+        """The fixed schedule: profile setpoint capped by availability, no
+        gating (dwell blocks every request), no recovery."""
+        prof = self.bed.profile
+        return {
+            "t_set_c": prof.t_des_c,
+            "t_thresh_c": prof.t_fluid_min_c,
+            "t_half_s": prof.cycle_time_s,
+            "t_rec_s": 0.0,
+            "t_dwell_s": max(1800.0, 2.0 * self.t_half_bounds[1]),
+        }
+
+    def _metrics_impl(self, t_set_c, t_thresh_c, t_half_s, t_rec_s, t_dwell_s):
+        req = jnp.where(self._s_jnp >= t_thresh_c, 1.0, 0.0)
+        t_f = jnp.minimum(t_set_c, self._t_f_avail_jnp)
+        n = self.n_steps
+        series = {
+            "t_ads_s": jnp.full((n,), t_half_s),
+            "t_des_s": jnp.full((n,), t_half_s),
+            "t_f_des_c": t_f,
+            "t_rec_s": jnp.full((n,), t_rec_s),
+            "t_dwell_min_s": jnp.full((n,), t_dwell_s),
+        }
+        prof = self.bed.profile
+        merged = self.bed.design_space.defaults
+        bed_a, bed_b = self.bed._bed_dicts(merged)
+        out = system.simulate_two_bed(
+            bed_a=bed_a, bed_b=bed_b,
+            t_evap_c=prof.t_evap_c, t_cond_c=prof.t_cond_c,
+            t_f_ads_c=prof.t_cond_c,
+            series=series, req=req,
+            dt_s=self.dt_phys_s, n_cycles=self.n_ring_cycles,
+        )
+        return out["summary"]
+
+    def metrics_jax(self, design: Mapping[str, Any] | None = None,
+                    controls: Mapping[str, float] | None = None) -> dict[str, Any]:
+        if controls is not None:
+            raise ValueError("TwoBedSchedule embeds the schedule in its design space")
+        merged = self.control_space.merge(design)
+        return self._metrics_jit(**merged)
+
+    def evaluate(self, design=None, controls=None) -> dict[str, float]:
+        values = {k: float(v) for k, v in self.metrics_jax(design, controls).items()}
+        # jax.jit sorts pytree dict keys; restore the documented schema order.
+        return {k: values[k] for k in self.spec.metric_keys}
+
+    def rollout(self, design=None, controls=None, *, n_steps: int = 1) -> EpisodeTrace:
+        del n_steps
+        merged = self.control_space.merge(design)
+        req = jnp.where(self._s_jnp >= merged["t_thresh_c"], 1.0, 0.0)
+        t_f = jnp.minimum(merged["t_set_c"], self._t_f_avail_jnp)
+        n = self.n_steps
+        series = {
+            "t_ads_s": jnp.full((n,), merged["t_half_s"]),
+            "t_des_s": jnp.full((n,), merged["t_half_s"]),
+            "t_f_des_c": t_f,
+            "t_rec_s": jnp.full((n,), merged["t_rec_s"]),
+            "t_dwell_min_s": jnp.full((n,), merged["t_dwell_s"]),
+        }
+        prof = self.bed.profile
+        bed_a, bed_b = self.bed._bed_dicts(self.bed.design_space.defaults)
+        out = system.simulate_two_bed(
+            bed_a=bed_a, bed_b=bed_b,
+            t_evap_c=prof.t_evap_c, t_cond_c=prof.t_cond_c,
+            t_f_ads_c=prof.t_cond_c,
+            series=series, req=req,
+            dt_s=self.dt_phys_s, n_cycles=self.n_ring_cycles,
+            collect_trace=True,
+        )
+        return EpisodeTrace(
+            series={k: np.asarray(v) for k, v in out["series"].items()},
+            summary={k: float(v) for k, v in out["summary"].items()},
+        )
+
+
+def build_two_bed_schedule(bed: "TwoBed | None" = None, **kwargs) -> TwoBedSchedule:
+    return TwoBedSchedule(bed, **kwargs)
+
+
+REGISTRIES["envs"].register("TwoBedSchedule-v0", build_two_bed_schedule)
 
 
 class TwoBedGymEnv(gym.Env):

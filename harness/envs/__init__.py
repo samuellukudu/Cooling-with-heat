@@ -13,7 +13,13 @@ from .base import (
     validate_problem,
 )
 from .bed1d import BED1D_SCHEMA_VERSION, BED_METRIC_KEYS, Bed1D, Bed1DGymEnv
-from .two_bed import TWO_BED_SCHEMA_VERSION, TWO_BED_METRIC_KEYS, TwoBed, TwoBedGymEnv
+from .two_bed import (
+    TWO_BED_SCHEMA_VERSION,
+    TWO_BED_METRIC_KEYS,
+    TwoBed,
+    TwoBedGymEnv,
+    TwoBedSchedule,
+)
 
 __all__ = [
     "ActionSpec",
@@ -31,6 +37,7 @@ __all__ = [
     "TWO_BED_METRIC_KEYS",
     "TwoBed",
     "TwoBedGymEnv",
+    "TwoBedSchedule",
     "base",
     "bed1d",
     "cycle0d",
