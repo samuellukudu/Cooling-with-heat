@@ -1,4 +1,0 @@
-mp-api 
-pymatgen
-torch
-coolprop

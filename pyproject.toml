@@ -46,9 +46,10 @@ filterwarnings = [
 [dependency-groups]
 dev = [
     "matplotlib>=3.10.9",
-    "pyqt6>=6.11.0",
     "pytest>=9.1.1",
     "import-linter>=2.0",
+    "requests>=2.31",
+    "scikit-learn>=1.5",
     "scipy>=1.15.3",
     "pandas>=2.3.3",
     "pyarrow>=25.0.1",

@@ -1,11 +1,11 @@
 # tests/harness/conftest.py
-"""Harness test configuration: put Materials/ on sys.path so the V1 parity
-tests can import the canonical ``cooling_physics`` module directly."""
+"""Harness test configuration: put the vendored V1 reference oracle on
+sys.path so the parity tests can import the canonical ``cooling_physics``
+module directly (vendored from the archived Materials/ effort)."""
 
 import sys
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
-MATERIALS_DIR = REPO_ROOT / "Materials"
-if str(MATERIALS_DIR) not in sys.path:
-    sys.path.insert(0, str(MATERIALS_DIR))
+REFERENCE_DIR = Path(__file__).resolve().parent / "reference"
+if str(REFERENCE_DIR) not in sys.path:
+    sys.path.insert(0, str(REFERENCE_DIR))

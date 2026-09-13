@@ -1,9 +1,10 @@
 #!/usr/bin/env python
 """Stage-0 dataset export: query Materials Project once, cache locally forever.
 
-Wraps the proven query layer in ``Materials/heat_cooling_screen.py`` (chemsys
-generation, application search criteria, dedup) and writes everything needed
-for ML work into a local cache directory:
+Wraps the proven query layer in ``mp_screen.py`` (vendored from the archived
+``Materials/heat_cooling_screen.py``: chemsys generation, application search
+criteria, dedup) and writes everything needed for ML work into a local cache
+directory:
 
     <out>/
       candidates.parquet   one row per material (falls back to .csv)
@@ -24,27 +25,45 @@ Full export of one application:
 
 import argparse
 import json
+import os
 import sys
 import time
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-MATERIALS_DIR = REPO_ROOT / "Materials"
-sys.path.insert(0, str(MATERIALS_DIR))
-
-from env_utils import get_mp_api_key, load_dotenv  # noqa: E402
+DATA_DIR = Path(__file__).resolve().parent
 
 try:
     from mp_api.client import MPRester
 except ImportError:
     MPRester = None
 
-from heat_cooling_screen import (  # noqa: E402
+from mp_screen import (  # noqa: E402
     fetch_candidates,
     search_criteria_for_apps,
 )
 
 DEFAULT_OUT = REPO_ROOT / "data_cache" / "mp"
+ENV_PATH = DATA_DIR / ".env"
+
+
+def _load_env_file(path: Path) -> None:
+    """Minimal .env loader: sets variables that are not already in the environment."""
+    if not path.exists():
+        return
+    for raw_line in path.read_text().splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key, value = key.strip(), value.strip().strip('"').strip("'")
+        if key and key not in os.environ:
+            os.environ[key] = value
+
+
+def _mp_api_key() -> str | None:
+    _load_env_file(ENV_PATH)
+    return os.environ.get("MP_API_KEY")
 
 
 def parse_args() -> argparse.Namespace:
@@ -91,7 +110,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--api-key",
         default=None,
-        help="MP API key; defaults to MP_API_KEY from Materials/.env or environment.",
+        help="MP API key; defaults to MP_API_KEY from adsorbent-ml/.env or environment.",
     )
     return parser.parse_args()
 
@@ -182,10 +201,9 @@ def download_structures(
 
 def main() -> None:
     args = parse_args()
-    load_dotenv(str(MATERIALS_DIR / ".env"))
-    api_key = args.api_key or get_mp_api_key()
+    api_key = args.api_key or _mp_api_key()
     if not api_key:
-        sys.exit("MP_API_KEY not found (set it in Materials/.env or pass --api-key).")
+        sys.exit("MP_API_KEY not found (set it in adsorbent-ml/.env or pass --api-key).")
     if MPRester is None:
         sys.exit("mp_api is not installed in this environment.")
 
