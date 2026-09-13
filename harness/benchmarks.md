@@ -187,3 +187,46 @@ for row in model_case_rows(UYUN2009_CASES + SZTEKLER2021_CASES,
 
 result = calibrate(UYUN2009_CASES + SZTEKLER2021_CASES)  # full refit (~20 min CPU)
 ```
+
+## Vapour inventory v2 + Arrhenius kinetics (Open Question 2 — mechanism done 2026-09)
+
+> Regression-pinned by `tests/harness/test_vapor_inventory.py`.
+> Reproduce: `bed1d.simulate_bed(..., vapor_void_m3_m2=8e-3, vapor_tau_s=0.5,
+> k_act_J_mol=30e3)` — see that file for the full gate list.
+
+The v1 fixed-reservoir approximation is now an option, not the model:
+`step_episode` carries a lumped void pressure `P(t)` (ideal-gas void
+`M = P·V/(R_v·T)`, upstream-density valve law, explicit isosteric phases
+via `valve_closed`, per-cell Arrhenius LDF `k(T)` about `k_ref_T_C`).
+Structural knobs only (`vapor_void_m3_m2`, `vapor_tau_s`,
+`valve_closed`, `k_act_J_mol`, `k_ref_T_C`) — no design-space change,
+no summary-schema change (`vapor_p_Pa` appended to the series).
+
+What was found, in order:
+
+1. **v1-exact limit** (`tau = 0`, or all defaults): bit-identical
+   summaries (COP/SCP to all 16 digits). The V2/V3/V5/V6 gates are
+   untouched by construction, and re-run green.
+2. **Mass conservation**: endpoint identity `M_N − M_0 = F + S` holds to
+   ~1e-14 open and valve-closed (reconstructed from carry states —
+   an independent check, V2-style).
+3. **Valve lag alone does NOT close the T_hs gap** (negative result,
+   reported as one): linear or upstream-density lag at granular
+   void/tau suppresses throughput but leaves the 65→80 °C SCP ratio at
+   ~1.03–1.06 vs v1's 1.07 (measured ~2.6×). Lag without faster
+   kinetics mostly starves the low-pressure adsorption side.
+4. **Arrhenius kinetics steepens the trend**: with `Ea = 30 kJ/mol`
+   (representative water/silica value; grain-level values remain an
+   ISODB-isobar measurement per Open Question 1) the ratio reaches
+   ~1.27 — clearly past v1 toward the measured direction. Full closure
+   needs a calibration-grade refit (not attempted here).
+5. **Standby works**: valve-closed dwell pressurizes monotonically and
+   stays finite below saturation — the mechanism the H2.2 schedule
+   experiments wanted; no policy is built on it (that would be a
+   solution, not harness).
+
+Stability contracts (same pattern as the `k_LDF·dt` split bound):
+`tau_s = 0` or `tau_s ≳ 5·dt_s`; valve-closed requires void > 0
+(loud `ValueError` otherwise). Known v2 limits: no condensation branch
+(P may exceed `Psat(T)` under hard closed heating — flagged, not
+clamped); film-temperature properties still representative.

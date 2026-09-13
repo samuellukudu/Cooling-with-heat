@@ -204,3 +204,41 @@ def _register_builtins() -> None:
 
 
 _register_builtins()
+
+# Re-export H3 per-material k_eff helpers at the top-level materials module so
+# callers can do ``from harness.materials import assign_k_eff`` or
+# ``from harness.materials_k_eff import ...`` interchangeably. The import is
+# deferred to avoid circular import at module load time (materials_k_eff imports
+# MaterialParams from here).
+def _lazy_k_eff_exports():  # pragma: no cover
+    try:
+        from .materials_k_eff import (  # noqa: WPS433
+            K_EFF_BY_CLASS,
+            K_EFF_GLOBAL_DEFAULT,
+            assign_k_eff,
+            assign_k_eff_to_materials,
+            enrich_materials_with_k_eff,
+            k_eff_from_mofdscribe,
+            load_k_eff_csv,
+            with_per_material_k_eff,
+            with_transport_k_eff_defaults,
+        )
+
+        globals().update(
+            {
+                "K_EFF_BY_CLASS": K_EFF_BY_CLASS,
+                "K_EFF_GLOBAL_DEFAULT": K_EFF_GLOBAL_DEFAULT,
+                "assign_k_eff": assign_k_eff,
+                "assign_k_eff_to_materials": assign_k_eff_to_materials,
+                "enrich_materials_with_k_eff": enrich_materials_with_k_eff,
+                "k_eff_from_mofdscribe": k_eff_from_mofdscribe,
+                "load_k_eff_csv": load_k_eff_csv,
+                "with_per_material_k_eff": with_per_material_k_eff,
+                "with_transport_k_eff_defaults": with_transport_k_eff_defaults,
+            }
+        )
+    except Exception:
+        pass
+
+
+_lazy_k_eff_exports()

@@ -127,9 +127,10 @@ _OBS_LO = np.array([s.lo for s in OBS_SENSORS], dtype=np.float32)
 _OBS_HI = np.array([s.hi for s in OBS_SENSORS], dtype=np.float32)
 
 _N_BED_OBS = len(BED_OBS_SENSORS)
+_N_BED_CH = system._N_BED_CHANNELS  # tracks bed1d.SERIES_CHANNELS length
 _A_DQ_COOL = 4 + 9  # system series: A block offset + dq_cool_j_kg
 _A_DQ_IN = _A_DQ_COOL + 1
-_B_DQ_COOL = 15 + 9
+_B_DQ_COOL = 4 + _N_BED_CH + 9
 _B_DQ_IN = _B_DQ_COOL + 1
 
 
@@ -163,6 +164,10 @@ class TwoBed:
         n_cells: int = BED_N_CELLS,
         dt_phys_s: float | None = None,
         counterfactual: bool = True,
+        vapor_void_m3_m2: float = 0.0,
+        vapor_tau_s: float = 0.0,
+        k_act_J_mol: float = 0.0,
+        k_ref_T_C: float = 30.0,
     ):
         self.material = get_material(material)
         self.material_b = get_material(material_b) if material_b is not None else self.material
@@ -172,6 +177,10 @@ class TwoBed:
         self.lam = float(lam)
         self.n_cells = int(n_cells)
         self.counterfactual = bool(counterfactual)
+        self.vapor_void_m3_m2 = float(vapor_void_m3_m2)
+        self.vapor_tau_s = float(vapor_tau_s)
+        self.k_act_J_mol = float(k_act_J_mol)
+        self.k_ref_T_C = float(k_ref_T_C)
 
         metric_keys = TWO_BED_METRIC_KEYS if self.counterfactual else _NO_COUNTERFACTUAL_KEYS
         self.spec = ProblemSpec(
@@ -186,6 +195,7 @@ class TwoBed:
             ),
             metric_keys=metric_keys,
             schema_version=TWO_BED_SCHEMA_VERSION,
+            spatial_dim=1, time_resolved=True, grid_type="uniform_rect",
         )
 
         defaults = self._design_defaults()
@@ -256,6 +266,10 @@ class TwoBed:
             t_evap_c=self.profile.t_evap_c,
             t_cond_c=self.profile.t_cond_c,
             t_f_ads_c=self.profile.t_cond_c,
+            vapor_void_m3_m2=self.vapor_void_m3_m2,
+            vapor_tau_s=self.vapor_tau_s,
+            k_act_J_mol=self.k_act_J_mol,
+            k_ref_T_C=self.k_ref_T_C,
         )
 
     def _bed_dicts(self, merged: Mapping[str, Any]) -> tuple[dict, dict]:
@@ -276,6 +290,11 @@ class TwoBed:
                 "L_m": merged[f"{prefix}L_m"],
                 "n_cells": self.n_cells,
                 "hx_mass_factor": merged[f"{prefix}hx_mass_factor"],
+                "vapor_void_m3_m2": self.vapor_void_m3_m2,
+                "vapor_tau_s": self.vapor_tau_s,
+                "valve_closed": False,
+                "k_act_J_mol": self.k_act_J_mol,
+                "k_ref_T_C": self.k_ref_T_C,
             }
         return one("A_"), one("B_")
 
@@ -585,6 +604,7 @@ class TwoBedSchedule:
             ),
             metric_keys=_NO_COUNTERFACTUAL_KEYS,
             schema_version=TWO_BED_SCHEMA_VERSION,
+            spatial_dim=1, time_resolved=True, grid_type="uniform_rect",
         )
         self._metrics_jit = jax.jit(self._metrics_impl)
 

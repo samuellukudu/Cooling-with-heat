@@ -289,7 +289,8 @@ def _episode_summary(t_evap_c, t_cond_c, t_f_ads_c, t_f_des_c, t_ads_s, t_des_s,
         "p_cond_pa": p_cond,
         "h_fg_evap_j_kg": h_fg,
     }
-    carry = bed1d.initial_carry(t_init, q_init, t_phase_end_s=t_ads_s, n_cycles=n_cycles)
+    carry = bed1d.initial_carry(t_init, q_init, t_phase_end_s=t_ads_s, n_cycles=n_cycles,
+                                 p_init_pa=p_evap)
     carry_f, _ = bed1d.advance_carry(
         carry, (t_ads_s, t_des_s, t_f_des_c),
         n_steps=n_steps, dt_s=dt_s, phys=phys,

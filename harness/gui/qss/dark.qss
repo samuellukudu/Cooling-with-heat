@@ -1,0 +1,2 @@
+/* harness GUI — dark lab theme (applied via MainWindow.setStyleSheet) */
+QMainWindow { background: #0f1115; }

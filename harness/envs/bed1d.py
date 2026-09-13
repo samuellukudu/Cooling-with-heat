@@ -171,9 +171,16 @@ class Bed1D:
         n_cells: int = BED_N_CELLS,
         dt_phys_s: float | None = None,
         soft_switch: bool = False,
+        vapor_void_m3_m2: float = 0.0,
+        vapor_tau_s: float = 0.0,
+        valve_closed: bool = False,
+        k_act_J_mol: float = 0.0,
+        k_ref_T_C: float = 30.0,
     ):
         if action_mode not in ("continuous", "discrete"):
             raise ValueError(f"unknown action_mode {action_mode!r}")
+        if valve_closed and not vapor_void_m3_m2 > 0.0:
+            raise ValueError("valve_closed needs vapor_void_m3_m2 > 0 (no inventory to evolve)")
         self.material = get_material(material)
         self.profile = get_profile(profile)
         self.action_mode = action_mode
@@ -182,6 +189,11 @@ class Bed1D:
         self.lam = float(lam)
         self.n_cells = int(n_cells)
         self.soft_switch = bool(soft_switch)
+        self.vapor_void_m3_m2 = float(vapor_void_m3_m2)
+        self.vapor_tau_s = float(vapor_tau_s)
+        self.valve_closed = bool(valve_closed)
+        self.k_act_J_mol = float(k_act_J_mol)
+        self.k_ref_T_C = float(k_ref_T_C)
 
         self.spec = ProblemSpec(
             name="Bed1D-v0",
@@ -199,6 +211,7 @@ class Bed1D:
             ),
             metric_keys=BED_METRIC_KEYS,
             schema_version=BED1D_SCHEMA_VERSION,
+            spatial_dim=1, time_resolved=True, grid_type="uniform_rect",
         )
         defaults = self._design_defaults()
         if design is not None:
@@ -276,6 +289,11 @@ class Bed1D:
             p_cond_pa=p_cond,
             h_fg_evap_j_kg=float(water_h_fg_j_kg(prof.t_evap_c + 273.15)),
             soft_switch=self.soft_switch,
+            vapor_void_m3_m2=self.vapor_void_m3_m2,
+            vapor_tau_s=self.vapor_tau_s,
+            valve_closed=self.valve_closed,
+            k_act_J_mol=self.k_act_J_mol,
+            k_ref_T_C=self.k_ref_T_C,
         )
         return phys
 
@@ -292,6 +310,11 @@ class Bed1D:
                         self.n_cells),
             dt_s=self.dt_phys_s,
             n_cycles=self.n_cycles,
+            vapor_void_m3_m2=self.vapor_void_m3_m2,
+            vapor_tau_s=self.vapor_tau_s,
+            valve_closed=self.valve_closed,
+            k_act_J_mol=self.k_act_J_mol,
+            k_ref_T_C=self.k_ref_T_C,
         )
         return out["summary"]
 
@@ -311,6 +334,11 @@ class Bed1D:
             dt_s=self.dt_phys_s,
             n_cycles=self.n_cycles,
             collect_trace=True,
+            vapor_void_m3_m2=self.vapor_void_m3_m2,
+            vapor_tau_s=self.vapor_tau_s,
+            valve_closed=self.valve_closed,
+            k_act_J_mol=self.k_act_J_mol,
+            k_ref_T_C=self.k_ref_T_C,
         )
         summary = {k: float(v) for k, v in out["summary"].items()}
         series = {k: np.asarray(v) for k, v in (out["series"] or {}).items()}
@@ -332,7 +360,8 @@ class Bed1D:
         self._carry = jax.device_get(
             bed1d.initial_carry(T_init, q_init,
                                 t_phase_end_s=ctrl["t_ads_s"],
-                                n_cycles=self.n_cycles)
+                                n_cycles=self.n_cycles,
+                                p_init_pa=p_evap)
         )
         return self._observation(None), {"phase": "ads", "t_abs": 0.0}
 
@@ -426,7 +455,7 @@ class Bed1D:
             frac = 0.0
         else:
             (t_wall, t_mean, t_max, q_mean, q_star_mean, p_ratio, t_f_k,
-             _phase, frac, _dq_c, _dq_i) = ys_last
+             _phase, frac, _dq_c, _dq_i, _p_pa) = ys_last
             p_ratio = float(p_ratio)
             t_f = float(t_f_k)
         return np.array(
@@ -518,6 +547,7 @@ class Bed1DControls:
                                    lo=(lo_f, lo_t), hi=(hi_f, hi_t)),
             metric_keys=BED_METRIC_KEYS,
             schema_version=BED1D_SCHEMA_VERSION,
+            spatial_dim=1, time_resolved=True, grid_type="uniform_rect",
         )
 
     @property
@@ -532,7 +562,8 @@ class Bed1DControls:
                            defaults["e_char_j_mol"], defaults["n_da"])
         carry = bed1d.initial_carry(t_init, q_init,
                                     t_phase_end_s=t_switch_s,
-                                    n_cycles=self.n_cycles)
+                                    n_cycles=self.n_cycles,
+                                    p_init_pa=self._p_evap_pa)
         carry_f, ys = bed1d.advance_carry(
             carry, (t_switch_s, t_switch_s, t_f_des_c),
             n_steps=self.n_steps, dt_s=self.dt_phys_s, phys=self._static_phys,

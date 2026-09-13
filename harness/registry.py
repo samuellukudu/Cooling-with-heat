@@ -9,6 +9,14 @@ with the list of what is available.
 The registries live in this neutral module — not in ``envs`` — so that
 ``materials`` and ``profiles`` can register without importing the env layer
 (keeping the import direction rules in the root pyproject satisfiable).
+
+``harness.models`` is the **SimulatorAdapter registry** (DESIGN §7.2):
+external solvers (OpenModelica-FMU, TESPy, …) register factories that return
+objects satisfying ``harness.physics.adapters.SimulatorAdapter``. The built-in
+``mock_cycle0d`` adapter (``harness.physics.adapters.MockSimulatorAdapter``)
+and the demo env ``MockCycle-v0`` live in ``harness.envs.adapter`` and are
+registered here at import time; see ``harness/physics/adapters.py`` for the
+protocol and ``harness/envs/adapter.py`` for the wiring.
 """
 
 from __future__ import annotations

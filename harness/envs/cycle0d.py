@@ -51,7 +51,8 @@ class Cycle0D:
     def __init__(self, material: "str | MaterialParams", profile: "str | ApplicationProfile", hx_mass_factor: float = 1.35):
         self.material = get_material(material)
         self.profile = get_profile(profile)
-        self.spec = ProblemSpec(name="Cycle0D-v0", kind="static", metric_keys=METRIC_KEYS)
+        self.spec = ProblemSpec(name="Cycle0D-v0", kind="static", metric_keys=METRIC_KEYS,
+                                 spatial_dim=0, time_resolved=False, grid_type="none")
         self.design_space = DesignSpace(
             keys=DESIGN_KEYS,
             defaults={

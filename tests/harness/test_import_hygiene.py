@@ -31,6 +31,9 @@ def test_no_legacy_or_heavy_imports_in_harness_source():
     package_dir = Path(harness.__file__).resolve().parent
     offenders = []
     for source_file in sorted(package_dir.rglob("*.py")):
+        # GUI is UI-only and legitimately imports matplotlib (harness[gui] extra)
+        if "gui" in source_file.parts:
+            continue
         tree = ast.parse(source_file.read_text(encoding="utf-8"))
         for module in _import_roots(tree):
             if module.split(".")[0] in FORBIDDEN_ROOTS:

@@ -42,11 +42,29 @@ class ActionSpec:
 @dataclass(frozen=True)
 class ProblemSpec:
     name: str
-    kind: str  # "static" | "dynamic"
+    kind: str  # "static" | "dynamic" | "control"
     obs_spec: tuple[Sensor, ...] = ()
     action_spec: ActionSpec = ActionSpec()
     metric_keys: tuple[str, ...] = ()
     schema_version: int = 1
+    # Dimensional ladder (diffheat 1D/2D/3D + 4D time, DESIGN §4-5).
+    # spatial_dim: 0 = lumped/ODE (no spatial mesh), 1/2/3 = PDE dims.
+    # time_resolved: True when the env rolls out a time trajectory
+    #   (the 4th dimension); False for steady/static evaluations.
+    # grid_type: "none" | "uniform_rect" | "polar" | "unstructured" | "mac" | ...
+    spatial_dim: int = 0
+    time_resolved: bool = False
+    grid_type: str = "none"
+
+    def __post_init__(self):
+        if self.spatial_dim not in (0, 1, 2, 3):
+            raise ValueError(
+                f"spatial_dim must be 0/1/2/3, got {self.spatial_dim!r}"
+            )
+        if self.kind == "dynamic" and not self.time_resolved:
+            # Dynamic envs are time-resolved by definition; allow the
+            # flag to be set explicitly but default it on.
+            object.__setattr__(self, "time_resolved", True)
 
 
 @dataclass(frozen=True)

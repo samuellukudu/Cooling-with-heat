@@ -60,12 +60,15 @@ from __future__ import annotations
 import jax
 import jax.numpy as jnp
 
-from .thermo import da_uptake, water_h_fg_j_kg, water_sat_pressure_pa
+from .thermo import GAS_CONSTANT, da_uptake, water_h_fg_j_kg, water_sat_pressure_pa
 
 ADS_PHASE = 0.0
 DES_PHASE = 1.0
 
 # Per-step series channels recorded by :func:`simulate_bed` (DESIGN §5.2).
+# ``vapor_p_Pa`` is appended last so existing positional consumers keep
+# their indices (TwoBed B-block offsets derive from len(), the Bed1D gym
+# unpack names it explicitly).
 SERIES_CHANNELS = (
     "t_wall_k",
     "t_bed_mean_k",
@@ -78,7 +81,11 @@ SERIES_CHANNELS = (
     "phase_fraction",
     "dq_cool_j_kg",
     "dq_in_j_kg",
+    "vapor_p_Pa",
 )
+
+#: Specific gas constant of water vapour [J/(kg·K)] for the lumped inventory.
+R_VAPOR_PA_M3_KG_K = 461.5
 
 
 def volumetric_capacity(rho_s_kg_m3, c_s_j_kg_k, c_pl_j_kg_k, q_kg_kg):
@@ -135,12 +142,25 @@ BED_RHS_PARAMS = (
     "e_char_j_mol",
     "n_da",
     "k_ldf_s_1",
+    "k_act_J_mol",
+    "k_ref_T_C",
     "rho_s_kg_m3",
     "c_s_j_kg_k",
     "c_pl_j_kg_k",
     "k_eff_w_m_k",
     "h_wall_w_m2_k",
 )
+
+
+def ldf_rate(T_K, k_ldf_s_1, k_act_J_mol=0.0, k_ref_T_C=30.0):
+    """LDF kinetic coefficient with Arrhenius temperature dependence.
+
+    ``k(T) = k_ref·exp(−Ea/R·(1/T − 1/T_ref))`` per cell; ``Ea = 0``
+    returns the bare ``k_ldf_s_1`` exactly (v1 path). Tracer-safe.
+    """
+    T_ref_K = k_ref_T_C + 273.15
+    return k_ldf_s_1 * jnp.exp(
+        -jnp.asarray(k_act_J_mol) / GAS_CONSTANT * (1.0 / T_K - 1.0 / T_ref_K))
 
 
 def bed_rhs(T, q, t_f_k, p_pa, *, dx, q_sat_kg_kg, q_st_j_kg, e_char_j_mol,
@@ -162,7 +182,7 @@ def bed_rhs(T, q, t_f_k, p_pa, *, dx, q_sat_kg_kg, q_st_j_kg, e_char_j_mol,
 def step_bed(T, q, t_f_k, p_pa, dt_s, *, dx, q_sat_kg_kg, q_st_j_kg,
              e_char_j_mol, n_da, k_ldf_s_1, rho_s_kg_m3, c_s_j_kg_k,
              c_pl_j_kg_k, k_eff_w_m_k, h_wall_w_m2_k, extra_source_w_m2=None,
-             wall_film_scale=None):
+             wall_film_scale=None, k_act_J_mol=0.0, k_ref_T_C=30.0):
     """One full time step: exact-exponential LDF substep + RK4 on T.
 
     The uptake update freezes ``q*`` at the start-of-step state (see
@@ -184,12 +204,17 @@ def step_bed(T, q, t_f_k, p_pa, dt_s, *, dx, q_sat_kg_kg, q_st_j_kg,
     circuits), which makes the wall-flux quadrature exactly zero and the
     bed adiabatic apart from ``extra_source_w_m2``.
 
+    ``k_act_J_mol`` (default 0.0) is the LDF activation energy for
+    Arrhenius kinetics ``k(T)`` about ``k_ref_T_C`` (default 30 °C);
+    ``k_act = 0`` reproduces the v1 constant-``k`` update bit-identically.
+
     Returns ``(T_new, q_new, info)`` where ``info`` carries the RK4
     wall-flux quadrature ``Φ`` [J/m²], the adsorption heat released over
     the step [J/m²], and the start-of-step equilibrium uptake field.
     """
     q_star = da_uptake(T, p_pa, q_sat_kg_kg, e_char_j_mol, n_da)
-    decay = jnp.exp(-k_ldf_s_1 * dt_s)
+    k_field = ldf_rate(T, k_ldf_s_1, k_act_J_mol, k_ref_T_C)
+    decay = jnp.exp(-k_field * dt_s)
     q_new = q_star + (q - q_star) * decay
     # Zero-length steps (the soft-switch part-step split) must be exact
     # no-ops — value AND cotangent: divide by the safe surrogate in the
@@ -249,7 +274,11 @@ _CARRY_QCOOL_CUM = 15
 _CARRY_QIN_CUM = 16
 _CARRY_T_DES_START = 17
 _CARRY_T_PHASE_START = 18
-_CARRY_DUR_REQ = 19
+# NOTE: a stale `_CARRY_DUR_REQ = 19` lived here but was never written to
+# the carry by `initial_carry` nor read anywhere — slot 19 was missing, so
+# the vapour slots take 19/20 directly (verified: no reader of index 19).
+_CARRY_P_PA = 19
+_CARRY_VAPOR_IN = 20
 
 
 def _push(hist, value):
@@ -257,8 +286,72 @@ def _push(hist, value):
     return jnp.concatenate([hist[1:], jnp.reshape(value, (1,))])
 
 
-def initial_carry(T_init_k, q_init_kg_kg, *, t_phase_end_s, n_cycles):
-    """Episode carry: fields + phase clock + per-cycle accounting histories."""
+def vapor_step(P_pa, P_target_pa, qm_pre_kg_kg, qm_new_kg_kg,
+               Tm_pre_K, Tm_new_K, dt_s, *, m_s_kg_m2, void_m3_m2, tau_s,
+               closed, desorbing):
+    """One lumped-vapour update (DESIGN Open Question 2, v2 option).
+
+    Void mass ``M = P·V/(R_v·T)`` accumulates sorbent release plus valve
+    flow explicitly; pressure follows diagnostically,
+    ``P_new = M_new·R_v·T_new/V`` — so void-gas heating/cooling
+    (Charles) is included, and the endpoint mass identity
+    ``M_N − M_0 = F − S`` holds to roundoff (the V2-style gate). The
+    valve mass conductance linearizes compressible flow around the
+    UPSTREAM density: ``Cv = V/(R_v·T·tau)·(P/P_res)`` while desorbing
+    (void is upstream — pressurization self-drains, which is what lets
+    high source temperatures complete their swing), unity while
+    adsorbing (evaporator is upstream at fixed ``P_evap``).
+    ``tau_s ≤ 0`` snaps open valves to the reservoir (the v1 behaviour).
+    The valve term is explicit, hence the stability contract ``tau_s =
+    0`` or ``tau_s ≳ 5·dt_s`` (same pattern as the ``k_LDF·dt``
+    split-scheme bound). Returns ``(P_new, dF)`` with ``dF`` the
+    valve-inflow increment [kg/m² wall]. All ``jnp.where`` —
+    tracer-safe. Known v2 limit: no condensation branch (P may exceed
+    ``Psat(T)`` under hard closed heating — flagged, not clamped).
+    """
+    open_ = 1.0 - jnp.asarray(closed)
+    is_open = open_ > 0.5
+    has_void = jnp.asarray(void_m3_m2) > 0.0
+    tau_pos = jnp.asarray(tau_s) > 0.0
+    # Zero-length part-steps (the soft-switch split) must be exact no-ops
+    # — value AND cotangent: without the guard, sorb = 0/0 = NaN poisons
+    # reverse-mode gradients through q (same pattern as step_bed).
+    safe_dt = jnp.where(dt_s > 0.0, dt_s, 1.0)
+    sorb = jnp.where(dt_s > 0.0,
+                     m_s_kg_m2 * (qm_pre_kg_kg - qm_new_kg_kg) / safe_dt,
+                     0.0)  # + when desorbing
+    rt_pre = R_VAPOR_PA_M3_KG_K * Tm_pre_K
+    rt_new = R_VAPOR_PA_M3_KG_K * Tm_new_K
+    M_old = P_pa * void_m3_m2 / rt_pre
+    density_factor = jnp.where(jnp.asarray(desorbing) > 0.5,
+                               P_pa / jnp.maximum(P_target_pa, 1e-12), 1.0)
+    Cv = jnp.where(has_void & tau_pos,
+                   void_m3_m2 * density_factor
+                   / (rt_pre * jnp.maximum(tau_s, 1e-18)), 0.0)
+    valve = jnp.where(is_open, Cv * (P_target_pa - P_pa), 0.0)
+    M_new = M_old + (sorb + valve) * dt_s
+    P_ev = M_new * rt_new / jnp.maximum(void_m3_m2, 1e-18)
+    snap = is_open & ~(tau_pos & has_void)
+    P_new = jnp.where(dt_s > 0.0,
+                      jnp.where(snap, P_target_pa,
+                                jnp.where(has_void, P_ev, P_pa)),
+                      P_pa)
+    M_target = P_target_pa * void_m3_m2 / rt_new
+    dF = jnp.where(dt_s > 0.0,
+                   jnp.where(snap, (M_target - M_old) + sorb * dt_s,
+                             valve * dt_s),
+                   0.0)
+    return P_new, dF
+
+
+def initial_carry(T_init_k, q_init_kg_kg, *, t_phase_end_s, n_cycles,
+                  p_init_pa=0.0):
+    """Episode carry: fields + phase clock + per-cycle accounting histories.
+
+    ``p_init_pa`` seeds the lumped vapour pressure (pass the entering
+    phase's reservoir — ``p_evap`` on adsorption, ``p_cond`` on
+    desorption; the v1 path overwrites it every step anyway).
+    """
     n_cells = T_init_k.shape[0]
     zeros = jnp.zeros(n_cycles)
     return (
@@ -280,6 +373,8 @@ def initial_carry(T_init_k, q_init_kg_kg, *, t_phase_end_s, n_cycles):
         jnp.asarray(0.0),
         jnp.asarray(0.0),
         jnp.mean(T_init_k),
+        jnp.asarray(0.0),
+        jnp.asarray(p_init_pa),
         jnp.asarray(0.0),
     )
 
@@ -310,14 +405,35 @@ def step_episode(carry, x, *, dt_s, phys, extra_source_w_m2=None,
     t_f_ads = phys["t_f_ads_c"] + 273.15
     hx = phys["hx_mass_factor"]
     soft = float(phys.get("soft_switch", 0.0))
-    params = {k: phys[k] for k in BED_RHS_PARAMS}
+    params = {k: phys[k] for k in BED_RHS_PARAMS if k in phys}
+    # v2 kinetics/transport heads default off so v1-era phys dicts
+    # (e.g. calibration's) keep working unchanged.
+    params.setdefault("k_act_J_mol", 0.0)
+    params.setdefault("k_ref_T_C", 30.0)
 
     t_ads, t_des, t_f_des = x
     t_f_des = t_f_des + 273.15  # controls arrive in °C (§5.2 action)
     (T, q, phase, t_abs, t_end, qca, qia, ncyc, hqc, hqi, hdq, hqa,
-     hqd, hta, qms, qcc, qic, t_des_start, t_phase_start) = carry
+     hqd, hta, qms, qcc, qic, t_des_start, t_phase_start,
+     p_vap, f_vap) = carry
     in_ads = phase < 0.5
     qm_pre = jnp.mean(q)
+    # Lumped vapour inventory (v2 option, Open Question 2): the isotherm
+    # sees the evolved void pressure; the valve relaxes it toward the
+    # phase reservoir (or is shut for isosteric/standby). With void/tau
+    # at 0 the update is exactly the v1 instantaneous equilibration.
+    p_res = jnp.where(in_ads, p_evap, p_cond)
+    void = phys.get("vapor_void_m3_m2", 0.0)
+    tau_v = phys.get("vapor_tau_s", 0.0)
+    closed = phys.get("valve_closed", False)
+    has_void_j = jnp.asarray(void) > 0.0
+    tau_pos_j = jnp.asarray(tau_v) > 0.0
+    vapor_active = has_void_j | tau_pos_j
+    # Snap (open valve, instantaneous equilibration) pins q* to the
+    # reservoir exactly like v1; only the evolved branches (relaxation,
+    # closed) use the carried void pressure.
+    snap_now = (1.0 - jnp.asarray(closed) > 0.5) & ~(has_void_j & tau_pos_j)
+    p_use = jnp.where(vapor_active & (~snap_now), p_vap, p_res)
     if soft > 0.0:
         # Soft switching (DESIGN §4.2 gradient diagnostics, Open
         # Question 3): a substep containing a valve boundary is split
@@ -332,28 +448,46 @@ def step_episode(carry, x, *, dt_s, phys, extra_source_w_m2=None,
         dt_1 = duty * dt_s
         ent_ads = 1.0 - in_ads
         t_f_ent = jnp.where(ent_ads, t_f_ads, t_f_des)
-        p_ent = jnp.where(ent_ads, p_evap, p_cond)
+        p_res_ent = jnp.where(ent_ads, p_evap, p_cond)
         t_f_cur = jnp.where(in_ads, t_f_ads, t_f_des)
-        p_cur = jnp.where(in_ads, p_evap, p_cond)
-        T_1, q_1, info_1 = step_bed(T, q, t_f_cur, p_cur, dt_1, **params,
+        # q* uses the continuous void pressure in both parts; each part
+        # relaxes the valve toward its OWN phase reservoir, so the metric
+        # stays continuous in the switch time with no blended-p burst.
+        T_1, q_1, info_1 = step_bed(T, q, t_f_cur, p_use, dt_1, **params,
                                     extra_source_w_m2=extra_source_w_m2,
                                     wall_film_scale=wall_film_scale)
-        T_new, q_new, info_2 = step_bed(T_1, q_1, t_f_ent, p_ent,
+        qm_1 = jnp.mean(q_1)
+        p_1, df_1 = vapor_step(p_vap, p_res, qm_pre, qm_1, jnp.mean(T),
+                               jnp.mean(T_1), dt_1, m_s_kg_m2=m_s,
+                               void_m3_m2=void, tau_s=tau_v, closed=closed,
+                               desorbing=1.0 - in_ads)
+        p_use_2 = jnp.where(snap_now, p_res_ent, p_1)
+        T_new, q_new, info_2 = step_bed(T_1, q_1, t_f_ent, p_use_2,
                                         dt_s - dt_1, **params,
                                         extra_source_w_m2=extra_source_w_m2,
                                         wall_film_scale=wall_film_scale)
-        qm_1 = jnp.mean(q_1)
         qm_new = jnp.mean(q_new)
+        p_new, df_2 = vapor_step(p_1, p_res_ent, qm_1, qm_new,
+                                 jnp.mean(T_1), jnp.mean(T_new),
+                                 dt_s - dt_1, m_s_kg_m2=m_s,
+                                 void_m3_m2=void, tau_s=tau_v, closed=closed,
+                                 desorbing=in_ads)
+        f_new = f_vap + df_1 + df_2
         wall_1 = info_1["wall_flux_integral"]
         wall_2 = info_2["wall_flux_integral"]
         wall_flux = wall_1 + wall_2
     else:
         t_f = jnp.where(in_ads, t_f_ads, t_f_des)
-        p_pa = jnp.where(in_ads, p_evap, p_cond)
-        T_new, q_new, info = step_bed(T, q, t_f, p_pa, dt_s, **params,
+        T_new, q_new, info = step_bed(T, q, t_f, p_use, dt_s, **params,
                                       extra_source_w_m2=extra_source_w_m2,
                                       wall_film_scale=wall_film_scale)
         qm_new = jnp.mean(q_new)
+        p_new, df = vapor_step(p_vap, p_res, qm_pre, qm_new,
+                               jnp.mean(T), jnp.mean(T_new), dt_s,
+                               m_s_kg_m2=m_s, void_m3_m2=void,
+                               tau_s=tau_v, closed=closed,
+                               desorbing=1.0 - in_ads)
+        f_new = f_vap + df
         wall_flux = info["wall_flux_integral"]
 
     t_new_abs = t_abs + dt_s
@@ -406,9 +540,12 @@ def step_episode(carry, x, *, dt_s, phys, extra_source_w_m2=None,
     ncyc = ncyc + push
     t_phase_start = jnp.where(flip, t_new_abs, t_phase_start)
 
-    # Observation-oriented series (post-flip state).
-    p_new = jnp.where(phase_new < 0.5, p_evap, p_cond)
-    q_star_mean = jnp.mean(da_uptake(T_new, p_new, phys["q_sat_kg_kg"],
+    # Observation-oriented series (post-flip state). Inactive (v1) keeps
+    # the exact legacy diagnostic (post-flip reservoir); active reports
+    # the evolved void pressure.
+    p_legacy = jnp.where(phase_new < 0.5, p_evap, p_cond)
+    p_rep = jnp.where(vapor_active, p_new, p_legacy)
+    q_star_mean = jnp.mean(da_uptake(T_new, p_rep, phys["q_sat_kg_kg"],
                                      phys["e_char_j_mol"], phys["n_da"]))
     dur_new = jnp.where(phase_new < 0.5, t_ads, t_des)
     elapsed = t_new_abs - (t_end_new - dur_new)
@@ -419,18 +556,19 @@ def step_episode(carry, x, *, dt_s, phys, extra_source_w_m2=None,
             jnp.max(T_new),
             qm_new,
             q_star_mean,
-            p_new / p_evap,
+            p_rep / p_evap,
             jnp.where(phase_new < 0.5, t_f_ads, t_f_des),
             phase_new,
             elapsed / dur_new,
             dq_cool,
             dq_in,
+            p_rep,
         )
     )
     return (
         T_new, q_new, phase_new, t_new_abs, t_end_new, qca, qia, ncyc,
         hqc, hqi, hdq, hqa, hqd, hta, qms, qcc, qic, t_des_start,
-        t_phase_start,
+        t_phase_start, p_new, f_new,
     ), ys
 
 
@@ -536,6 +674,11 @@ def simulate_bed(
     n_steps=None,
     collect_trace=False,
     soft_switch=False,
+    vapor_void_m3_m2=0.0,
+    vapor_tau_s=0.0,
+    valve_closed=False,
+    k_act_J_mol=0.0,
+    k_ref_T_C=30.0,
 ):
     """Roll out whole adsorption episodes with :func:`jax.lax.scan`.
 
@@ -545,6 +688,14 @@ def simulate_bed(
     ``t_cond_c``. Returns ``{"summary": …, "series": …}``; ``summary`` maps
     the episode metric keys to JAX scalars (gradients flow), ``series`` is
     a dict of per-step channels (decimated to ≤ 2048 samples) or ``None``.
+
+    ``vapor_void_m3_m2`` / ``vapor_tau_s`` enable the lumped vapour
+    inventory (v2, Open Question 2); ``valve_closed`` shuts the vapour
+    valve for the whole rollout (isosteric/standby mechanism — per-step
+    control is available via :func:`advance_carry` with a per-call phys).
+    ``k_act_J_mol`` enables Arrhenius LDF kinetics about ``k_ref_T_C``
+    (the T_hs-trend head behind benchmarks finding 2). All default to
+    the v1 behaviour (bit-identical at defaults).
     """
     n_cells = int(n_cells)
     n_cycles = int(n_cycles)
@@ -595,10 +746,16 @@ def simulate_bed(
         "p_evap_pa": p_evap,
         "p_cond_pa": p_cond,
         "h_fg_evap_j_kg": h_fg,
+        "vapor_void_m3_m2": vapor_void_m3_m2,
+        "vapor_tau_s": vapor_tau_s,
+        "valve_closed": valve_closed,
+        "k_act_J_mol": k_act_J_mol,
+        "k_ref_T_C": k_ref_T_C,
     }
 
     carry = initial_carry(
-        T_init_k, q_init_kg_kg, t_phase_end_s=t_ads_s, n_cycles=n_cycles
+        T_init_k, q_init_kg_kg, t_phase_end_s=t_ads_s, n_cycles=n_cycles,
+        p_init_pa=p_evap,
     )
     controls = (t_ads_s, t_des_s, t_f_des_c)
     carry_f, ys = advance_carry(
@@ -622,16 +779,19 @@ __all__ = [
     "ADS_PHASE",
     "BED_RHS_PARAMS",
     "DES_PHASE",
+    "R_VAPOR_PA_M3_KG_K",
     "SERIES_CHANNELS",
     "advance_carry",
     "bed_rhs",
     "check_timestep",
     "cycle_totals_from_carry",
     "initial_carry",
+    "ldf_rate",
     "max_timestep",
     "simulate_bed",
     "step_bed",
     "step_episode",
     "summary_from_carry",
+    "vapor_step",
     "volumetric_capacity",
 ]

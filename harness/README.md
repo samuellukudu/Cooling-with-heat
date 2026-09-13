@@ -38,6 +38,14 @@ Environments and the oracle:
 | `Bed1D-v0` | transient 1-D adsorber bed: heat equation + LDF kinetics + Dubinin–Astakhov | control & design optimization with real dynamics |
 | `TwoBed-v0` | counter-phase bed pair + request-bit valves + film-disconnect heat recovery | the system question: recovery, composite beds, duty continuity |
 | `TwoBedSchedule-v0` | TwoBed under a per-step source series with policy parameters | schedule experiments: gating, source-following, recovery windows |
+| `ForcedConv-v0` | 2-D channel advection-diffusion, prescribed flow + chip source (T-A5 trial, mirrors `diffheat` `examples/09`) | design discovery: inlet velocity vs pumping trade-off |
+| `Cloak2D-v0` | 2-D heat with ring-parameter κ-field (T-A4 trial, mirrors `diffheat` inhomogeneous 2-D) | design discovery: cloak ring conductivities |
+| `AbsorptionCycle-v0` | lumped single-effect absorption chiller, 3-T ideal × pair effectiveness (T-A3 trial, `docs/applications.md` §3) | design + materials discovery: generator T, working-pair shortlists |
+| `Thermoelectric-v0` | lumped Peltier pair, Seebeck/pumping vs Joule/backflow (T-A2 trial, `docs/applications.md` §2) | design + materials discovery: drive current, pair shortlists with validity windows |
+| `NaturalConv-v0` | buoyancy enclosure via Nu(Ra,Pr) correlations + conduction floor (T-A1 trial, `docs/applications.md` §1) | design + materials discovery: ΔT operating point, fluid shortlists |
+| `Telegrapher-v0` | 1-D hyperbolic heat, two-pulse sensor cancellation (T-E08 hardening, `examples/08`) | algorithm discovery: cancelling-pulse amplitude; gradient-harness stress test |
+| `Thermoelectric1D-v0` | segmented 1-D leg, Joule+Thomson PDE with pair-graded segments (T-A2 extension) | design + materials discovery: current, segment fraction and assignment |
+| `Boussinesq-v0` | resolved 2-D Rayleigh–Bénard cavity, MAC + artificial compressibility (T-A1 extension) | design + materials discovery: ΔT operating point, fluid shortlists |
 
 ## Status
 

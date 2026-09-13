@@ -110,7 +110,22 @@ BED_KEYS = (
     "L_m",
     "n_cells",
     "hx_mass_factor",
+    "vapor_void_m3_m2",
+    "vapor_tau_s",
+    "valve_closed",
+    "k_act_J_mol",
+    "k_ref_T_C",
 )
+
+#: v2-option defaults backfilled when a per-bed dict predates them, so
+#: v1-era callers keep working unchanged (fail-loud only for v1 keys).
+_V2_DEFAULTS = {
+    "vapor_void_m3_m2": 0.0,
+    "vapor_tau_s": 0.0,
+    "valve_closed": False,
+    "k_act_J_mol": 0.0,
+    "k_ref_T_C": 30.0,
+}
 
 
 def bed_phys(
@@ -132,6 +147,11 @@ def bed_phys(
     t_cond_c,
     t_f_ads_c,
     soft_switch=False,
+    vapor_void_m3_m2=0.0,
+    vapor_tau_s=0.0,
+    valve_closed=False,
+    k_act_J_mol=0.0,
+    k_ref_T_C=30.0,
 ):
     """Assemble one bed's configuration dict for :func:`advance_two_carry`.
 
@@ -139,6 +159,8 @@ def bed_phys(
     the shared evaporator/condenser setpoints; ``t_f_ads_c`` is the
     adsorption-phase fluid temperature (a construction constant — the
     desorption fluid temperature arrives per step as a control).
+    ``vapor_void_m3_m2`` / ``vapor_tau_s`` / ``valve_closed`` thread the
+    lumped vapour inventory (v2) through :func:`bed1d.step_episode`.
     """
     n_cells = int(n_cells)
     return {
@@ -163,6 +185,11 @@ def bed_phys(
         "p_cond_pa": water_sat_pressure_pa(t_cond_c + 273.15),
         "h_fg_evap_j_kg": water_h_fg_j_kg(t_evap_c + 273.15),
         "soft_switch": soft_switch,
+        "vapor_void_m3_m2": vapor_void_m3_m2,
+        "vapor_tau_s": vapor_tau_s,
+        "valve_closed": valve_closed,
+        "k_act_J_mol": k_act_J_mol,
+        "k_ref_T_C": k_ref_T_C,
     }
 
 
@@ -188,9 +215,9 @@ def initial_two_carry(phys_a, phys_b, *, t_phase0_s, t_des_end_k, n_cycles):
     q_b = da_uptake(t_b, p_evap, phys_b["q_sat_kg_kg"],
                     phys_b["e_char_j_mol"], phys_b["n_da"])
     carry_a = bed1d.initial_carry(t_a, q_a, t_phase_end_s=t_phase0_s,
-                                  n_cycles=n_cycles)
+                                  n_cycles=n_cycles, p_init_pa=p_evap)
     carry_b = bed1d.initial_carry(t_b, q_b, t_phase_end_s=t_phase0_s,
-                                  n_cycles=n_cycles)
+                                  n_cycles=n_cycles, p_init_pa=p_cond)
     carry_b = _set_carry(carry_b, bed1d._CARRY_PHASE,
                          jnp.asarray(bed1d.DES_PHASE))
     return carry_a, carry_b, jnp.asarray(0.0)
@@ -389,9 +416,12 @@ def simulate_two_bed(
     channels or ``None``.
     """
     for name, bed in (("bed_a", bed_a), ("bed_b", bed_b)):
-        missing = [k for k in BED_KEYS if k not in bed]
+        missing = [k for k in BED_KEYS if k not in bed and k not in _V2_DEFAULTS]
         if missing:
             raise KeyError(f"{name} is missing per-bed keys {missing}")
+    # Non-mutating backfill (callers may reuse their dicts).
+    bed_a = {**_V2_DEFAULTS, **bed_a}
+    bed_b = {**_V2_DEFAULTS, **bed_b}
     t_f_des_c = 0.0 if t_f_des_c is None else t_f_des_c
 
     phys_a = bed_phys(**{k: bed_a[k] for k in BED_KEYS},

@@ -28,6 +28,7 @@ import jax
 jax.config.update("jax_enable_x64", True)
 
 from . import backends, envs, materials, physics, profiles, registry, report  # noqa: E402
+from . import materials_k_eff  # noqa: E402
 from .backends import OptimizeResult, optimize  # noqa: E402
 from .envs.base import (  # noqa: E402
     ActionSpec,
