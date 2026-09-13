@@ -92,6 +92,7 @@ cd adsorbent-ml/data
 ## Docs
 
 - [`ROADMAP.md`](ROADMAP.md) — DL-focused milestones and status.
+- [`docs/applications.md`](docs/applications.md) — application scenarios: the four+1 adsorption profiles (setpoints, weights, what each punishes, T2 reference rankings) + the frozen diffheat PDE zoo.
 - [`harness/DESIGN.md`](harness/DESIGN.md) — physics, env specs, backends, milestones.
 - [`harness/benchmarks.md`](harness/benchmarks.md) — V4 literature calibration (Uyun 2009, Sztekler 2021).
 - [`adsorbent-ml/README.md`](adsorbent-ml/README.md) + [`adsorbent-ml/data/ACQUISITION.md`](adsorbent-ml/data/ACQUISITION.md) — data sources, APIs, per-source status.

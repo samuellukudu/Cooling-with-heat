@@ -532,6 +532,10 @@ conductivity) that motivated this project.
 
 ### 8.2 `ApplicationProfile`
 
+Full per-application dossiers — scenario notes, fluid bands, what each
+profile punishes, and the current T2 reference rankings — live in
+[`../docs/applications.md`](../docs/applications.md).
+
 | field | unit | notes |
 |---|---|---|
 | `name`, `description` | — | |

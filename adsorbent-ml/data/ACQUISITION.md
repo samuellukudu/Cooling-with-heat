@@ -245,9 +245,9 @@ contains no structures, chemistry, or adsorption data, so it cannot serve T1
 **Deferred trigger — revisit only when bed-level thermal emulation starts
 (late Stage 3+/4):** its convection/fluid subsets are candidate training or
 benchmark corpora for a neural-operator emulator of transient heat transport
-in adsorber beds (maps to `docs/applications.md` §1 Natural Convection and
-§5 Forced Convection). Pull a single dataset then (~GBs), never the full
-collection.
+in adsorber beds (maps to `docs/applications.md` Part II §1 Natural
+Convection and §5 Forced Convection). Pull a single dataset then (~GBs),
+never the full collection.
 
 **Adopt its conventions regardless:** shared HDF5 schema + manifests +
 VRMSE-style metric + published baselines is the template to copy if we
