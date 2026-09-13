@@ -1,31 +1,22 @@
 [project]
-name = "diffheat"
-version = "0.1.0"
-description = "Differentiable heat equation simulations with JAX"
+name = "cooling-with-heat"
+version = "0.2.0"
+description = "Deep learning (PINN surrogates + RL control) for heat-driven adsorption cooling"
 requires-python = ">=3.10"
 dependencies = [
-    "jax[cuda12]",
-    "numpy",
     "harness",
 ]
 
-[project.optional-dependencies]
-viz = ["pyqt6", "matplotlib"]
-gui = ["harness[gui]"]
-dev = ["pytest", "jupyter"]
+[tool.uv]
+# Virtual workspace root: tooling + dependency resolution only; the root
+# itself is not a buildable/packageable distribution.
+package = false
 
 [tool.uv.workspace]
 members = ["harness"]
 
 [tool.uv.sources]
 harness = { workspace = true }
-
-[build-system]
-requires = ["setuptools>=64"]
-build-backend = "setuptools.build_meta"
-
-[tool.setuptools.packages.find]
-include = ["diffheat*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

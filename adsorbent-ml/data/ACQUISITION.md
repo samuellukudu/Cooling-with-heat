@@ -160,7 +160,7 @@ silica gel RD, zeolites 13X/NaA, AlPO-18/SAPO-34, MIL-101(Cr), UiO-66,
 Mg-MOF-74, CAU-10-H, aluminum fumarate, silicalite, activated carbon, and a
 LiCl/silica composite. Each row: `q_sat`, `Q_st`, `E_char`, `n`, source,
 confidence tier. High-confidence rows are the same citations already encoded
-in `Materials/mp_query_validator.py` Bench 3.
+in the archived legacy screen's `mp_query_validator.py` Bench 3 (now at `~/ENTERPRISE/_archive/Cooling-with-heat-Materials/`).
 
 **Role:** independent sanity floor for `fit_da.py` (fitted parameters must
 land near published values for these materials) and calibration set for
@@ -220,7 +220,7 @@ Measured agreement of our analytic model vs CoolProp IF97 (0-150 °C grid,
 Planned uses:
 
 1. **Validator upgrade** — dense-grid live reference calls in
-   `Materials/mp_query_validator.py` instead of 7 hardcoded spot values.
+   the archived `mp_query_validator.py` instead of 7 hardcoded spot values (archived 2026-09 with `Materials/`).
 2. **Refrigerant generalization** — optional `refrigerant=` on
    `simulate_adsorption_cycle` (methanol Psat(35 °C) = 28 kPa, ammonia
    1350 kPa: working-pair expansion is nearly free).

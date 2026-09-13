@@ -1,98 +1,85 @@
 # Cooling-with-Heat — Roadmap
 
-> **Direction change (2026-08).** This project started as *diffheat*, a
-> hand-built differentiable simulation library. It has pivoted: we now focus
-> on **training machine-learning models** for heat-driven cooling material
-> discovery, using mature libraries and APIs instead of building physics
-> infrastructure from scratch.
+> **Simplification (2026-09).** The project is now scoped to one question:
+> **how far can deep learning (PINN surrogates + RL control) go on heat-driven
+> adsorption cooling?** Everything not serving that was removed from the tree:
+> the frozen `diffheat` library, a generic PDE trial zoo, and the legacy
+> `Materials/` screening effort (archived at
+> `~/ENTERPRISE/_archive/Cooling-with-heat-Materials`; its parity oracle and
+> MP query layer were vendored back in). The PyQt6 GUI is parked in `attic/`.
 >
-> - `diffheat/` is **frozen** — kept as a working reference, no new features.
-> - `Materials/` screening experiments are **kept as data tooling** — their
->   query layer exports candidates, their cycle simulator evaluates them.
-> - Active development happens in adsorbent-ML work (see stage ladder below).
+> Active development: `harness/` (physics, gym envs, grad/search/RL backends)
+> and `adsorbent-ml/` (API-fed data pipeline, bed PINN, baselines, eval).
 
-## Where We Are & Next Moves (2026-08)
+## Where We Are (2026-09)
 
-Two ladders are running in parallel and share one artifact:
+Two tracks share one artifact — the trusted JAX physics:
 
-- **adsorbent-ml** — Stage 0 data exports done (ISODB: 1,221 pure-water
-  isotherms; CoRE MOF; QMOF; IZA; anchor table) **and H1.0 done**:
-  `fit_da.py` (reusable library + thin CLI) fit D–A parameters to the
-  water isotherms — 386 usable fits (median nRMSE 2.8%), 24 adsorbents
-  with multi-temperature Q_st; the rest are honestly flagged
-  (`data_cache/fits/da_params_qc.md`). These are the Stage-1 training
-  labels and the harness material database rows.
-- **harness** — **H0, H1.0–H1.5 and H2.1–H2.3 all done** (2026-08):
-  Cycle0D oracle with V1 parity < 1e-12 (V7 reproduces the legacy
-  screen's best point); the dynamic 1-D bed (V3 oracle limit, V4
-  literature calibration, V5 control gradients); the counter-phase
-  two-bed system with heat recovery (V6) and schedule optimization
-  beating the fixed schedule (H2.2); and the T2 reference rankings over
-  the fitted table (H2.3 — 13X bottom-third on the datacenter profile,
-  as screened). 1,385 tests green.
-
-**Next moves, in order:**
-
-1. **adsorbent-ml Stage 1** — the tabular baseline (GBDT on featurized
-   structures → `q_sat`, `Q_st`, D–A params) scored against the H2.3
-   reference rankings; its top-k hit rate vs the brute-force shortlists
-   is the business metric.
-2. **H3 (pull-driven)** — the harness-side extensions with standing
-   findings behind them: lumped vapour inventory (Open Question 2 —
-   needed for heat-source-trend fidelity *and* the valve-closed standby
-   the schedule experiments wanted), per-material `k_eff` heads (the
-   §8.1 honesty gap), rl backend on stochastic TwoBed (Open Question 4
-   citation first).
-
-GPU availability stays an open, unblocking question until Stage-2 GNN
-sweeps get large.
-
-**Harness posture (2026-08): the harness is the project's R&D lab** — a
-workbench for posing heat-driven-cooling ideas as cheap, honest experiments
-against any operating scenario. The four application profiles are preset
-scenarios for cross-tool comparability, not the organizing frame; every
-experiment can pass raw setpoints, geometry, and schedules directly
-(schedules are data — per-step series, not named applications).
-
-GPU availability stays an open, unblocking question until H2 sweeps get
-large.
+- **harness** — H0–H2.3 done: Cycle0D oracle with V1 parity < 1e-12; the
+  dynamic 1-D bed (V3 oracle limit, V4 literature calibration, V5 control
+  gradients); the counter-phase two-bed system with heat recovery (V6) and
+  schedule optimization beating the fixed schedule (H2.2); T2 reference
+  rankings over the fitted material table (H2.3 — 13X bottom-third on the
+  datacenter profile, as screened).
+- **adsorbent-ml** — data exports done (ISODB: 1,221 pure-water isotherms →
+  386 usable D–A fits, 24 adsorbents with multi-temperature Q_st; CoRE MOF
+  12k structures; QMOF 20k DFT rows; IZA CIFs + pore table; anchors), the
+  N2 tabular baseline trained + COP-ranked (Stage-1 report in
+  `data_cache/n2/`), and the **N1 bed PINN built end-to-end** (synthetic
+  corpus from the harness solver, curriculum training, field metrics).
+  Known floor: only 50/156 materials are structure-matched; pore features
+  cover a fraction — coverage is the bottleneck, not architectures.
 
 ## North Star
 
-Train surrogates that predict adsorption thermodynamics (`q_sat`, `Q_st`,
-Dubinin–Astakhov parameters) directly from crystal structure, so thousands of
-candidate materials can be ranked by system-level performance (COP / SCP per
-application profile) without running expensive simulations for each one.
+Deep learning on both axes of the cooling-with-heat problem:
 
-Design principle: **the model predicts material properties; trusted physics
-(`Materials/cooling_physics.py`) converts them to system metrics.**
-The model proposes; the simulator disposes.
+1. **PINN surrogates of the physics** — a physics-informed neural operator
+   for the adsorber bed (and later the two-bed system) that evaluates
+   trajectories orders of magnitude faster than the finite-volume solver,
+   conditioned on material + geometry + schedule, accurate enough to trust
+   for screening and control.
+2. **RL for cycle control** — policies that run the two-bed machine
+   (valve/source scheduling under time-varying heat input) beyond what
+   hand-tuned schedules achieve.
+
+And the materials axis feeding both: predict adsorption thermodynamics
+(`q_sat`, `Q_st`, D–A `E`, `n`) from crystal structure, so thousands of
+candidates can be ranked by system-level performance without simulations.
+
+Design principle: **the model proposes; the simulator disposes.** ML
+predictions are always converted to system metrics by the trusted physics
+(`harness.physics`), never judged by held-out ML metrics alone.
 
 ## Problem Framing
 
 | Task | Input → Output | Feeds |
 |---|---|---|
-| **T1 — Forward surrogate** | Crystal structure → `q_sat`, `Q_st`, D–A params (`E`, `n`) | T2 |
-| **T2 — System-level ranker** | Predicted props → COP / SCP via `simulate_adsorption_cycle()` per application profile | Candidate shortlists |
-| **T3 — Active learning** | Model uncertainty → select next candidates for expensive evaluation | Label growth |
+| **T-PINN — Bed surrogate** | (x̂, t̂, material/geometry/schedule) → (T, x) fields with PDE residuals | Fast screening, RL reward shaping |
+| **T-RL — Cycle control** | State history → valve/source schedule | TwoBed under time-varying/stochastic heat input |
+| **T1 — Forward surrogate** | Crystal structure → `q_sat`, `Q_st`, D–A params | T2 |
+| **T2 — System-level ranker** | Predicted props → COP / SCP via the harness cycle oracle per profile | Candidate shortlists |
+| **T3 — Active learning** (later) | Model uncertainty → next candidates for expensive evaluation | Label growth |
 
-Generative inverse design is explicitly **out of scope** until a validated
-forward surrogate exists (see GeoField lessons below).
+Generative inverse design stays **out of scope** until a validated forward
+surrogate exists (GeoField lesson — see below).
 
 ## Data Strategy
 
-Labels are the bottleneck, not models. Three tiers:
+Labels are the bottleneck, not models. Sources are pulled via their APIs and
+cached with manifests — see
+[`adsorbent-ml/data/ACQUISITION.md`](adsorbent-ml/data/ACQUISITION.md) for
+per-source status.
 
-- **L0 — Proxy labels** (current heuristics in `heat_cooling_screen.py`):
-  pipeline smoke tests only. A model trained on these merely echoes the
-  heuristics — never report its accuracy as scientific results.
-- **L1 — Literature/computed datasets**: published computed water-isotherm
-  sets on framework databases (CoRE MOF, hypothetical MOFs, zeotypes) and
-  experimental curves (ISODB/NIST). Dubinin–Astakhov parameters are fitted per
-  isotherm so targets stay consistent with the cycle model's inputs.
-- **L2 — Self-generated labels** (GCMC via RASPA or ML-potential-accelerated
-  adsorption sims): deferred until active learning justifies spending compute
-  on selected candidates only.
+- **L1 — Literature/computed datasets** (current): experimental water-isotherm
+  curves (NIST ISODB), computed structures/properties (CoRE MOF, QMOF, IZA,
+  OPTIMADE providers), stability flags (MOFSimplify). D–A parameters are
+  fitted per isotherm so targets stay consistent with the cycle model's
+  inputs.
+- **L2 — Self-generated labels** (deferred): GCMC via RASPA or ML-potential
+  adsorption sims, spent only on candidates active learning selects.
+- Synthetic fields for the PINN come from the harness Bed1D solver itself
+  (`adsorbent-ml/data/corpus.py`) — free, exact, and on-policy.
 
 Splits are by chemistry family / node type, never random — random splits leak
 near-duplicate frameworks.
@@ -101,56 +88,67 @@ near-duplicate frameworks.
 
 | Layer | Choice |
 |---|---|
-| Structures / query | `pymatgen` + `mp-api` (already in use) |
-| Tabular featurization | `matminer`, `mofdscribe` (MOF/pore descriptors), Zeo++-style pore geometry |
-| Pretrained foundation models | CHGNet / M3GNet (`matgl`), MACE-MP — used **offline** as relaxers/embedding generators, not reimplemented |
-| NN library in JAX | `equinox` (or flax.nnx); small hand-rolled crystal-graph message passing (jraph is archived) |
-| Optimizers / checkpoints | `optax`, `orbax-checkpoint` |
-| Baselines | `scikit-learn` (+ optional XGBoost) — GBDT on matminer features is the mandatory floor GNNs must beat |
-| HPO / tracking | `optuna`; wandb or TensorBoard |
+| Envs / physics / RL | `harness` (gymnasium + stable-baselines3 PPO; `rl` extra) |
+| PINN + training | pure JAX + `optax` (`adsorbent-ml/models/bed_pinn.py`, `training/train_pinn.py`) |
+| Structures / query | `pymatgen` + `mp-api` (optional extras, used by the exporters) |
+| Tabular featurization | Magpie-lite composition + pore descriptors (mofdscribe-compatible CSVs) |
+| Pretrained foundation models | CHGNet / M3GNet (`matgl`), MACE-MP — offline relaxers/embedders, not reimplemented |
+| NN library (Stage-2 GNN) | `equinox`; small hand-rolled crystal-graph message passing |
+| Baselines | `scikit-learn` GBDT — the mandatory floor GNNs must beat |
+| HPO / tracking | `optuna`; wandb or TensorBoard (not yet wired) |
 
-## Stage Ladder
+## Milestone Ladder (DL focus)
 
 Each stage gates the next.
 
-0. **Data plumbing** — export MP candidates once to parquet + structures;
-   featurize; reproducible dataset build. *(proxy labels OK here)*
-1. **Tabular baseline** — GBDT/RF on featurized structures → `q_sat`, `Q_st`
-   on real L1 labels. Honest family-split CV error establishes the floor.
-2. **Crystal-graph GNN in JAX** — multi-head shared-latent surrogate.
-   Log-space heads for quantities spanning decades. Two-stage training:
-   structural props first (abundant), adsorption heads second (scarce, low LR).
-3. **Uncertainty + closed loop** — deep ensembles drive shortlists for
-   expensive L2 evaluation; shortlist enrichment vs random is the gate.
-4. **Guided generation** (deferred) — JAX-port of the cycle sim, gradient-based
-   guidance, parameter-space generation over a parametric framework family.
+1. **PINN hardening (now)** — train the bed PINN to real-condition accuracy:
+   corpus from calibrated materials (V4), curriculum stage C
+   (real-condition collocation), rel-L2 + residual gates from
+   `eval/pinn_metrics.py`. Gate: matches the Bed1D solver within the V3
+   oracle-limit tolerance.
+2. **RL on TwoBed (H2.4/H3)** — PPO with a schedule action space on
+   `TwoBedSchedule-v0` under time-varying/stochastic source profiles;
+   baseline = H2.2 optimized fixed schedules. Gate: beats the schedule
+   gate's ≈7% margin honestly (burst-tolerant duty accounting).
+3. **Data coverage lift (parallel)** — persist the OPTIMADE bulk MOF pull,
+   MOFSimplify stability tables, wire the IZA pore table into features;
+   re-run Stage-1 baseline; matched-coverage is the gate (50/156 → majority).
+4. **Crystal-graph GNN (Stage 2)** — multi-head shared-latent surrogate,
+   log-space heads; two-stage training (structural props first, adsorption
+   heads second). Gate: beats the refreshed tabular floor and improves
+   top-k hit rate vs the H2.3 reference rankings.
+5. **Uncertainty + closed loop (Stage 3)** — deep ensembles drive shortlists
+   for expensive L2 evaluation; shortlist enrichment vs random is the gate.
 
 ## Evaluation Protocol
 
-1. Property level: MAE/RMSE on `q_sat`, `Q_st`, D–A `E`; Spearman ρ vs true ranking.
-2. System level: predictions through the cycle sim per app profile; **top-k hit
-   rate** vs brute-force ranked lists is the business metric.
-3. Calibration: uncertainty intervals must cover held-out errors (needed for Stage 3).
-4. Always reported alongside the Stage-1 tabular baseline.
+1. PINN level: rel-L2 field errors, PDE/BC/IC residual norms,
+   autodiff-vs-FD agreement, super-resolution error (`adsorbent-ml/eval/pinn_metrics.py`).
+2. RL level: COP/SCP of learned schedules vs optimized fixed schedules on
+   identical duty envelopes.
+3. Property level: MAE/RMSE on `q_sat`, `Q_st`, D–A `E`; Spearman ρ vs true ranking.
+4. System level: predictions through the cycle oracle per profile; **top-k
+   hit rate** vs brute-force ranked lists is the business metric.
+5. Always reported alongside the tabular baseline.
 
 ## Reference Architecture: GeoField
 
 [connorkapoor/geofield-bracket](https://github.com/connorkapoor/geofield-bracket)
-is the strongest available template for our end state ("learning where rules
-are weak, rules where they are exact, simulation where trust matters").
-Lessons adopted:
+is the strongest available template for the materials end state ("learning
+where rules are weak, rules where they are exact, simulation where trust
+matters"). Lessons adopted:
 
 - **Free-form generation fails** on reconstruction-trained latents (blobs);
-  valid designs are isolated islands. If Phase 3 ever happens it will be
-  parameter-space generation over an exact parametric family + verifier loop.
+  valid designs are isolated islands. If guided generation ever happens it
+  will be parameter-space generation over an exact parametric family +
+  verifier loop.
 - **Log-space heads are non-negotiable** for wide-range physical quantities.
-- **Calibrate datasets into the decision-relevant regime** (their analog:
-  load cases spanning 30–95% yield utilization).
-- **Feed explicit engineering features** (Polanyi potential `A = RT·ln(Psat/P)`,
-  pore-limiting diameter, accessible volume, regeneration ΔT) rather than
-  making networks rediscover them.
-- **Extension contract:** new physics = one head + one labeler + one verifier,
-  never backbone changes.
+- **Calibrate datasets into the decision-relevant regime.**
+- **Feed explicit engineering features** (Polanyi potential
+  `A = RT·ln(Psat/P)`, pore-limiting diameter, accessible volume,
+  regeneration ΔT) rather than making networks rediscover them.
+- **Extension contract:** new physics = one head + one labeler + one
+  verifier, never backbone changes.
 
 Caution: GeoField is PyTorch and AGPL-3.0 — borrow patterns, not code.
 
@@ -158,33 +156,24 @@ Caution: GeoField is PyTorch and AGPL-3.0 — borrow patterns, not code.
 
 ```
 Cooling-with-heat/
-├── diffheat/            # FROZEN — reference library
-├── Materials/           # legacy screening + data-export tooling
-├── docs/
-├── harness/             # differentiable optimization harness (gym-compatible
-│                        #   envs; grad/search/rl backends) — see
-│                        #   harness/DESIGN.md. Provides the T2 ranking loop
-│                        #   and, later, the reward function for T3.
-└── adsorbent-ml/        # NEW home for ML work
-    ├── data/            # mp_export.py, isotherms.py, fit_da.py
-    ├── features/        # matminer/mofdscribe wrappers → numpy
-    ├── models/          # baseline.py (sklearn), crystal_gnn.py (equinox)
-    ├── training/        # train.py (optax loop, optuna), track.py
-    └── eval/            # metrics.py, rank.py (predictions → COP/SCP tables)
+├── harness/             # physics + gym envs + grad/search/RL backends
+│                        #   (see harness/DESIGN.md) — T2 ranking loop,
+│                        #   PINN oracle, RL reward source
+├── adsorbent-ml/        # data (API exporters), features, models (bed PINN,
+│                        #   tabular baseline), training, eval
+├── attic/               # parked work (PyQt6 GUI) — restorable, not maintained
+├── tests/               # tests/harness, tests/adsorbent_ml (+ vendored V1
+│                        #   parity oracle in tests/harness/reference)
+└── data_cache/          # all datasets, gitignored, manifest-per-build
 ```
-
-Environment: extend the root `pyproject.toml` (uv-managed) with an `ml` extra
-rather than maintaining a second venv.
 
 ## Open Decisions
 
 - [x] Which L1 dataset first? → **Resolved**: NIST ISODB water isotherms +
-      CoRE MOF + QMOF + IZA/anchors, in that order — concrete plan in
+      CoRE MOF + QMOF + IZA/anchors — status in
       [`adsorbent-ml/data/ACQUISITION.md`](adsorbent-ml/data/ACQUISITION.md).
-- [ ] GPU availability for Stage 2+ (Stages 0–1 run fine on CPU)?
-- [x] Port `cooling_physics.py` to JAX early (gradient diagnostics) or wait for Stage 3?
-      → **Resolved 2026-08**: yes, early — as harness milestone H0
-      (JAX port + oracle parity tests), see
-      [`harness/DESIGN.md`](harness/DESIGN.md).
-- [ ] Parametric framework generator (GeoField-style family) early vs database-screening-first?
+- [x] Port `cooling_physics.py` to JAX early? → **Resolved 2026-08**: yes —
+      harness H0 (oracle parity < 1e-12).
+- [ ] GPU availability for PINN scaling + GNN sweeps (current tracks run on CPU).
+- [ ] RL action space: discrete valve schedule vs continuous source modulation first?
 - [ ] Shared-latent multi-head surrogate vs independent per-property models as Stage-2 default?

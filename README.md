@@ -1,271 +1,82 @@
-# diffheat — Differentiable Heat Equation Simulations with JAX
+# Cooling-with-heat — deep learning for heat-driven cooling
 
-> **Status: frozen (2026-08).** This project has pivoted from building a
-> differentiable-simulation library to **training ML models for heat-driven
-> cooling material discovery**. `diffheat` remains fully functional and is
-> kept as a reference component; new development happens in the adsorbent-ML
-> effort described in [`ROADMAP.md`](ROADMAP.md).
+Train neural networks (physics-informed and RL) to solve, control, and design
+**heat-driven adsorption cooling** — air conditioning powered by waste heat
+instead of electricity.
 
-`diffheat` is a differentiable 1D heat-equation solver that is fully compatible with
-JAX's automatic differentiation.  Because gradients flow through every timestep,
-you can **optimise material properties, initial conditions, boundary values, and
-source terms** with standard gradient-descent tools — making it useful for inverse
-design, parameter identification, and "cooling-with-heat" explorations where
-thermal behaviour needs to be tuned rather than just simulated.
+> **Status (2026-09): simplified to a DL focus.** The project was reduced to
+> two code efforts — `harness/` (physics + gym environments + optimizers) and
+> `adsorbent-ml/` (API-fed data pipeline + models). The frozen `diffheat`
+> solver library, a generic PDE "trial zoo", and the legacy `Materials/`
+> screening effort were removed from the tree (the GUI lives parked in
+> [`attic/`](attic)). See [`ROADMAP.md`](ROADMAP.md) for what's next.
 
-## What can it do?
+## Layout
 
-| Capability | Detail |
+| Path | Role |
 |---|---|
-| **Forward simulation** | 1D heat equation with Dirichlet or Neumann boundary conditions, spatially-varying diffusivity, and user-defined source terms. |
-| **End-to-end differentiability** | The full trajectory is traced through JAX — `jax.grad`, `jax.jit`, and `jax.vmap` all work out of the box. |
-| **Stability checks** | Built-in CFL condition checking so you don't accidentally run unstable explicit-Euler integrations. |
-| **Interactive visualisation** | Optional PyQt6 + Matplotlib viewer with play/pause, stepping, and a space-time heatmap. |
-| **Headless core** | The solver and physics modules have zero GUI dependencies — safe for HPC, CI, and containerised workloads. |
-
-### Architecture
+| [`harness/`](harness) | **Physics + environments + optimization.** Pure-JAX cooling physics (equilibrium cycle oracle, 1-D adsorber bed with LDF kinetics + Dubinin–Astakhov uptake, two-bed system with heat recovery, LiBr/H₂O absorption chiller), gymnasium-compatible environments, literature calibration, and three optimization backends: gradient (optax), search (CMA-ES/TPE), and **RL (PPO via stable-baselines3)**. |
+| [`adsorbent-ml/`](adsorbent-ml) | **Data + models.** API-fed acquisition (NIST ISODB, CoRE MOF, QMOF, IZA-SC, OPTIMADE, Materials Project, MOFSimplify), Dubinin–Astakhov isotherm fitting, feature engineering, the **bed PINN** (JAX physics-informed neural operator surrogate of Bed1D), a tabular baseline, training CLIs, and eval (COP-ranked retrieval, PINN field metrics). |
+| `attic/` | Parked, restorable work (the PyQt6 GUI workbench). |
+| `data_cache/` | All downloaded/derived datasets (gitignored; every build writes a `manifest.json`). |
 
 ```
-diffheat/
-├── __init__.py     # Public API surface
-├── utils.py        # Device detection, array helpers
-├── mesh.py         # Grid1D, BoundaryCondition
-├── physics.py      # Laplacian operator, BC application, HeatEquation1D
-├── solvers.py      # Explicit Euler, CFL check, trajectory solve (jax.lax.scan)
-└── viz.py          # PyQt6 viewer (optional, only module with GUI deps)
+materials (q_sat, Q_st, D–A params)
+        │  adsorbent-ml: predict from structure/composition
+        ▼
+harness physics ──► COP / SCP per application profile
+        ▲
+        │  harness RL/grad/search backends: cycle design + control
 ```
 
-## Installation
-
-### Prerequisites
-
-- **Python ≥ 3.10**
-
-Pick one of the environment managers below.  All three approaches work; `uv`
-is the fastest and what we use day-to-day, while `conda` is convenient when
-you also need Jupyter and GPU-accelerated JAX in the same environment.
-
----
-
-### Option A: uv (recommended)
-
-[`uv`](https://docs.astral.sh/uv/) is a fast Python package and project
-manager written in Rust — it replaces `pip`, `venv`, and `pip-tools` with a
-single tool.
-
-```bash
-# Install uv if you don't have it yet
-curl -LsSf https://astral.sh/uv/install.sh | sh
-
-# Clone and enter the project
-git clone <repo-url> diffheat && cd diffheat
-
-# uv creates a virtualenv, installs JAX + diffheat + all extras in one step
-uv sync --extra viz --extra dev
-```
-
-`uv sync` reads `pyproject.toml` and pins dependencies in `uv.lock` for
-reproducible installs.  To add a new dependency later:
-
-```bash
-uv add <package>
-```
-
-**JAX hardware backend with uv:**  uv respects the same `[cpu]` / `[cuda12]`
-extras that pip does.  If you need to pin a specific JAX variant, add it
-explicitly:
-
-```bash
-uv add "jax[cuda12]"
-```
-
-Run any script inside the managed environment with:
-
-```bash
-uv run python examples/01-1d-heat-equation/demo.py
-uv run pytest
-uv run jupyter notebook examples/01-1d-heat-equation/explore.ipynb
-```
-
----
-
-### Option B: Conda
-
-Conda is a good choice when you need Jupyter and GPU-accelerated JAX in a
-single environment, or when you already work inside the conda ecosystem.
-
-```bash
-# Create a fresh environment with Python 3.12
-conda create -n diffheat python=3.12 -y
-conda activate diffheat
-
-# Install JAX for your hardware
-pip install "jax[cpu]"        # CPU-only
-# pip install "jax[cuda12]"   # GPU (CUDA 12)
-
-# Install diffheat in editable mode with all extras
-pip install -e ".[viz,dev]"
-```
-
-To make the kernel available in Jupyter:
-
-```bash
-conda activate diffheat
-python -m ipykernel install --user --name diffheat --display-name "Python (diffheat)"
-```
-
-Now you can select the *Python (diffheat)* kernel when launching notebooks:
-
-```bash
-jupyter notebook examples/01-1d-heat-equation/explore.ipynb
-```
-
-> **Tip:**  If you use Mamba as a drop-in faster conda, replace `conda` with
-> `mamba` in the commands above — everything else is identical.
-
----
-
-### Option C: pip + venv (standard)
-
-```bash
-python -m venv .venv
-source .venv/bin/activate      # Linux / macOS
-# .venv\Scripts\activate       # Windows
-
-# JAX for your hardware
-pip install "jax[cpu]"
-
-# diffheat with all extras
-pip install -e ".[viz,dev]"
-```
-
----
-
-### Dependency groups
-
-| Extra | What it installs | When you need it |
-|---|---|---|
-| *(none)* | `jax`, `numpy` | Headless solves, CI, HPC |
-| `viz` | `pyqt6`, `matplotlib` | Interactive viewer (`run_viewer`) |
-| `dev` | `pytest`, `jupyter` | Running tests, notebooks |
+**The model proposes; the simulator disposes.** ML predictions are always
+judged by the trusted JAX physics (cycle COP for ranking, Bed1D fields for the
+PINN), never by held-out ML metrics alone.
 
 ## Quickstart
 
-```python
-import jax.numpy as jnp
-from diffheat import (
-    BoundaryCondition,
-    Grid1D,
-    HeatEquation1D,
-    get_device,
-    solve_heat_1d,
-)
-
-print(f"Running on: {get_device()}")
-
-# ---- 1 m rod, 100 cells ----
-grid = Grid1D.uniform(length=1.0, n_cells=100)
-
-# ---- Left end at 100°C, right end at 0°C (Dirichlet) ----
-bc = BoundaryCondition(kind="dirichlet", value=jnp.array([100.0, 0.0]))
-
-# ---- Thermal diffusivity (m²/s) ----
-alpha = 0.01
-
-# ---- Initial condition: 0°C everywhere ----
-T0 = jnp.zeros(grid.n_cells)
-
-# ---- Solve: 5 seconds with dt = 0.001 ----
-eqn = HeatEquation1D(grid=grid, bc=bc, alpha=alpha)
-trajectory = solve_heat_1d(eqn, T0, t_span=(0.0, 5.0), dt=0.001)
-
-print(f"Shape: {trajectory.shape}")   # (5001, 100)
-print(f"Final mean temperature: {jnp.mean(trajectory[-1]):.2f}°C")
+```bash
+uv sync --group dev                 # jax[cpu] + harness + tooling
+JAX_PLATFORMS=cpu uv run pytest     # everything green before you start
 ```
 
-### Visualise the result
+Optimize a cycle with the RL backend:
 
 ```python
-from diffheat.viz import run_viewer
+import harness
 
-run_viewer(trajectory, grid, dt=0.001)
+env = harness.make("Bed1D-v0", material="anchor:Silica gel RD", profile="datacenter")
+result = harness.optimize(env, harness.Objective.single("COP"), backend="grad")
+print(result.best_metrics["COP"])
+# backend="rl" (PPO) / backend="search" (CMA-ES, TPE) on the same problem
 ```
 
-![viewer screenshot — space-time heatmap + snapshot + transport controls]
-
-### Differentiate through the solver
-
-Because the solver is pure JAX, you can compute gradients with respect to
-any input:
-
-```python
-import jax
-
-grid = Grid1D.uniform(length=1.0, n_cells=100)
-bc = BoundaryCondition(kind="dirichlet", value=jnp.array([100.0, 0.0]))
-T0 = jnp.zeros(grid.n_cells)
-
-def final_mean_temp(alpha):
-    """Mean temperature at the end of the simulation, as a function of alpha."""
-    eqn = HeatEquation1D(grid=grid, bc=bc, alpha=alpha)
-    traj = solve_heat_1d(eqn, T0, t_span=(0.0, 0.5), dt=0.0001)
-    return jnp.mean(traj[-1])
-
-# d(mean_T) / d(alpha)
-grad_fn = jax.grad(final_mean_temp)
-sensitivity = grad_fn(0.01)
-print(f"∂T̄/∂α at α=0.01: {sensitivity:.4f}")
-```
-
-> **CFL warning:**  The explicit Euler scheme is only stable when
-> `dt ≤ dx² / (2·α)`.  With 100 cells over a 1 m rod, `dx = 0.01` and the
-> worst-case `α = 0.3` gives a limit of `1.6×10⁻⁴` — so `dt = 1×10⁻⁴` is
-> safe.  If you vary `alpha` widely, pick `dt` for the largest `alpha`
-> you'll encounter, or use `check_cfl(grid, alpha, dt)` to verify.
-
-### Adding a source term
-
-```python
-# Heat generated at the centre of the rod decays over time
-def gaussian_source(x, t):
-    return 50.0 * jnp.exp(-((x - 0.5) ** 2) / 0.01) * jnp.exp(-t)
-
-eqn = HeatEquation1D(grid=grid, bc=bc, alpha=alpha, source=gaussian_source)
-trajectory = solve_heat_1d(eqn, T0, t_span=(0.0, 5.0), dt=0.001)
-```
-
-## Running the demo
+Train the bed PINN surrogate:
 
 ```bash
-python examples/01-1d-heat-equation/demo.py
+cd adsorbent-ml
+uv run ../.venv/bin/python training/train_pinn.py --steps 2000   # see --help
 ```
 
-This simulates a 1 m rod with the left boundary held at 1°C and the right at
-0°C, then opens the interactive viewer so you can scrub through the temperature
-evolution.
-
-## Interactive exploration
+Rebuild datasets from source APIs (each stage caches + writes a manifest):
 
 ```bash
-jupyter notebook examples/01-1d-heat-equation/explore.ipynb
+cd adsorbent-ml/data
+# isodb clone → water isotherms; CoRE/QMOF/IZA/OPTIMADE exporters — see ACQUISITION.md
 ```
 
-The notebook walks through grid setup, CFL stability, boundary condition
-effects, and gradient verification — useful for building intuition before
-tackling inverse problems.
+## Docs
 
-## Running tests
+- [`ROADMAP.md`](ROADMAP.md) — DL-focused milestones and status.
+- [`harness/DESIGN.md`](harness/DESIGN.md) — physics, env specs, backends, milestones.
+- [`harness/benchmarks.md`](harness/benchmarks.md) — V4 literature calibration (Uyun 2009, Sztekler 2021).
+- [`adsorbent-ml/README.md`](adsorbent-ml/README.md) + [`adsorbent-ml/data/ACQUISITION.md`](adsorbent-ml/data/ACQUISITION.md) — data sources, APIs, per-source status.
 
-```bash
-pytest
-```
+## Provenance notes
 
-## Why "diffheat"?
-
-The name is a double reference: **differentiable heat**, and also a nod toward
-the thermal management problems this library was built to explore — using
-controlled heat flow (diffusion) to solve engineering cooling challenges.
-
-## License
-
-[Add your license here]
+- `harness.physics.cycle0d` / `harness.physics.thermo` are exact JAX mirrors of
+  the original NumPy oracle (`tests/harness/reference/cooling_physics.py`),
+  pinned by 1,000+ parity cases at < 1e-12.
+- `adsorbent-ml/data/mp_screen.py` is vendored from the archived legacy
+  screening effort; the full `Materials/` tree lives outside the repo
+  (`~/ENTERPRISE/_archive/Cooling-with-heat-Materials`).

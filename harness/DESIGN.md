@@ -9,6 +9,15 @@
 > the dynamic 1-D bed (Bed1D-v0) with V3 oracle limit, V4 literature
 > calibration and V5 control gradients green; H2 (the two-bed system) in
 > progress. See §12 for the milestone ladder.
+>
+> **Scope note (2026-09):** the generic PDE trial environments (T-A1…T-A5,
+> T-E08: Heat1D/2D/3D, Cloak2D, NaturalConv, ForcedConv, Boussinesq,
+> Thermoelectric, Thermoelectric1D, Telegrapher), their mesh/operators/
+> solvers scaffolding, the SimulatorAdapter registry, and the PyQt6 GUI are
+> gone from the package (GUI parked in `../attic/`). Their sections below are
+> historical design record. The live package is the cooling core —
+> Cycle0D, Bed1D, TwoBed(+Schedule), AbsorptionCycle + grad/search/rl
+> backends — see [`README.md`](README.md) and [`../ROADMAP.md`](../ROADMAP.md).
 
 **Posture: an R&D lab, not an application product.** The harness exists so
 ideas about heat-driven cooling can be posed as cheap, honest experiments —

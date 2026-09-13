@@ -19,17 +19,19 @@ eval/       metrics (MAE, Spearman, top-k hit rate); COP/SCP ranking  (all stage
 
 ## Stage 0 — data export
 
-`data/mp_export.py` queries Materials Project **once** via the battle-tested
-layer in `../Materials/heat_cooling_screen.py` and caches everything locally:
+`data/mp_export.py` queries Materials Project **once** via the vendored query
+layer in `data/mp_screen.py` (from the archived legacy screen) and caches
+everything locally. Needs `mp_api` + `pymatgen` at call time and
+`MP_API_KEY` in `adsorbent-ml/.env` or the environment:
 
 ```bash
 # smoke test (a few queries, a few structures)
-../../Materials/.venv/bin/python data/mp_export.py \
+python data/mp_export.py \
     --apps datacenter --max-generated-chemsys 3 --limit-per-system 5 \
     --with-structures --structure-limit 5
 
 # full export for one application profile (~1400 chemsys queries)
-../../Materials/.venv/bin/python data/mp_export.py --apps human
+python data/mp_export.py --apps human
 ```
 
 Output lands in `data_cache/mp/` (gitignored):
