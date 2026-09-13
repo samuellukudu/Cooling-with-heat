@@ -144,6 +144,7 @@ def status() -> dict[str, Any]:
 class _Datasets:
     """Namespace so callers can pin one import: ``from datasets import datasets``."""
 
+    CACHE = CACHE
     isotherm_fits = staticmethod(isotherm_fits)
     material_table = staticmethod(material_table)
     pinn_conditions = staticmethod(pinn_conditions)

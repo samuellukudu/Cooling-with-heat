@@ -23,12 +23,14 @@ Two tracks share one artifact — the trusted JAX physics:
   datacenter profile, as screened).
 - **adsorbent-ml** — data exports done (ISODB: 1,221 pure-water isotherms →
   386 usable D–A fits, 24 adsorbents with multi-temperature Q_st; CoRE MOF
-  12k structures; QMOF 20k DFT rows; IZA CIFs + pore table; anchors), the
-  N2 tabular baseline trained + COP-ranked (Stage-1 report in
-  `data_cache/n2/`), and the **N1 bed PINN built end-to-end** (synthetic
-  corpus from the harness solver, curriculum training, field metrics).
-  Known floor: only 50/156 materials are structure-matched; pore features
-  cover a fraction — coverage is the bottleneck, not architectures.
+  12k structures; QMOF 20k DFT rows; IZA CIFs + pore table; OPTIMADE pulls
+  with CIFs; MOFSimplify stability tables), the N2 tabular baseline trained
+  + COP-ranked, and the **N1 bed PINN built end-to-end** (synthetic corpus
+  from the harness solver, curriculum training, field metrics).
+- **GUIs (2026-09)** — two PyQt6 apps: `harness/gui` (RL & simulation
+  launcher over the env registry: evaluate / optimize / sweep with scopes)
+  and `adsorbent-ml/gui` (dataset explorer over `data_cache/`). The old
+  node-canvas workbench is parked in `attic/`.
 
 ## North Star
 

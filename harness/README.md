@@ -91,6 +91,27 @@ result.metrics   # {"COP": ..., "SCP_W_kg": ...}
 result.trace     # per-step diagnostics
 ```
 
+## GUI — RL & simulation lab
+
+`harness/gui/` is a PyQt6 launcher over the environments (no build step, no
+canvas): pick an env from the registry, set material/profile/kwargs in forms
+generated from the factory signatures and the problem's design space, choose
+evaluate / optimize (grad · search · rl) / sweep (t_switch or material), and
+run it on a background thread (queued dispatch — jitted runs aren't
+interruptible mid-flight; sweeps are, between points). Scopes show metrics,
+optimization history, episode traces (Bed1D/TwoBed series with desorption
+shading), sweep curves, A/B compare, the log, and a generated reproducible
+Python script.
+
+```bash
+uv sync --extra gui          # PyQt6 + matplotlib
+harness-gui                  # or: python -m harness.gui
+```
+
+The old node-canvas workbench this launcher replaces stays parked in
+[`../attic/`](../attic/README.md). The adsorbent-ml side has its own data
+explorer built on the same widget kit (`harness.gui.kit`).
+
 ## Extension rule
 
 New capability = **one data contract**, never a core change: new optimizers

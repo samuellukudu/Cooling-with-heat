@@ -4,6 +4,13 @@ Parked code: out of the packages, out of the test suite, out of import-linter
 scope — but kept in the repository because it was finished, tested work that
 may be revived.
 
+> **2026-09 update:** the workbench was replaced by two focused apps — the
+> simulation launcher (`harness/gui`, `harness-gui`) and the dataset explorer
+> (`adsorbent-ml/gui/data_app.py`), which reuse the dark theme, scopes, and
+> the corrected worker-thread pattern from here. The node canvas itself lives
+> on only in this attic; restore instructions below remain valid if the
+> composer UX is ever wanted again.
+
 ## gui/ — PyQt6 workbench (parked 2026-09)
 
 The "Simulink × Wolfram" node-canvas desktop app (~5,000 lines: scene/model

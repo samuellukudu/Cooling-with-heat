@@ -3,6 +3,20 @@
 ML pipeline for heat-driven cooling adsorbent discovery — see
 [`../ROADMAP.md`](../ROADMAP.md) for the full strategy.
 
+## GUI — data explorer
+
+`gui/data_app.py` is a PyQt6 browser over everything in `data_cache/`
+(via the `data/datasets.py` façade): Overview (what's on disk, missing
+caches with build commands), Materials (labels/features table, family
+filter, coverage summary, q_sat histograms), Isotherms & fits (unit-free
+D–A curves + raw ISODB points, Q_st vs T), Stability (MOFSimplify gate +
+TGA histogram), Structures (CIF inventory + OPTIMADE manifests), Rankings
+(on-demand harness COP sweep over the material table, background thread).
+
+```bash
+python adsorbent-ml/gui/data_app.py   # from the repo root; needs the dev group (PyQt6)
+```
+
 Layout (stages fill in progressively):
 
 ```
