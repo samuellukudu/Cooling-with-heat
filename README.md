@@ -40,15 +40,29 @@ uv sync --group dev                 # jax[cpu] + harness + tooling
 JAX_PLATFORMS=cpu uv run pytest     # everything green before you start
 ```
 
-Optional GPU JAX (the physics is float64 and the dev GPU is a shared 4 GB
-laptop card, so memory hygiene is automatic via `harness.gpu`: no XLA
-preallocation, freed VRAM returns to the driver, OOMs fail with a remedy,
-jitted caches are dropped after each GUI job):
+CPU is the default device — measured, not assumed: the float64 physics (V1
+parity) trails on the shared 4 GB laptop GPU at harness sizes (small PINN
+16.5 s CPU vs 31.5 s GPU; the two only cross over at 256×6: 113 s vs 109 s).
+The GUIs and the data explorer pin `JAX_PLATFORMS=cpu` via
+`harness.gpu.configure()` unless you export your own `JAX_PLATFORMS`. The
+CUDA wheels stay installable for matmul-heavy follow-up work, with memory
+hygiene when a GPU backend is actually selected: no XLA preallocation,
+freed VRAM returns to the driver, OOMs fail with a remedy, jitted caches
+are dropped after each GUI job.
 
 ```bash
 uv sync --group dev --group gpu     # adds the nvidia CUDA-12 wheels
-python -m harness.gpu               # sanity: prints jax devices
+python -m harness.gpu               # sanity: prints jax devices (cpu by default)
+JAX_PLATFORMS=cuda python -m harness.gpu   # opt into the GPU for this process
 ```
+
+CPU parallelism where it pays: XLA already saturates every core *inside* one
+big jitted call (PINN training, the vmapped ranking kernel) — the win is
+fan-out across per-item-expensive Python loops. `rank.refine_with_bed1d`
+fans the top-k over a spawn pool (`workers=N`, auto by default; 12 rows:
+12.5 s serial → 7 s at 4–8 workers), and `harness.parallel.parallel_map`
+generalizes it to any module-level task (CPU-pinned workers, ordered
+results).
 
 Optimize a cycle with the RL backend:
 

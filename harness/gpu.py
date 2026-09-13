@@ -1,7 +1,9 @@
-"""GPU memory hygiene for the harness (small-VRAM / shared-GPU machines).
+"""Device selection + GPU memory hygiene for the harness.
 
-The project's GPU is a 4 GB laptop RTX 3050 shared with the display, and the
-physics runs float64 (V1 parity requirement). Three levers, in one place:
+CPU is the project's default compute device (float64 physics — measured CPU
+vs GPU numbers in the README compute section); :func:`configure` pins it
+per process, with ``configure(device="cuda")`` as the opt-in. The GPU-side
+levers below matter exactly when that opt-in is used:
 
 - :func:`configure` — called by the GUI entry points (and safe to call from
   scripts) *before the first jax device use*: disables XLA preallocation so
@@ -37,18 +39,29 @@ OOM_MARKERS = (
 )
 
 
-def configure(*, preallocate: bool = False, platform_allocator: bool = True) -> None:
-    """Set XLA env vars before jax initializes its backend (idempotent).
+def configure(*, device: str = "cpu", preallocate: bool = False,
+              platform_allocator: bool = True) -> None:
+    """Pin the JAX platform before jax initializes its backend (idempotent).
+
+    CPU is the project default: the physics runs float64 (V1 parity), and on
+    the laptop-class GPU float64 trails the CPU at harness sizes — measured,
+    not assumed (see the README compute section). The CUDA jax build stays
+    installed for matmul-heavy workloads; opt back in per process with
+    ``configure(device="cuda")`` or by exporting ``JAX_PLATFORMS``.
 
     Only sets variables the user has not set — explicit environment always
     wins. Import this module and call :func:`configure` before importing jax
     anywhere in the process (GUI entry points do; jax is imported lazily by
-    the rest of the package).
+    the rest of the package). The VRAM-hygiene variables below only apply
+    when a GPU backend is actually selected.
     """
-    if not preallocate:
-        os.environ.setdefault("XLA_PYTHON_CLIENT_PREALLOCATE", "false")
-    if platform_allocator:
-        os.environ.setdefault("XLA_PYTHON_CLIENT_ALLOCATOR", "platform")
+    if device:
+        os.environ.setdefault("JAX_PLATFORMS", device)
+    if device != "cpu":
+        if not preallocate:
+            os.environ.setdefault("XLA_PYTHON_CLIENT_PREALLOCATE", "false")
+        if platform_allocator:
+            os.environ.setdefault("XLA_PYTHON_CLIENT_ALLOCATOR", "platform")
 
 
 def is_oom(exc: BaseException | None) -> bool:

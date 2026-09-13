@@ -414,7 +414,7 @@ class RankingsPage(QWidget):
         self.profile = QComboBox()
         self.profile.addItems(["datacenter", "cpu", "human", "vehicle"])
         top.addWidget(self.profile)
-        self.full_check = QCheckBox("full fitted table (slow)")
+        self.full_check = QCheckBox("full fitted table")
         top.addWidget(self.full_check)
         self.go = QPushButton("Rank materials")
         self.go.clicked.connect(self.rank)
@@ -543,7 +543,7 @@ def _run_ranking(worker, profile: str, full: bool) -> pd.DataFrame:
     except Exception:
         clear_caches()
         raise
-    clear_caches()  # reclaim VRAM while the explorer stays open
+    clear_caches()  # reclaim jitted-executable memory while the explorer stays open
     worker.log.emit(f"{len(df)} rows")
     return df
 

@@ -222,9 +222,50 @@ def sweep_materials(materials: "Iterable[str | MaterialParams]",
     return pd.DataFrame(rows)
 
 
+def _refine_row(record: dict, profile_name: str, *, n_cells: int,
+                dt_phys_s: float | None) -> dict:
+    """One top-``k`` sweep row → one dynamic ``Bed1D`` result row.
+
+    Module-level and plain-data so it can run in a worker process
+    (:func:`harness.parallel.parallel_map`)."""
+    # Rebuild the material from the sweep row itself (aggregated
+    # parameters) — no registry round-trip, works for anchors and
+    # fitted rows alike.
+    mat = MaterialParams(
+        name=str(record["material"]), source=str(record["source"]),
+        q_sat_kg_kg=float(record["q_sat_kg_kg"]),
+        q_st_j_kg=float(record["Q_st_MJ_kg"]) * 1e6,
+        e_char_j_mol=float(record["e_char_j_mol"]),
+        n_da=float(record["n_da"]),
+    )
+    mat = mat.with_transport_defaults(rho_kg_m3=600.0, cp_j_kg_k=1000.0,
+                                      k_eff_w_m_k=0.3)
+    env = Bed1D(mat, get_profile(profile_name), n_cells=n_cells,
+                dt_phys_s=dt_phys_s)
+    metrics = env.evaluate()
+    return {
+        "profile": profile_name,
+        "material": mat.name,
+        "rank_cycle0d": int(record["rank"]),
+        "COP": metrics["COP"],
+        "SCP_W_kg": metrics["SCP_W_kg"],
+        "delta_q": metrics["delta_q"],
+        "COP_cycle0d": record["COP"],
+        "SCP_cycle0d": record["SCP_W_kg"],
+        "transport_provenance": mat.transport_provenance,
+    }
+
+
+def _refine_task(pack: tuple) -> dict:
+    record, profile_name, n_cells, dt_phys_s = pack
+    return _refine_row(record, profile_name, n_cells=n_cells,
+                       dt_phys_s=dt_phys_s)
+
+
 def refine_with_bed1d(ranked: pd.DataFrame, profile: "str | ApplicationProfile",
                       k: int = 5, *, n_cells: int = 16,
-                      dt_phys_s: float | None = 0.015) -> pd.DataFrame:
+                      dt_phys_s: float | None = 0.015,
+                      workers: "int | None" = None) -> pd.DataFrame:
     """Refine the top-``k`` of one profile's equilibrium ranking through the
     dynamic ``Bed1D-v0`` (4-cycle episodes, default bed geometry).
 
@@ -233,36 +274,27 @@ def refine_with_bed1d(ranked: pd.DataFrame, profile: "str | ApplicationProfile",
     are flagged ``transport_provenance="default"``: within the fixed
     transport assumption the *ordering* is meaningful, absolute SCP across
     materials is not (§8.1 honesty note).
+
+    ``workers`` — process-pool fan-out across the top-``k`` rows (this is
+    the per-material-expensive path: ~1 s per row at default resolution).
+    ``None`` auto-sizes to the machine and ``k``; each worker builds its own
+    ``Bed1D`` and pays its own jit compile, so pass ``workers=1`` to force
+    the serial loop for tiny ``k``.
     """
+    from . import parallel  # noqa: PLC0415
+
     prof = get_profile(profile)
     top = ranked[ranked["profile"] == prof.name].nsmallest(k, "rank")
-    rows: list[dict] = []
-    for _, r in top.iterrows():
-        # Rebuild the material from the sweep row itself (aggregated
-        # parameters) — no registry round-trip, works for anchors and
-        # fitted rows alike.
-        mat = MaterialParams(
-            name=str(r["material"]), source=str(r["source"]),
-            q_sat_kg_kg=float(r["q_sat_kg_kg"]),
-            q_st_j_kg=float(r["Q_st_MJ_kg"]) * 1e6,
-            e_char_j_mol=float(r["e_char_j_mol"]),
-            n_da=float(r["n_da"]),
-        )
-        mat = mat.with_transport_defaults(rho_kg_m3=600.0, cp_j_kg_k=1000.0,
-                                          k_eff_w_m_k=0.3)
-        env = Bed1D(mat, prof, n_cells=n_cells, dt_phys_s=dt_phys_s)
-        metrics = env.evaluate()
-        rows.append({
-            "profile": prof.name,
-            "material": mat.name,
-            "rank_cycle0d": int(r["rank"]),
-            "COP": metrics["COP"],
-            "SCP_W_kg": metrics["SCP_W_kg"],
-            "delta_q": metrics["delta_q"],
-            "COP_cycle0d": r["COP"],
-            "SCP_cycle0d": r["SCP_W_kg"],
-            "transport_provenance": mat.transport_provenance,
-        })
+    records = top.to_dict("records")
+    if not records:
+        return pd.DataFrame()
+    n = parallel.resolve_workers(workers, len(records))
+    if n <= 1:
+        rows = [_refine_row(r, prof.name, n_cells=n_cells, dt_phys_s=dt_phys_s)
+                for r in records]
+    else:
+        packs = [(r, prof.name, n_cells, dt_phys_s) for r in records]
+        rows = parallel.parallel_map(_refine_task, packs, workers=n)
     return pd.DataFrame(rows)
 
 

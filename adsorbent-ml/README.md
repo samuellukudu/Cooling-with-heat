@@ -76,9 +76,9 @@ python3 adsorbent-ml/training/train_pinn.py --steps 2000 --n-data 800
 python3 -m pytest tests/adsorbent_ml/test_bed_pinn.py -q
 ```
 
-Device note: everything is `jax`-device-agnostic (CPU now; GPU lights up
-with a CUDA jaxlib — the RTX on this machine needs `jax[cuda12]`, a
-separate install decision).
+Device note: CPU is the default (pinned via `harness.gpu.configure()`;
+export `JAX_PLATFORMS=cuda` to opt into the RTX, which needs the separate
+`jax[cuda12]` install and only pays off on matmul-heavy training runs).
 
 ## N2-v1 — structure→property floor (Stage 1 baseline)
 

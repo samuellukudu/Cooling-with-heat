@@ -112,6 +112,26 @@ The old node-canvas workbench this launcher replaces stays parked in
 [`../attic/`](../attic/README.md). The adsorbent-ml side has its own data
 explorer built on the same widget kit (`harness.gui.kit`).
 
+## Compute — CPU by default; parallelism where it pays
+
+`harness.gpu.configure()` pins `JAX_PLATFORMS=cpu` per process (explicit
+environment always wins; `configure(device="cuda")` + `uv sync --group dev
+--group gpu` opts back into the 4 GB laptop GPU, with VRAM hygiene: no
+preallocation, platform allocator, OOM → actionable message, jitted caches
+dropped after each GUI job). On that card float64 trails the CPU at harness
+sizes — measured, not assumed.
+
+Parallelism, measured before wiring:
+
+- *Inside* one big jitted call (PINN training, the vmapped ranking kernel)
+  XLA's threadpool already uses every core — one process is enough.
+- *Across* per-item-expensive calls (`Bed1D` episodes ≈ 1 s per material):
+  `rank.refine_with_bed1d(..., workers=N)` fans the top-k rows over a spawn
+  pool via `harness.parallel.parallel_map` (CPU-pinned workers, ordered
+  results, module-level task fns only). 12 rows: 12.5 s serial → ~7 s at
+  4–8 workers. The Cycle0D sweep needs none (60 ms for the whole fitted
+  table — the vmapped kernel *is* the parallelism there).
+
 ## Extension rule
 
 New capability = **one data contract**, never a core change: new optimizers
