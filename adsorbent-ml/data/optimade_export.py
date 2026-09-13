@@ -225,6 +225,22 @@ def formula_similarity(target_counts: dict[str, float],
     return dot / (nt * nc) if nt > 0 and nc > 0 else 0.0
 
 
+def write_cifs(entries: list[dict], out_dir: Path) -> dict:
+    """Convert cached entries to CIF files (``cifs/<id>.cif``). Returns stats."""
+    cifs = out_dir / "cifs"
+    cifs.mkdir(parents=True, exist_ok=True)
+    written, failed = 0, []
+    for e in entries:
+        try:
+            (cifs / f"{e.get('id', 'unknown')}.cif").write_text(
+                entry_to_cif(e), encoding="utf-8")
+            written += 1
+        except Exception as exc:
+            failed.append({"id": e.get("id"), "error": str(exc)})
+    return {"written": written, "failed": len(failed),
+            "failed_ids": [f["id"] for f in failed][:20]}
+
+
 def export_structures(provider_substr: str, optimade_filter: str = DEFAULT_FILTER, *,
                       max_entries: int = 200, page_limit: int = 20,
                       out_dir: Path = DEFAULT_OUT,
@@ -264,6 +280,8 @@ def main() -> None:
     ap.add_argument("--filter", default=DEFAULT_FILTER)
     ap.add_argument("--max-entries", type=int, default=200)
     ap.add_argument("--out", type=Path, default=DEFAULT_OUT)
+    ap.add_argument("--with-cifs", action="store_true",
+                    help="also convert pulled entries to CIF (cifs/<id>.cif)")
     ap.add_argument("--list-providers", action="store_true")
     args = ap.parse_args()
     if args.list_providers:
@@ -277,9 +295,11 @@ def main() -> None:
         with open(args.out / "structures.jsonl", "w", encoding="utf-8") as fh:
             for e in entries:
                 fh.write(json.dumps(e) + "\n")
+        cif_stats = write_cifs(entries, args.out) if args.with_cifs else None
         manifest = {"provider": args.base_url, "base_url": args.base_url,
                     "filter": args.filter, "n_entries": len(entries),
                     "capped": len(entries) >= args.max_entries,
+                    "cifs": cif_stats,
                     "provenance": "OPTIMADE v1 direct-base query",
                     "created_unix": time.time()}
         (args.out / "manifest.json").write_text(json.dumps(manifest, indent=2))

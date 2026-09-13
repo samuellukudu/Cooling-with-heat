@@ -44,3 +44,22 @@ def test_feasibility_unknown_is_not_stable():
     assert [r.name for r in bad] == ["B", "C", "D"]
     ok2, _ = feasibility_filter(recs, require_water_stable=False)
     assert "C" in [r.name for r in ok2]  # lenient mode admits unknowns, still not falses
+
+
+def test_solvent_removal_label_loads_and_gates(tmp_path):
+    p = _write(tmp_path / "s.csv",
+               "mof_name,water_stable,solvent_removal_stable,thermal_decomp_c,source,confidence\n"
+               "ABAVIJ,,true,413,10.0000/a,text-mined\n"
+               "MOF-5,,true,350,10.0000/b,text-mined\n"
+               "CRM1,,false,300,10.0000/c,text-mined\n"
+               "UNKN,,,,,\n")
+    recs = {r.name: r for r in load_stability_csv(p)}
+    assert recs["ABAVIJ"].water_stable is None
+    assert recs["ABAVIJ"].solvent_removal_stable is True
+    assert recs["CRM1"].solvent_removal_stable is False
+
+    ok, bad = feasibility_filter(list(recs.values()), min_decomp_c=150.0)
+    # unknown water + solvent-stable passes (conservative desolvation evidence);
+    # explicit water_stable=false never passes; unknown-everything fails.
+    assert [r.name for r in ok] == ["ABAVIJ", "MOF-5"]
+    assert [r.name for r in bad] == ["CRM1", "UNKN"]
