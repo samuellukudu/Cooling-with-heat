@@ -1,10 +1,13 @@
 # tests/adsorbent_ml/conftest.py
-"""Put adsorbent-ml/data on sys.path so the fitting library is importable
-as a plain module (it is a library + CLI, not an installed package)."""
+"""Put adsorbent-ml subpackages on sys.path so the libraries are importable
+as plain modules (library + thin CLI, not installed packages — same pattern
+as fit_da)."""
 
 import sys
 from pathlib import Path
 
-DATA_DIR = Path(__file__).resolve().parents[2] / "adsorbent-ml" / "data"
-if str(DATA_DIR) not in sys.path:
-    sys.path.insert(0, str(DATA_DIR))
+ML_ROOT = Path(__file__).resolve().parents[2] / "adsorbent-ml"
+for _sub in ("data", "models", "training", "eval", "features"):
+    _d = ML_ROOT / _sub
+    if str(_d) not in sys.path:
+        sys.path.insert(0, str(_d))

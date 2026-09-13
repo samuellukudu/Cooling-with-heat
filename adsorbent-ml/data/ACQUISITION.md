@@ -108,7 +108,17 @@ the per-structure API). CIF spot-check: 100/100 parse with pymatgen.
 **Upgrade path:** CoRE MOF DB (2025, Matter) adds 40k+ structures with ML
 DDEC6 charges and **MOFid node/linker/topology decomposition** — adopt when
 Stage-2 needs volume; its node/linker/topology axes are also the parameter
-space for any future GeoField-style design agent.
+space for any future GeoField-style design agent. (2026-09: QMOF already
+contributes 16,043 refcodes with MOFid topologies — the topology-split axis
+exists before the DB upgrade.)
+
+**Done 2026-09 (levers 1+2):** Ongari et al. name→refcode tables vendored
+(`data_cache/ongari/`, MIT) → `csd`/`csd-fuzzy` match rungs with audit
+columns; DOI bridge per the paper's one-to-one protocol (dormant on this
+cache); QMOF join (formulas, topologies, DOIs, pore fallback);
+pore-consistency gate (`q_sat` vs geometric AV — the water-edition verifier).
+Matched 26 → 50; pores 4 → 19 (+3 QMOF). Floor unmoved (features still
+sparse) — next: IZA-SC pores + OPTIMADE/CIF pulls.
 
 ---
 
@@ -242,3 +252,82 @@ collection.
 **Adopt its conventions regardless:** shared HDF5 schema + manifests +
 VRMSE-style metric + published baselines is the template to copy if we
 release our own GCMC-generated L2 dataset.
+
+---
+
+## 5. OPTIMADE federation — one client for ~40 structure databases ✅ DONE (2026-09)
+
+**What:** OPTIMADE is a REST standard (JSON:API) spoken by Materials Project,
+OQMD, NOMAD, Materials Cloud (MC3D/MC2D/pyrene-MOFs/CURATED-COFs), COD/TCOD,
+Alexandria, AFLOW, Matterverse, GNoME, JARVIS and more. One filtered query
+replaces N per-database exporters.
+
+**Exporter:** `optimade_export.py` (stdlib + `requests`, library + thin CLI):
+
+```bash
+python3 adsorbent-ml/data/optimade_export.py --list-providers   # live discovery
+python3 adsorbent-ml/data/optimade_export.py \
+    --base-url https://optimade.materialscloud.org/main/pyrene-mofs \
+    --filter 'elements HAS "C" AND elements HAS "O" AND nsites<2000' \
+    --max-entries 500 --out data_cache/optimade/pyrene-mofs
+```
+
+**DONE (2026-09, verified live):** discovery resolves ~40 queryable bases
+with direct URLs; 3 Zr-MOF structures pulled end-to-end (C264H180O96Zr18,
+558 sites) → `structures.jsonl` + `manifest.json` in `data_cache/optimade/`.
+
+⚠ Exporter gotchas (all handled, each found live):
+filter by `available_endpoints` containing `structures` — index
+meta-databases (e.g. COD static index) answer `/info` with `type: info` but
+only `["info","links"]` endpoints; trusting the type field misclassifies
+them (regression test locks this). Discovery tolerates dead/slow providers
+(MPDD hangs past timeout) — the query path stays strict and fails loudly.
+MOF cells are big: default `nsites<50` returns nothing on MOF DBs; use
+`<2000`. CIF conversion is out of scope (no pymatgen here) — raw JSON
+entries cached; the Materials env owns JSON → CIF per ROADMAP layering.
+
+**Outputs:** `data_cache/optimade/<db>/{structures.jsonl, manifest.json}`.
+
+## 6. MOFSimplify stability labels — feasibility filter (loader DONE, tables pending download)
+
+**What:** MIT Kulik-lab tables — TGA decomposition onsets + water/solvent
+stability labels with RAC descriptors (~10³ MOFs). Role: N2 must not propose
+adsorbents that collapse under water cycling or decompose below
+regeneration temperature. The gate runs BEFORE system ranking, never as a
+training target.
+
+**Loader:** `stability.py` → `load_stability_csv` (alias-tolerant headers) +
+`feasibility_filter` (unknown water stability FAILS by default — unknown ≠
+stable; missing TGA never fails alone). Tables are a manual Zenodo download
+per the MOFSimplify site; the loader is tested on synthetic CSVs.
+
+**Outputs:** `data_cache/stability/<source>.csv` (user-placed) → pass/fail
+shortlists consumed by N2 screening.
+
+## 7. WebBook working fluids — beyond water ✅ DONE (2026-09)
+
+**What:** Antoine Psat + Watson h_fg for water/methanol/ethanol/ammonia in
+`refrigerants.py` (pure stdlib+numpy, constants consistent with the NIST
+Chemistry WebBook). Bounded role, same as CoolProp: reference + working-pair
+expansion, never in the differentiable path.
+
+**Verified:** boiling points at 1 atm (rel 2 %); ACQUISITION anchors —
+methanol Psat(35 °C) ≈ 28 kPa, ammonia ≈ 1350 kPa (rel 5 %); water branch vs
+`harness.physics.thermo` < 3 % over 5–95 °C. Out-of-window calls raise
+(Antoine windows: water 1–100 °C, methanol −20–80 °C, ethanol 0–80 °C,
+ammonia −60–60 °C) — extending a fluid's range via CoolProp/REFPROP is an
+explicit follow-up, as is the optional `refrigerant=` on
+`simulate_adsorption_cycle`.
+
+**Feeds:** validator upgrades, `rank.py` working-pair shortlists, N1
+conditioning rows for non-water phases (P ranges differ by 10–100×).
+
+---
+
+## Verification checklist — extended (2026-09)
+
+- [x] OPTIMADE discovery resolves ≥ 20 queryable bases; ≥ 1 live end-to-end pull cached
+- [x] Water-branch agreement harness-vs-refrigerants < 3 %; out-of-window raises
+- [x] Stability loader: alias headers parse; unknown-water fails closed
+- [ ] MOFSimplify/Zenodo tables downloaded to `data_cache/stability/`
+- [ ] First OPTIMADE MOF pull (≥ 500 entries) converted to CIF in the Materials env
