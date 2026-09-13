@@ -1,22 +1,14 @@
 """Name registries and the ``make()`` entry point (``DESIGN.md`` §7.1).
 
-Five registries, all one shape: ``models``, ``envs``, ``backends``,
-``materials``, ``profiles``. Built-ins register at import time; third-party
-packages register at import time or advertise entry points in the
-``harness.<kind>`` groups (loaded lazily on first miss). Unknown names fail
-with the list of what is available.
+Four registries, all one shape: ``envs``, ``backends``, ``materials``,
+``profiles``. Built-ins register at import time; third-party packages register
+at import time or advertise entry points in the ``harness.<kind>`` groups
+(loaded lazily on first miss). Unknown names fail with the list of what is
+available.
 
 The registries live in this neutral module — not in ``envs`` — so that
 ``materials`` and ``profiles`` can register without importing the env layer
 (keeping the import direction rules in the root pyproject satisfiable).
-
-``harness.models`` is the **SimulatorAdapter registry** (DESIGN §7.2):
-external solvers (OpenModelica-FMU, TESPy, …) register factories that return
-objects satisfying ``harness.physics.adapters.SimulatorAdapter``. The built-in
-``mock_cycle0d`` adapter (``harness.physics.adapters.MockSimulatorAdapter``)
-and the demo env ``MockCycle-v0`` live in ``harness.envs.adapter`` and are
-registered here at import time; see ``harness/physics/adapters.py`` for the
-protocol and ``harness/envs/adapter.py`` for the wiring.
 """
 
 from __future__ import annotations
@@ -28,7 +20,7 @@ from typing import Any, Callable
 
 _ENTRY_POINT_PREFIX = "harness"
 
-_KINDS = ("models", "envs", "backends", "materials", "profiles")
+_KINDS = ("envs", "backends", "materials", "profiles")
 
 
 @dataclass
@@ -94,10 +86,6 @@ REGISTRIES: dict[str, Registry] = {kind: Registry(kind) for kind in _KINDS}
 
 def register(kind: str, name: str, factory: Callable[[], Any], *, overwrite: bool = False):
     return REGISTRIES[kind].register(name, factory, overwrite=overwrite)
-
-
-def register_model(name: str, factory: Callable[[], Any], *, overwrite: bool = False):
-    return register("models", name, factory, overwrite=overwrite)
 
 
 def register_env(name: str, factory: Callable[..., Any], *, overwrite: bool = False):

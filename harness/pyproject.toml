@@ -16,11 +16,7 @@ dependencies = [
 rl = ["stable-baselines3>=2.0", "torch"]
 cool = ["CoolProp"]
 viz = ["matplotlib"]
-gui = ["PyQt6>=6.7", "matplotlib>=3.8"]
-dev = ["pytest>=8", "import-linter>=2.0", "pytest-qt>=4.4"]
-
-[project.scripts]
-harness-gui = "harness.gui.app:run"
+dev = ["pytest>=8", "import-linter>=2.0"]
 
 [build-system]
 requires = ["setuptools>=64"]
@@ -28,8 +24,7 @@ build-backend = "setuptools.build_meta"
 
 # The import package is `harness/` itself (this directory), which lives one
 # level below the repository root — hence the package-dir mapping. The
-# include filter keeps setuptools from picking up the sibling `diffheat`
-# package, which belongs to the root distribution.
+# include filter keeps setuptools from picking up sibling top-level code.
 [tool.setuptools]
 package-dir = { "" = ".." }
 

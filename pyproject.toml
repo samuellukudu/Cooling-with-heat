@@ -80,9 +80,3 @@ name = "envs never import backends or report"
 type = "forbidden"
 source_modules = ["harness.envs"]
 forbidden_modules = ["harness.backends", "harness.report"]
-
-[[tool.importlinter.contracts]]
-name = "gui never imported by core"
-type = "forbidden"
-source_modules = ["harness.physics", "harness.envs", "harness.backends", "harness.materials", "harness.profiles", "harness.registry", "harness.report"]
-forbidden_modules = ["harness.gui"]

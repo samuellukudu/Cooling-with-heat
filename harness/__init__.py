@@ -48,8 +48,6 @@ from .registry import (  # noqa: E402
     register,
     register_backend,
     register_env,
-    register_material,
-    register_model,
     register_profile,
 )
 
@@ -83,7 +81,6 @@ __all__ = [
     "register_backend",
     "register_env",
     "register_material",
-    "register_model",
     "register_profile",
     "registry",
     "report",

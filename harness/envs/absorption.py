@@ -72,15 +72,6 @@ class AbsorptionCycle:
             defaults={"t_gen_c": float(self.profile.t_des_c)},
             bounds={"t_gen_c": (60.0, 95.0)},
         )
-        from ..physics.adapters import ModelSpec  # noqa: WPS433
-        self.model_spec = ModelSpec(
-            name="absorption",
-            state_vars=("delta_x", "COP"),
-            units={"t_gen_c": "degC", "COP": "-", "SCP_W_kg": "W/kg"},
-            dt_min_s=1e-3,
-            dt_max_s=1e3,
-            description="lumped single-effect absorption cycle (T-A3 trial)",
-        )
 
     def metrics_jax(self, design: Mapping[str, Any] | None = None):
         merged = self.design_space.merge(design)
@@ -111,31 +102,5 @@ def build_absorption(material: Any = ab.DEFAULT_PAIR,
 
 
 REGISTRIES["envs"].register("AbsorptionCycle-v0", build_absorption)
-
-try:
-    from ..physics.adapters import Fluxes as _Fluxes  # noqa: WPS433
-    from ..physics.adapters import ModelSpec as _MS  # noqa: WPS433
-
-    class _AbsorptionAdapter:
-        def __init__(self, pair: str = ab.DEFAULT_PAIR):
-            self.pair = pair
-            self.spec = _MS(name="absorption", state_vars=("delta_x", "COP"),
-                            units={"COP": "-"}, dt_min_s=1e-3, dt_max_s=1e3,
-                            description="absorption adapter (T-A3)")
-
-        def step(self, state, control, dt_s):
-            out = ab.simulate_absorption(
-                t_gen_c=float(control.get("t_gen_c", 85.0)), pair=self.pair)
-            return {k: float(v) for k, v in out.items()}, _Fluxes()
-
-        def metrics(self, trace):
-            return dict(trace)
-
-    try:
-        REGISTRIES["models"].register("absorption", _AbsorptionAdapter)
-    except ValueError:
-        pass
-except Exception:
-    pass
 
 __all__ = ["AbsorptionCycle", "build_absorption", "DESIGN_KEYS", "ABSORPTION_METRIC_KEYS"]

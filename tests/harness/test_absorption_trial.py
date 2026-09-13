@@ -7,7 +7,7 @@ Gates:
   at low-grade datacenter regeneration (60 °C) NH3-H2O out-SCPs LiBr-H2O
   (materials axis — the T-A3 analog of the H2.3 13X ranking flip).
 - Search improves COP over the naive profile-default t_gen; grad flows.
-- Registry + Problem-protocol + adapter-protocol compliance.
+- Registry + Problem-protocol compliance.
 """
 
 import jax
@@ -24,7 +24,6 @@ from harness.registry import REGISTRIES
 
 def test_absorption_registered():
     assert "AbsorptionCycle-v0" in REGISTRIES["envs"].names()
-    assert "absorption" in REGISTRIES["models"].names()
 
 
 def test_absorption_protocol_and_metrics():
@@ -117,11 +116,3 @@ def test_grad_flows_in_t_gen():
     prob = harness.make("AbsorptionCycle-v0", material="LiBr-H2O", profile="human")
     g = jax.grad(lambda t: prob.metrics_jax({"t_gen_c": t})["COP"])(80.0)
     assert float(g) == float(g) and float(g) > 0
-
-
-def test_adapter_model_satisfies_protocol():
-    from harness.physics.adapters import SimulatorAdapter
-    inst = REGISTRIES["models"].resolve("absorption")()
-    assert isinstance(inst, SimulatorAdapter)
-    state, fluxes = inst.step({}, {"t_gen_c": 85.0}, 600.0)
-    assert "COP" in inst.metrics(state)
