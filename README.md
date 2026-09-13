@@ -40,6 +40,16 @@ uv sync --group dev                 # jax[cpu] + harness + tooling
 JAX_PLATFORMS=cpu uv run pytest     # everything green before you start
 ```
 
+Optional GPU JAX (the physics is float64 and the dev GPU is a shared 4 GB
+laptop card, so memory hygiene is automatic via `harness.gpu`: no XLA
+preallocation, freed VRAM returns to the driver, OOMs fail with a remedy,
+jitted caches are dropped after each GUI job):
+
+```bash
+uv sync --group dev --group gpu     # adds the nvidia CUDA-12 wheels
+python -m harness.gpu               # sanity: prints jax devices
+```
+
 Optimize a cycle with the RL backend:
 
 ```python

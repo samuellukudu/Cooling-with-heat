@@ -37,6 +37,7 @@ from .envs.bed1d import Bed1D
 from .envs.cycle0d import CANONICAL_NORMALIZATION, Cycle0D
 from .materials import MaterialParams, get_material
 from .profiles import ApplicationProfile, get_profile
+from .physics import simulate_cycle
 
 # Default source: the H1.0 D–A fit export (fit_da.py → §8.1 schema),
 # resolved relative to the repository root (mirrors materials.ANCHORS_PATH).
@@ -102,6 +103,76 @@ def load_sweep_materials(path: "str | Path | None" = None) -> list[MaterialParam
         )
     materials.sort(key=lambda m: m.name)
     return materials
+
+
+def sweep_materials_batched(
+    materials: "Iterable[str | MaterialParams]",
+    profiles: "Iterable[str | ApplicationProfile]" = (
+        "cpu", "human", "vehicle", "datacenter"),
+) -> pd.DataFrame:
+    """The :func:`sweep_materials` table from one vmapped jitted kernel per
+    profile instead of a per-material evaluate loop.
+
+    This is the GPU-efficient path: a batch of materials becomes a single
+    device call, so the analytic Cycle0D cost is vectorized instead of
+    paying eager-dispatch overhead N times (the loop path can be *slower*
+    on a GPU than on CPU for exactly that reason). Outputs match the loop
+    to float64 round-off — pinned by ``tests/harness/test_rank_batched.py``
+    at <1e-12. Use the loop version when the per-material problem
+    construction itself is under test.
+    """
+    import jax
+    import jax.numpy as jnp
+
+    mats = [get_material(m) for m in materials]
+    if not mats:
+        return pd.DataFrame()
+    # (q_sat, q_st, t_evap, t_cond, t_des, cycle_time, e_char, n, hx):
+    # material parameters map along axis 0, profile setpoints broadcast.
+    kernel = jax.jit(jax.vmap(
+        simulate_cycle,
+        in_axes=(0, 0, None, None, None, None, 0, 0, 0),
+    ))
+    rows: list[dict] = []
+    for profile in profiles:
+        prof = get_profile(profile)
+        objective = profile_objective(prof)
+        metrics_arrays = kernel(
+            jnp.asarray([m.q_sat_kg_kg for m in mats], dtype=jnp.float64),
+            jnp.asarray([m.q_st_j_kg for m in mats], dtype=jnp.float64),
+            jnp.float64(prof.t_evap_c),
+            jnp.float64(prof.t_cond_c),
+            jnp.float64(prof.t_des_c),
+            jnp.float64(prof.cycle_time_s),
+            jnp.asarray([m.e_char_j_mol for m in mats], dtype=jnp.float64),
+            jnp.asarray([m.n_da for m in mats], dtype=jnp.float64),
+            jnp.full((len(mats),), 1.35, dtype=jnp.float64),  # Cycle0D default
+        )
+        for i, mat in enumerate(mats):
+            metrics = {k: float(v[i]) for k, v in metrics_arrays.items()}
+            score = float(objective_value(objective, metrics))
+            t_lo, t_hi = mat.t_range_c
+            rows.append({
+                "profile": prof.name,
+                "material": mat.name,
+                "source": mat.source,
+                "q_sat_kg_kg": mat.q_sat_kg_kg,
+                "Q_st_MJ_kg": mat.q_st_j_kg / 1e6,
+                "e_char_j_mol": mat.e_char_j_mol,
+                "n_da": mat.n_da,
+                "COP": metrics["COP"],
+                "SCP_W_kg": metrics["SCP_W_kg"],
+                "delta_q": metrics["delta_q"],
+                "q_ads": metrics["q_ads"],
+                "q_des": metrics["q_des"],
+                "score": score,
+                "t_window_c": f"{t_lo:g}-{t_hi:g}",
+                "out_of_window": bool(prof.t_des_c > t_hi or prof.t_cond_c < t_lo),
+            })
+        prof_rows = [r for r in rows if r["profile"] == prof.name]
+        for rank, r in enumerate(sorted(prof_rows, key=lambda r: -r["score"]), start=1):
+            r["rank"] = rank
+    return pd.DataFrame(rows)
 
 
 def sweep_materials(materials: "Iterable[str | MaterialParams]",
@@ -207,6 +278,7 @@ __all__ = [
     "profile_objective",
     "load_sweep_materials",
     "sweep_materials",
+    "sweep_materials_batched",
     "refine_with_bed1d",
     "shortlist",
 ]

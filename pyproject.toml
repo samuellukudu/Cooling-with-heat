@@ -46,6 +46,10 @@ dev = [
     "pandas>=2.3.3",
     "pyarrow>=25.0.1",
 ]
+# GPU-accelerated JAX (optional): `uv sync --group gpu`
+# Installs the nvidia pip wheels; works with driver >= 525 (CUDA 12) on this
+# machine's RTX 3050 (sm 8.6). The default venv stays CPU-only.
+gpu = ["jax[cuda12]"]
 
 [tool.importlinter]
 root_packages = ["harness"]

@@ -183,20 +183,33 @@ def build_problem(spec: RunSpec, log: Log | None = None):
 
 def execute(spec: RunSpec, *, log: Log | None = None,
             is_cancelled: Cancel | None = lambda: False) -> RunResult:
-    """Run one spec: sweep, evaluate, or optimize. Heavy imports happen here."""
+    """Run one spec: sweep, evaluate, or optimize. Heavy imports happen here.
+
+    OOM policy: guard() turns CUDA/XLA out-of-memory into an actionable
+    RuntimeError and drops the jitted-executable caches so a long-lived GUI
+    releases VRAM after the failed job. Scripts reclaim at exit anyway.
+    """
     import time
 
-    import numpy as np  # noqa: F401,PLC0415
+    from .. import gpu  # noqa: PLC0415
 
+    gpu.configure()
     t0 = time.time()
     emit = log or (lambda _s: None)
 
-    if spec.sweep_axis != "none":
-        payload = _execute_sweep(spec, emit, is_cancelled)
-    elif spec.mode == "optimize":
-        payload = _execute_optimize(spec, emit)
-    else:
-        payload = _execute_evaluate(spec, emit)
+    try:
+        if spec.sweep_axis != "none":
+            payload = _execute_sweep(spec, emit, is_cancelled)
+        elif spec.mode == "optimize":
+            payload = _execute_optimize(spec, emit)
+        else:
+            payload = _execute_evaluate(spec, emit)
+    except Exception as exc:  # noqa: BLE001
+        gpu.clear_caches()
+        if gpu.is_oom(exc):
+            raise RuntimeError(gpu.oom_message(exc)) from exc
+        raise
+    gpu.clear_caches()
     payload.elapsed_s = time.time() - t0
     payload.python_code = python_script(spec)
     return payload
@@ -290,7 +303,6 @@ def _sweep_t_switch(spec: RunSpec, emit: Log, pd: Any,
 
 
 def _sweep_materials(spec: RunSpec, emit: Log) -> RunResult:
-    import pandas as pd  # noqa: PLC0415
     from harness import rank as rank_mod  # noqa: PLC0415
     from harness.materials import get_material  # noqa: PLC0415
 
@@ -305,8 +317,8 @@ def _sweep_materials(spec: RunSpec, emit: Log) -> RunResult:
         raise ValueError(f"no valid materials in {spec.material_ref!r} "
                          "(comma-separated refs, e.g. 'anchor:Silica gel RD, anchor:Zeolite 13X (NaX)')")
     emit(f"material sweep over {len(valid)} materials, "
-         f"profile={spec.profile_ref!r}")
-    df = rank_mod.sweep_materials(valid, profiles=[spec.profile_ref])
+         f"profile={spec.profile_ref!r} (vmapped batch kernel)")
+    df = rank_mod.sweep_materials_batched(valid, profiles=[spec.profile_ref])
     best = float(df["score"].max()) if "score" in df.columns and len(df) else 0.0
     emit(f"sweep done: {len(df)} rows, best score {best:.4g}")
     return RunResult(metrics={"n_materials": float(len(df)), "best_score": best},

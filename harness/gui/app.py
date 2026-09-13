@@ -277,6 +277,11 @@ class ConfigPanel(QWidget):
 class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
+        # VRAM hygiene BEFORE anything imports harness/jax: no preallocation,
+        # freed memory returned to the driver (4 GB shared-GPU reality).
+        from .. import gpu  # noqa: PLC0415
+
+        gpu.configure()
         self.setWindowTitle("Harness — RL & simulation lab")
         self.resize(1360, 860)
         self.setStyleSheet(DARK_QSS)
@@ -359,7 +364,6 @@ class MainWindow(QMainWindow):
             log=worker.log.emit,
             is_cancelled=lambda: worker.cancel_requested,
         )
-
     def _stop(self) -> None:
         self.runner_thread.request_cancel()
         self._status_msg("cancel requested (takes effect between sweep points)")

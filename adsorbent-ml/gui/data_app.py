@@ -27,6 +27,12 @@ for _sub in ("data", "features", "eval", "models"):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
+# VRAM hygiene BEFORE anything imports harness/jax (4 GB shared GPU):
+# no XLA preallocation; freed device memory returns to the driver.
+from harness.gpu import clear_caches, configure as gpu_configure  # noqa: E402
+
+gpu_configure()
+
 import numpy as np
 import pandas as pd
 from PyQt6.QtCore import Qt
@@ -521,15 +527,23 @@ class MainWindow(QMainWindow):
 
 
 def _run_ranking(worker, profile: str, full: bool) -> pd.DataFrame:
-    """Worker fn: sweep the material table through the Cycle0D oracle."""
+    """Worker fn: sweep the material table through the Cycle0D oracle
+    (vmapped batch kernel — one device call per profile)."""
     from harness import rank as rank_mod
-    from harness.materials import load_anchors, load_materials_csv
+    from harness.materials import load_anchors
 
     mats = list(load_anchors())
     if full:
-        mats += load_materials_csv(datasets.CACHE / "fits" / "da_params.csv")
+        # the honestly-flagged sweep set: ok fits, physical q_sat, multi-T
+        # Q_st — rows without Q_st cannot enter the equilibrium cycle
+        mats += rank_mod.load_sweep_materials()
     worker.log.emit(f"sweeping {len(mats)} materials on {profile}")
-    df = rank_mod.sweep_materials(mats, profiles=[profile])
+    try:
+        df = rank_mod.sweep_materials_batched(mats, profiles=[profile])
+    except Exception:
+        clear_caches()
+        raise
+    clear_caches()  # reclaim VRAM while the explorer stays open
     worker.log.emit(f"{len(df)} rows")
     return df
 
