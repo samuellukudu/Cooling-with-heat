@@ -8,3 +8,4 @@ dist/
 *.egg-info/
 data_cache/
 .env
+.zcode/
