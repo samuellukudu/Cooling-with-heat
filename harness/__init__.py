@@ -48,6 +48,7 @@ from .registry import (  # noqa: E402
     register,
     register_backend,
     register_env,
+    register_material,
     register_profile,
 )
 

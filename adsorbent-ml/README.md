@@ -92,15 +92,16 @@ training/train_baseline.py  thin CLI → data_cache/n2/ (labels, matched,
 python3 adsorbent-ml/training/train_baseline.py --out data_cache/n2
 ```
 
-**Honest floor (2026-09, 156 materials, grouped OOF):** matching covers
-50/156 (22 IZA + 19 Ongari-CSD + 7 CSD-fuzzy + 2 CoRE-substring; DOI bridge
-implemented, 0 hits on this cache — water papers ≠ structure papers here);
-pores on 19 rows (+3 QMOF fallbacks), per-material QMOF formulas where the
-refcode joins, pore-consistency gate live (0 exclusions — all matched pairs
-pass). Skill vs dummy: q_sat −0.06, Q_st −0.11, E −0.28, n −0.24; rank
-Spearman ≈ 0. Levers 1+2 built the join infrastructure but the new
-per-material features are still too sparse to move grouped CV — the next
-lifts are IZA-SC pore data for the 22 zeolite matches and OPTIMADE pulls
-with CIF conversion for the 106 unmatched. The GNN (Stage 2, equinox
+**Honest floor (2026-09 refresh, 156 materials, grouped OOF):** matching
+covers 50/156 (22 IZA + 19 Ongari-CSD + 7 CSD-fuzzy + 2 CoRE-substring; DOI
+bridge implemented, 0 hits on this cache — water papers ≠ structure papers
+here); pores now on 44/156 rows — 19 CoRE + 22 IZA-SC framework-table LCD/PLD
+(`pore_iza=1`, wired into `features/descriptors.py`) + 3 QMOF fallbacks —
+pore-consistency gate live (0 exclusions). Skill vs dummy, grouped OOF:
+q_sat +0.12, Q_st +0.21 (both turned positive with the IZA pores); E −0.55,
+n −0.16 still negative. rank@datacenter top-10 hit 0.30, rank@human 0.20.
+The remaining bottleneck is the 106 unmatched materials — OPTIMADE pulls
+with CIF conversion are cached (`data_cache/optimade/`, 2,221 entries) and
+feed the next matching round. The GNN (Stage 2, equinox
 crystal-graph, shared latent + log heads, MOFid-topology splits) starts when
 matched coverage makes it honest.

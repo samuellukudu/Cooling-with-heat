@@ -288,7 +288,7 @@ entries cached; the Materials env owns JSON → CIF per ROADMAP layering.
 
 **Outputs:** `data_cache/optimade/<db>/{structures.jsonl, manifest.json}`.
 
-## 6. MOFSimplify stability labels — feasibility filter (loader DONE, tables pending download)
+## 6. MOFSimplify stability labels — feasibility filter ✅ DONE (2026-09)
 
 **What:** MIT Kulik-lab tables — TGA decomposition onsets + water/solvent
 stability labels with RAC descriptors (~10³ MOFs). Role: N2 must not propose
@@ -329,5 +329,5 @@ conditioning rows for non-water phases (P ranges differ by 10–100×).
 - [x] OPTIMADE discovery resolves ≥ 20 queryable bases; ≥ 1 live end-to-end pull cached
 - [x] Water-branch agreement harness-vs-refrigerants < 3 %; out-of-window raises
 - [x] Stability loader: alias headers parse; unknown-water fails closed
-- [ ] MOFSimplify/Zenodo tables downloaded to `data_cache/stability/`
-- [ ] First OPTIMADE MOF pull (≥ 500 entries) converted to CIF in the Materials env
+- [x] MOFSimplify/Zenodo tables downloaded + normalized: Zenodo 5737968 → `data_cache/stability/mofsimplify_ssd_tsd.csv` (4,148 materials; 2,179 solvent-removal labels, 3,132 TGA onsets; `stability_export.py`)
+- [x] First OPTIMADE MOF pull persisted + converted to CIF (2026-09, in-module `entry_to_cif`, no pymatgen needed): Materials Cloud pyrene-MOFs (221) + CURATED COFs (2,000) → `data_cache/optimade/<db>/{structures.jsonl,cifs/,manifest.json}`

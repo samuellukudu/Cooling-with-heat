@@ -72,7 +72,9 @@ def cross_validate(X: pd.DataFrame, labels: pd.DataFrame,
     report: dict = {}
     for target, spec in TARGETS.items():
         col = spec["label_col"]
-        mask = labels[col].notna().to_numpy()
+        # pandas 3 returns read-only views from .to_numpy(); rebuild the mask
+        # by rebinding instead of in-place &=.
+        mask = np.array(labels[col].notna().to_numpy(), copy=True)
         if spec["subset"] is not None:
             mask &= labels[spec["subset"]].notna().to_numpy()
         idx = np.where(mask)[0]
