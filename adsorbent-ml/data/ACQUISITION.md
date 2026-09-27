@@ -331,3 +331,24 @@ conditioning rows for non-water phases (P ranges differ by 10–100×).
 - [x] Stability loader: alias headers parse; unknown-water fails closed
 - [x] MOFSimplify/Zenodo tables downloaded + normalized: Zenodo 5737968 → `data_cache/stability/mofsimplify_ssd_tsd.csv` (4,148 materials; 2,179 solvent-removal labels, 3,132 TGA onsets; `stability_export.py`)
 - [x] First OPTIMADE MOF pull persisted + converted to CIF (2026-09, in-module `entry_to_cif`, no pymatgen needed): Materials Cloud pyrene-MOFs (221) + CURATED COFs (2,000) → `data_cache/optimade/<db>/{structures.jsonl,cifs/,manifest.json}`
+
+---
+
+## 8. Curation + documentation pipeline (2026-09)
+
+Separate from RL: the data layer never imports `harness.envs`/`harness.backends`
+or the RL stack (locked by `tests/adsorbent_ml/test_curation.py`). RL and training
+consume only frozen releases via the `datasets` façade.
+
+- **Manifests:** `data/manifest.py` — `write_manifest()` standard shape
+  (`stage, schema_version, created_unix, code_hash, args, counts`); legacy
+  per-dir manifests read back tolerantly.
+- **Gates:** `data/validate.py` — `validate_fits/labels/matched/stability/`
+  + `validate_refrigerants()` (boiling points, methanol ≈ 28 kPa / ammonia
+  ≈ 1350 kPa at 35 °C, water-vs-harness < 3 %, out-of-window raises);
+  `validate_all()` maps missing caches to failed gates with build hints.
+- **Façade:** `data/datasets.py` — adds `refrigerants_table()`,
+  `validate_all()`, `release_snapshot()` (writes `release.json` on demand).
+- **Cards:** `data/cards.py` → `docs/datasets/` (isodb, fits, labels,
+  structures, **stability**, **refrigerants**, pinn_corpus + README lineage).
+  Regenerate after any rebuild: `python adsorbent-ml/data/cards.py`.

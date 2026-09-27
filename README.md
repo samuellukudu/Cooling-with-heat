@@ -96,6 +96,7 @@ cd adsorbent-ml/data
 - [`harness/DESIGN.md`](harness/DESIGN.md) — physics, env specs, backends, milestones.
 - [`harness/benchmarks.md`](harness/benchmarks.md) — V4 literature calibration (Uyun 2009, Sztekler 2021).
 - [`adsorbent-ml/README.md`](adsorbent-ml/README.md) + [`adsorbent-ml/data/ACQUISITION.md`](adsorbent-ml/data/ACQUISITION.md) — data sources, APIs, per-source status.
+- [`docs/datasets/`](docs/datasets/) — generated dataset cards (isodb, fits, labels, structures, stability, refrigerants, PINN corpus) + lineage; regenerate via `python adsorbent-ml/data/cards.py`. Gates: `datasets.validate_all()`.
 
 ## Provenance notes
 

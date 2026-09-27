@@ -9,17 +9,23 @@ scattering of ``data_cache`` paths through models/training code:
     fits, prov  = datasets.isotherm_fits()      # raw per-isotherm D-A fits
     conds, prov = datasets.pinn_conditions()    # real-condition rows for the bed PINN
     ok, bad     = datasets.stability_shortlist()
+    refr, prov  = datasets.refrigerants_table() # working fluids (no cache needed)
+    reps        = datasets.validate_all()       # curation gates (fits/labels/matched/...)
+    snap        = datasets.release_snapshot()   # versioned snapshot dict (optionally written)
     status      = datasets.status()             # what is on disk, from manifests
 
-Every loader is read-only over ``data_cache/``; build the caches with the
-per-source exporters first (see ``ACQUISITION.md``). Missing caches raise
-``FileNotFoundError`` loudly with the builder command — never silently empty.
+Every loader is read-only over ``data_cache/`` (except ``refrigerants_table``,
+which reads the versioned library); build the caches with the per-source
+exporters first (see ``ACQUISITION.md`` + ``docs/datasets/`` cards). Missing
+caches raise ``FileNotFoundError`` loudly with the builder command — never
+silently empty.
 """
 
 from __future__ import annotations
 
 import json
 import sys
+import time
 from pathlib import Path
 from typing import Any
 
@@ -36,6 +42,7 @@ for _sub in ("data", "features", "eval", "models"):
         sys.path.insert(0, _p)
 
 TARGETS = ["log_q_sat", "q_sat_logstd", "log_Q_st", "log_E", "n_da"]
+SCHEMA_VERSION = 1
 
 
 def _require(path: Path, build_cmd: str) -> Path:
@@ -127,6 +134,80 @@ def structures_inventory() -> dict[str, dict]:
     return out
 
 
+def refrigerants_table() -> tuple[pd.DataFrame, dict]:
+    """Working-fluid property table (Antoine windows + anchors).
+
+    No cache needed — the versioned library ``data/refrigerants.py`` IS the
+    source (card: ``docs/datasets/refrigerants.md``). One row per fluid.
+    """
+    import refrigerants as refrig_mod
+
+    rows = []
+    for name in refrig_mod.list_refrigerants():
+        spec = refrig_mod.REFRIGERANTS[name]
+        rows.append({
+            "fluid": name,
+            "t_min_c": spec["t_min_c"], "t_max_c": spec["t_max_c"],
+            "tb_c": spec["tb_c"],
+            "molar_mass_kg_mol": spec["molar_mass_kg_mol"],
+            "h_fg_ref_j_kg": spec["h_fg_ref_j_kg"],
+            "t_ref_k": spec["t_ref_k"],
+            "ashrae34": spec["ashrae34"], "gwp100": spec["gwp100"],
+        })
+    df = pd.DataFrame(rows)
+    return df, _prov(source="adsorbent-ml/data/refrigerants.py",
+                     fluids=refrig_mod.list_refrigerants())
+
+
+def validate_all() -> dict[str, dict]:
+    """Run every curation gate; returns ``{gate: report_dict}``.
+
+    Thin wrapper over ``data/validate.py`` so training/eval code has one
+    import. Missing inputs surface as failed gates with build hints.
+    """
+    import validate as validate_mod
+
+    return {name: rep.to_dict()
+            for name, rep in validate_mod.validate_all(cache_dir=CACHE).items()}
+
+
+def release_snapshot(out_dir: str | Path | None = None) -> dict[str, Any]:
+    """Versioned snapshot of the current data release.
+
+    Combines ``status()`` manifests, validation gates, and headline coverage
+    numbers (materials, match rate, Q_st coverage, stability split,
+    refrigerant fluids). When ``out_dir`` is given, writes
+    ``release.json`` there (with ``schema_version`` + timestamp) and returns
+    the same dict.
+    """
+    import validate as validate_mod
+
+    st = status()
+    reports = {n: r.to_dict()
+               for n, r in validate_mod.validate_all(cache_dir=CACHE).items()}
+    snap: dict[str, Any] = {
+        "schema_version": SCHEMA_VERSION,
+        "created_unix": time.time(),
+        "gates_ok": all(r["ok"] for r in reports.values()),
+        "gates": {n: {"ok": r["ok"], "issues": r["issues"]} for n, r in reports.items()},
+        "stats": {n: r["stats"] for n, r in reports.items()},
+        "manifests": {k: v for k, v in st.items()
+                      if k not in ("data_cache", "structures")},
+        "structures": st.get("structures", {}),
+    }
+    try:
+        refr_df, _ = refrigerants_table()
+        snap["stats"]["refrigerants_table"] = refr_df.to_dict("records")
+    except Exception:
+        pass
+    if out_dir is not None:
+        out_p = Path(out_dir)
+        out_p.mkdir(parents=True, exist_ok=True)
+        (out_p / "release.json").write_text(json.dumps(snap, indent=2, default=str))
+        snap["release_path"] = str(out_p / "release.json")
+    return snap
+
+
 def status() -> dict[str, Any]:
     """What is on disk: manifest summaries for every built dataset."""
     out: dict[str, Any] = {"data_cache": str(CACHE)}
@@ -149,13 +230,17 @@ class _Datasets:
     material_table = staticmethod(material_table)
     pinn_conditions = staticmethod(pinn_conditions)
     stability_shortlist = staticmethod(stability_shortlist)
+    refrigerants_table = staticmethod(refrigerants_table)
+    validate_all = staticmethod(validate_all)
+    release_snapshot = staticmethod(release_snapshot)
     structures_inventory = staticmethod(structures_inventory)
     status = staticmethod(status)
     TARGETS = TARGETS
+    SCHEMA_VERSION = SCHEMA_VERSION
 
 
 datasets = _Datasets()
 
-__all__ = ["datasets", "TARGETS", "isotherm_fits", "material_table",
-           "pinn_conditions", "stability_shortlist", "structures_inventory",
-           "status"]
+__all__ = ["SCHEMA_VERSION", "datasets", "TARGETS", "isotherm_fits", "material_table",
+           "pinn_conditions", "refrigerants_table", "release_snapshot",
+           "stability_shortlist", "structures_inventory", "status", "validate_all"]
