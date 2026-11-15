@@ -92,7 +92,8 @@ def backend_params() -> dict[str, dict[str, dict[str, Any]]]:
         solver = harness.REGISTRIES["backends"].resolve(name)()
         params: dict[str, dict[str, Any]] = {}
         for pname, param in inspect.signature(solver.solve).parameters.items():
-            if pname in ("self", "problem", "objective", "seed", "bounds"):
+            if pname in ("self", "problem", "objective", "seed", "bounds",
+                         "progress"):
                 continue
             if param.kind in (param.VAR_POSITIONAL, param.VAR_KEYWORD):
                 continue
@@ -144,6 +145,7 @@ class RunResult:
 
 Log = Callable[[str], None]
 Cancel = Callable[[], bool]
+Progress = Callable[[dict], None]
 
 
 # -- execution ---------------------------------------------------------------
@@ -182,7 +184,8 @@ def build_problem(spec: RunSpec, log: Log | None = None):
 
 
 def execute(spec: RunSpec, *, log: Log | None = None,
-            is_cancelled: Cancel | None = lambda: False) -> RunResult:
+            is_cancelled: Cancel | None = lambda: False,
+            progress: Progress | None = None) -> RunResult:
     """Run one spec: sweep, evaluate, or optimize. Heavy imports happen here.
 
     OOM policy: guard() turns CUDA/XLA out-of-memory into an actionable
@@ -196,12 +199,13 @@ def execute(spec: RunSpec, *, log: Log | None = None,
     gpu.configure()
     t0 = time.time()
     emit = log or (lambda _s: None)
+    prog = progress or (lambda _d: None)
 
     try:
         if spec.sweep_axis != "none":
-            payload = _execute_sweep(spec, emit, is_cancelled)
+            payload = _execute_sweep(spec, emit, is_cancelled, prog)
         elif spec.mode == "optimize":
-            payload = _execute_optimize(spec, emit)
+            payload = _execute_optimize(spec, emit, prog)
         else:
             payload = _execute_evaluate(spec, emit)
     except Exception as exc:  # noqa: BLE001
@@ -227,7 +231,7 @@ def _execute_evaluate(spec: RunSpec, emit: Log) -> RunResult:
     return RunResult(metrics=dict(metrics), summary_text=summary, trace=trace)
 
 
-def _execute_optimize(spec: RunSpec, emit: Log) -> RunResult:
+def _execute_optimize(spec: RunSpec, emit: Log, prog: Progress) -> RunResult:
     import harness  # noqa: PLC0415
     from harness.envs.base import Objective  # noqa: PLC0415
 
@@ -237,7 +241,8 @@ def _execute_optimize(spec: RunSpec, emit: Log) -> RunResult:
     emit(f"optimize backend={spec.backend!r} seed={spec.seed} "
          f"kwargs={spec.backend_kwargs}")
     result = harness.optimize(problem, objective, backend=spec.backend,
-                              seed=int(spec.seed), **spec.backend_kwargs)
+                              seed=int(spec.seed), progress=prog,
+                              **spec.backend_kwargs)
     emit(f"done: best_objective={result.best_objective:.6g} "
          f"n_evals={result.n_evals}")
     trace = None
@@ -258,16 +263,16 @@ def _execute_optimize(spec: RunSpec, emit: Log) -> RunResult:
 
 
 def _execute_sweep(spec: RunSpec, emit: Log,
-                   is_cancelled: Cancel) -> RunResult:
+                   is_cancelled: Cancel, prog: Progress) -> RunResult:
     import pandas as pd  # noqa: PLC0415
 
     if spec.sweep_axis == "material":
         return _sweep_materials(spec, emit)
-    return _sweep_t_switch(spec, emit, pd, is_cancelled)
+    return _sweep_t_switch(spec, emit, pd, is_cancelled, prog)
 
 
 def _sweep_t_switch(spec: RunSpec, emit: Log, pd: Any,
-                    is_cancelled: Cancel) -> RunResult:
+                    is_cancelled: Cancel, prog: Progress) -> RunResult:
     from harness.envs.bed1d import Bed1D, Bed1DControls  # noqa: PLC0415
 
     grid = np_linspace(spec.sweep_min, spec.sweep_max, max(2, int(spec.sweep_steps)))
@@ -291,6 +296,7 @@ def _sweep_t_switch(spec: RunSpec, emit: Log, pd: Any,
         rows.append({"t_switch_s": float(t), **{k: float(v) for k, v in m.items()
                                                 if isinstance(v, (int, float))}})
         emit(f"  t_switch {t:.0f}s → COP {m['COP']:.4g} SCP {m['SCP_W_kg']:.4g}")
+        prog({"kind": "sweep", "rows": [dict(r) for r in rows]})
     df = pd.DataFrame(rows)
     best_idx = int(df["SCP_W_kg"].idxmax())
     best_row = df.loc[best_idx].to_dict()
@@ -327,11 +333,19 @@ def _sweep_materials(spec: RunSpec, emit: Log) -> RunResult:
 
 
 def safe_rollout(problem: Any, design: Any | None) -> Any | None:
-    """Best-effort rollout with trace; static problems degrade to None."""
+    """Best-effort rollout with trace; static problems degrade to None.
+
+    Field-capable problems (Bed1D/TwoBed) are asked for ``collect_fields``
+    first so the Field player has profiles; anything without that keyword
+    raises ``TypeError`` and falls through to the plain attempts.
+    """
     attempts: list[dict[str, Any]] = []
     if design is not None:
+        attempts.append({"design": design, "collect_trace": True,
+                         "collect_fields": True})
         attempts.append({"design": design, "collect_trace": True})
         attempts.append({"design": design})
+    attempts.append({"collect_trace": True, "collect_fields": True})
     attempts.append({"collect_trace": True})
     attempts.append({})
     for kwargs in attempts:

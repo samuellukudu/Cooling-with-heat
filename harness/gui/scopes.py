@@ -10,8 +10,8 @@ from __future__ import annotations
 from typing import Any
 
 import numpy as np
-from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import QLabel, QTabWidget, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget
+from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QSlider, QTabWidget, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget
 
 from .kit import (
     CompareScope,
@@ -317,6 +317,126 @@ class SweepScope(QWidget):
             self._df.to_csv(path, index=False)
 
 
+class FieldScope(QWidget):
+    """Hydrogym-style field player: profile snapshot + space–time heatmap.
+
+    Scrub the episode with the slider or press play; the cursor tracks on
+    the heatmap. Bed1D shows ``T(x)``/``q(x)``; TwoBed overlays both beds.
+    """
+
+    def __init__(self, parent: Any = None) -> None:
+        super().__init__(parent)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(6, 6, 6, 6)
+        self.fig, self.canvas = dark_figure((6, 3.2))
+        self.ax = self.fig.axes[0]
+        self.ax2 = self.ax.twinx()
+        layout.addWidget(self.canvas, 3)
+        self.hfig, self.hcanvas = dark_figure((6, 2.2))
+        self.hax = self.hfig.axes[0]
+        layout.addWidget(self.hcanvas, 2)
+        row = QHBoxLayout()
+        self.play_btn = QPushButton("▶")
+        self.play_btn.setFixedWidth(40)
+        self.play_btn.clicked.connect(self._toggle)
+        row.addWidget(self.play_btn)
+        self.slider = QSlider(Qt.Orientation.Horizontal)
+        self.slider.valueChanged.connect(self._show)
+        row.addWidget(self.slider, 1)
+        self.time_label = QLabel("no fields — run a dynamic env")
+        self.time_label.setStyleSheet("color:#64748b; font-size:7.5pt;")
+        row.addWidget(self.time_label)
+        save_btn = QPushButton("Save PNG")
+        save_btn.clicked.connect(self._save)
+        row.addWidget(save_btn)
+        layout.addLayout(row)
+        self._timer = QTimer(self)
+        self._timer.setInterval(60)
+        self._timer.timeout.connect(self._advance)
+        self._fields: dict | None = None
+        self._kind = "bed1d"
+        self._cursor = None
+        self._placeholder()
+
+    def _placeholder(self) -> None:
+        placeholder_text(self.ax, "Field playback appears after a dynamic run\n(Bed1D / TwoBed)")
+        self.fig.tight_layout()
+        self.canvas.draw()
+        placeholder_text(self.hax, "T(x, t)")
+        self.hfig.tight_layout()
+        self.hcanvas.draw()
+
+    def set_fields(self, fields: dict, kind: str = "bed1d") -> None:
+        from harness import viz as viz_mod  # noqa: PLC0415 (lazy Qt-side too)
+
+        self._timer.stop()
+        self.play_btn.setText("▶")
+        self._fields = {k: np.asarray(v) for k, v in fields.items()}
+        self._kind = kind
+        n = len(self._fields["t_s"])
+        self.slider.setRange(0, max(0, n - 1))
+        self.hax.clear()
+        if kind == "twobed":
+            viz_mod.paint_heatmap(self.hax, self._fields["A_T_K"],
+                                  self._fields["t_s"], self._fields["A_x_m"],
+                                  title="bed A  T(x, t) [°C]", colorbar=True)
+        else:
+            viz_mod.paint_heatmap(self.hax, self._fields["T_K"],
+                                  self._fields["t_s"], self._fields["x_m"],
+                                  title="T(x, t) [°C]", colorbar=True)
+        self._cursor = self.hax.axhline(0.0, color="#e2e8f0", lw=0.9,
+                                        alpha=0.8)
+        self.hfig.tight_layout()
+        self.slider.setValue(0)
+        self._show(0)
+
+    def _show(self, i: int) -> None:
+        if not self._fields:
+            return
+        from harness import viz as viz_mod  # noqa: PLC0415
+
+        f, t = self._fields, np.asarray(self._fields["t_s"], dtype=float)
+        i = int(np.clip(i, 0, len(t) - 1))
+        self.ax.clear()
+        self.ax2.clear()
+        if self._kind == "twobed":
+            viz_mod.paint_twobed_snapshot(
+                self.ax, self.ax2, f["A_T_K"][i], f["A_q_kg_kg"][i],
+                f["B_T_K"][i], f["B_q_kg_kg"][i], f["A_x_m"])
+        else:
+            viz_mod.paint_bed_snapshot(self.ax, self.ax2, f["T_K"][i],
+                                       f["q_kg_kg"][i], f["x_m"])
+        self.ax.set_title(f"t = {t[i]:.1f} s  (frame {i + 1}/{len(t)})",
+                          color=FIG_FG, fontsize=9)
+        self.fig.tight_layout()
+        self.canvas.draw()
+        if self._cursor is not None:
+            self._cursor.set_ydata([t[i], t[i]])
+            self.hcanvas.draw()
+        self.time_label.setText(f"t = {t[i]:.1f} s   frame {i + 1}/{len(t)}")
+
+    def _advance(self) -> None:
+        if not self._fields:
+            return
+        self.slider.setValue((self.slider.value() + 1) % (self.slider.maximum() + 1))
+
+    def _toggle(self) -> None:
+        if self._timer.isActive():
+            self._timer.stop()
+            self.play_btn.setText("▶")
+        elif self._fields:
+            self._timer.start()
+            self.play_btn.setText("⏸")
+
+    def _save(self) -> None:
+        from PyQt6.QtWidgets import QFileDialog  # noqa: PLC0415
+
+        path, _ = QFileDialog.getSaveFileName(self, "Save field frame",
+                                              "field.png", "PNG (*.png);;All (*)")
+        if path:
+            self.fig.savefig(path, dpi=180, facecolor=self.fig.get_facecolor())
+
+
 class ScopeTabs(QTabWidget):
     """Right-hand result tabs for the launcher."""
 
@@ -326,6 +446,7 @@ class ScopeTabs(QTabWidget):
         self.metrics = MetricsScope()
         self.history = HistoryScope()
         self.trace = TraceScope()
+        self.field = FieldScope()
         self.table = DataFrameScope("Table")
         self.compare = CompareScope()
         self.sweep = SweepScope()
@@ -334,7 +455,8 @@ class ScopeTabs(QTabWidget):
         self.python._save_filter = "Python (*.py);;All (*)"
         self.python._save_default = "experiment.py"
         for w, name in ((self.metrics, "Metrics"), (self.history, "History"),
-                        (self.trace, "Trace"), (self.table, "Table"),
+                        (self.trace, "Trace"), (self.field, "Field"),
+                        (self.table, "Table"),
                         (self.compare, "Compare"), (self.sweep, "Sweep"),
                         (self.log, "Log"), (self.python, "Python")):
             self.addTab(w, name)
@@ -349,7 +471,19 @@ class ScopeTabs(QTabWidget):
         sweep_df = getattr(payload, "sweep_df", None)
         if sweep_df is not None:
             self.sweep.set_dataframe(sweep_df, title=f"Sweep — {payload.sweep_axis}")
-            self.setCurrentWidget(self.sweep)
+            if self.currentWidget() is self.log:
+                self.setCurrentWidget(self.sweep)
+            return
+        fields = getattr(getattr(payload, "trace", None), "fields", None)
+        if fields is not None:
+            kind = "twobed" if "A_T_K" in fields else "bed1d"
+            self.field.set_fields(fields, kind=kind)
+            if self.currentWidget() is self.log:
+                self.setCurrentWidget(self.field)
+        elif self.currentWidget() is self.log:
+            # Land the passive watcher on the results — but never yank a
+            # user who already navigated (e.g. watching the live curve).
+            self.setCurrentWidget(self.metrics)
 
     def set_log(self, text: str) -> None:
         self.log.set_text(text)

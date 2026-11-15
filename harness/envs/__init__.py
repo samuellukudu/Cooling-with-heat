@@ -19,6 +19,7 @@ from .two_bed import (
     TWO_BED_METRIC_KEYS,
     TwoBed,
     TwoBedGymEnv,
+    TwoBedScenario,
     TwoBedSchedule,
 )
 
@@ -40,6 +41,7 @@ __all__ = [
     "TWO_BED_METRIC_KEYS",
     "TwoBed",
     "TwoBedGymEnv",
+    "TwoBedScenario",
     "TwoBedSchedule",
     "base",
     "absorption",

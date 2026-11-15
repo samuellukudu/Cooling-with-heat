@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Thermoelectric pair + leg (frozen diffheat)</title>
+<style>
+body { background:#0f1115; color:#e2e8f0; font-family:system-ui,sans-serif; max-width:760px; margin:0 auto; padding:16px; }
+h1 { font-size:22px; } h2 { font-size:16px; margin-top:28px; }
+
+.flow { stroke-dasharray: 7 6; animation: dashfwd 0.9s linear infinite; }
+.flow-rev { stroke-dasharray: 7 6; animation: dashrev 0.9s linear infinite; }
+@keyframes dashfwd { to { stroke-dashoffset: -26; } }
+@keyframes dashrev { to { stroke-dashoffset: 26; } }
+
+.presets button { background:#161a21; color:#e2e8f0; border:1px solid #1e222a; border-radius:6px; padding:4px 10px; margin:2px; cursor:pointer; font-size:12px; }
+.controls { display:flex; gap:10px; align-items:center; margin:10px 0; flex-wrap:wrap; font-size:13px; }
+select, input[type=range] { accent-color:#f59e0b; } select { background:#161a21; color:#e2e8f0; border:1px solid #1e222a; border-radius:6px; padding:4px; }
+button { background:#161a21; color:#e2e8f0; border:1px solid #1e222a; border-radius:6px; padding:4px 10px; cursor:pointer; }
+.meters span { display:inline-block; background:#161a21; border:1px solid #1e222a; border-radius:6px; padding:3px 9px; margin:2px; font-size:12px; }
+table { border-collapse:collapse; width:100%; font-size:12px; } td, th { border:1px solid #1e222a; padding:4px 6px; text-align:left; }
+th { color:#94a3b8; } .dim { color:#94a3b8; font-size:12px; } a { color:#06b6d4; }
+.math { background:#161a21; border:1px solid #1e222a; border-radius:8px; padding:8px 12px; font-size:13px; }
+</style>
+</head>
+<body>
+
+<p class="dim"><a href="index.html">← all applications</a> · frozen 42b97c7 (42b97c755c37…), generated 2026-09-27 · frozen lumped pair model + frozen te_1d leg</p>
+<h1>Thermoelectric — pair + leg</h1>
+<p class="dim">Qc = S·Tc·I − ½I²R − K·ΔT per pair at Tc=18 °C / Th=35 °C. Move the current slider: crosshair + readouts recompute live (closed forms). The leg strip is the resolved 1 mm segmented-leg steady profile at 3 A.</p>
+<div class="math">Qc = S·Tc·I − ½·I²·R − K·ΔT · W<sub>in</sub> = S·I·ΔT + I²·R · COP = Qc/W<sub>in</sub> (0 when Qc ≤ 0)</div>
+<div class="controls"><label>pair <select id="te-pair"><option>Bi2Te3</option><option>PbTe</option><option>SiGe</option></select></label>
+<label>I <input id="te-I" type="range" min="0" max="8" step="0.1" value="3"><span id="te-Ival">3.0 A</span></label></div>
+<div class="meters"><span>Qc: <b id="te-qc">–</b></span><span>COP: <b id="te-cop">–</b></span>
+<span>ZT: <b id="te-zt">–</b></span><span id="te-oow"></span></div>
+<svg viewBox="0 0 720 300" width="100%" role="img" style="background:#0f1115;border:1px solid #1e222a;border-radius:8px">
+<text x="16" y="24" fill="#e2e8f0" font-size="13" font-weight="bold">current I [A] → cooling Qc [W]</text>
+<g id="te-lines"><path d="M56.0,214.0 L96.5,214.0 L137.0,172.2 L177.5,132.9 L218.0,101.0 L258.5,76.6 L299.0,59.7 L339.5,50.3 L380.0,48.3 L420.5,53.8 L461.0,66.8 L501.5,87.2 L542.0,115.1 L582.5,150.5 L623.0,193.4 L663.5,214.0 L704.0,214.0" fill="none" stroke="#f59e0b" stroke-width="2"/><path d="M56.0,214.0 L96.5,214.0 L137.0,164.9 L177.5,123.3 L218.0,93.0 L258.5,73.8 L299.0,65.8 L339.5,69.0 L380.0,83.5 L420.5,109.1 L461.0,146.0 L501.5,194.1 L542.0,214.0 L582.5,214.0 L623.0,214.0 L663.5,214.0 L704.0,214.0" fill="none" stroke="#06b6d4" stroke-width="2"/><path d="M56.0,214.0 L96.5,187.8 L137.0,130.6 L177.5,93.4 L218.0,76.1 L258.5,78.8 L299.0,101.4 L339.5,143.9 L380.0,206.3 L420.5,214.0 L461.0,214.0 L501.5,214.0 L542.0,214.0 L582.5,214.0 L623.0,214.0 L663.5,214.0 L704.0,214.0" fill="none" stroke="#22c55e" stroke-width="2"/></g><g id="te-x"></g>
+<text x="16" y="290" fill="#94a3b8" font-size="10">current I [A]</text>
+</svg>
+<svg viewBox="0 0 720 140" width="100%" role="img" style="background:#0f1115;border:1px solid #1e222a;border-radius:8px">
+<text x="16" y="24" fill="#e2e8f0" font-size="13" font-weight="bold">Segmented-leg steady T(x) at 3 A (Bi2Te3, frozen te_1d)</text>
+<rect id="te-leg-0" x="56.0" y="60" width="39.5" height="60" fill="#141428"/><rect id="te-leg-1" x="96.5" y="60" width="39.5" height="60" fill="#141428"/><rect id="te-leg-2" x="137.0" y="60" width="39.5" height="60" fill="#141428"/><rect id="te-leg-3" x="177.5" y="60" width="39.5" height="60" fill="#141428"/><rect id="te-leg-4" x="218.0" y="60" width="39.5" height="60" fill="#141428"/><rect id="te-leg-5" x="258.5" y="60" width="39.5" height="60" fill="#141428"/><rect id="te-leg-6" x="299.0" y="60" width="39.5" height="60" fill="#141428"/><rect id="te-leg-7" x="339.5" y="60" width="39.5" height="60" fill="#141428"/><rect id="te-leg-8" x="380.0" y="60" width="39.5" height="60" fill="#141428"/><rect id="te-leg-9" x="420.5" y="60" width="39.5" height="60" fill="#141428"/><rect id="te-leg-10" x="461.0" y="60" width="39.5" height="60" fill="#141428"/><rect id="te-leg-11" x="501.5" y="60" width="39.5" height="60" fill="#141428"/><rect id="te-leg-12" x="542.0" y="60" width="39.5" height="60" fill="#141428"/><rect id="te-leg-13" x="582.5" y="60" width="39.5" height="60" fill="#141428"/><rect id="te-leg-14" x="623.0" y="60" width="39.5" height="60" fill="#141428"/><rect id="te-leg-15" x="663.5" y="60" width="39.5" height="60" fill="#141428"/>
+<text x="56" y="134" fill="#94a3b8" font-size="10">cold → hot · uniform-leg limit reproduces the lumped model (parity below)</text>
+</svg>
+<h2>Pair table (per-pair S/R/K with contacts)</h2>
+<table><tr><th>pair</th><th>S [µV/K]</th><th>R [mΩ]</th><th>K [mW/K]</th><th>Th max [°C]</th><th>I_opt [A]</th></tr>
+<tr><td>Bi2Te3</td><td>400</td><td>30</td><td>3.5</td><td>40</td><td>3.88</td></tr>
+<tr><td>PbTe</td><td>480</td><td>45</td><td>4.0</td><td>300</td><td>3.11</td></tr>
+<tr><td>SiGe</td><td>600</td><td>80</td><td>3.0</td><td>600</td><td>2.18</td></tr></table>
+<p class="dim">Parity: uniform-leg COP 0.5405 vs lumped COP 0.5333 at 3 A. Validity windows are first-class: pairs driven past Th_max report out-of-window.</p>
+<script>
+
+function inferno(f) {
+  f = Math.min(Math.max(f, 0), 1);
+  const stops = [[13,13,31],[59,15,112],[140,29,64],[199,92,20],[249,200,70]];
+  const x = f * (stops.length - 1), i = Math.min(Math.floor(x), stops.length - 2), t = x - i;
+  const c = stops[i].map((v, k) => Math.round(v + t * (stops[i + 1][k] - v)));
+  return "rgb(" + c[0] + "," + c[1] + "," + c[2] + ")";
+}
+
+
+function paintGrid(p, frame, lo, hi) {
+  const F = frame;
+  for (let i = 0; i < F.length; i++) for (let j = 0; j < F[i].length; j++) {
+    const el = document.getElementById(p + "-" + i + "-" + j);
+    if (el) el.setAttribute("fill", inferno((F[i][j] - lo) / Math.max(hi - lo, 1e-9)));
+  }
+}
+function wireScrub(sliderId, btnId, n, draw) {
+  const sl = document.getElementById(sliderId);
+  sl.addEventListener("input", (e) => draw(parseInt(e.target.value, 10)));
+  let playing = false, timer = null;
+  document.getElementById(btnId).addEventListener("click", () => {
+    playing = !playing; document.getElementById(btnId).textContent = playing ? "⏸ pause" : "▶ play";
+    if (playing) timer = setInterval(() => {
+      sl.value = (parseInt(sl.value, 10) + 1) % n; draw(parseInt(sl.value, 10));
+    }, 140);
+    else clearInterval(timer);
+  });
+}
+function wirePresets(runIds, draw) {
+  runIds.forEach((id, k) => document.getElementById(id).addEventListener("click", () => {
+    runIds.forEach((o, q) => document.getElementById(o).style.borderColor = q === k ? "#f59e0b" : "#1e222a");
+    draw(k);
+  }));
+}
+
+const PAIRS = {"Bi2Te3": {"S": 0.00039999999999999996, "R": 0.03, "K": 0.0035, "Thmax": 40.0}, "PbTe": {"S": 0.00047999999999999996, "R": 0.045, "K": 0.004, "Thmax": 300.0}, "SiGe": {"S": 0.0006, "R": 0.08, "K": 0.003, "Thmax": 600.0}};
+const TC = 18.0, TH = 35.0;
+const LEG = [19.737, 22.908, 25.779, 28.348, 30.616, 32.583, 34.248, 35.612, 36.674, 37.435, 37.895, 38.054, 37.911, 37.467, 36.721, 35.674];
+function teModel(S, R, K, I) {
+  const Tc = TC + 273.15, dT = TH - TC;
+  const qc = S * Tc * I - 0.5 * I * I * R - K * dT;
+  const w = S * I * dT + I * I * R;
+  return { qc: Math.max(qc, 0), cop: (qc > 0 && w > 1e-12) ? qc / w : 0 };
+}
+function teUpdate() {
+  const name = document.getElementById("te-pair").value;
+  const P = PAIRS[name], I = parseFloat(document.getElementById("te-I").value);
+  document.getElementById("te-Ival").textContent = I.toFixed(1) + " A";
+  const m = teModel(P.S, P.R, P.K, I);
+  document.getElementById("te-qc").textContent = m.qc.toFixed(3) + " W";
+  document.getElementById("te-cop").textContent = m.cop.toFixed(3);
+  document.getElementById("te-zt").textContent = (P.S * P.S * ((TC + TH) / 2 + 273.15) / (P.R * P.K)).toFixed(2);
+  const oow = TH > P.Thmax;
+  document.getElementById("te-oow").textContent = oow ? "OUT-OF-WINDOW (past Th_max)" : "";
+  const g = document.getElementById("te-x");
+  g.innerHTML = "";
+  const X = 56 + (704 - 56) * I / 8;
+  const mk = (tag, attrs) => { const el = document.createElementNS("http://www.w3.org/2000/svg", tag); for (const k in attrs) el.setAttribute(k, attrs[k]); g.appendChild(el); };
+  mk("line", { x1: X, y1: 40, x2: X, y2: 214, stroke: "#fff", "stroke-width": 1.5 });
+  const qmax = Math.max(...Object.values(PAIRS).map((p) => teModel(p.S, p.R, p.K, I).qc), 1e-9);
+  const Y = 214 - (214 - 40) * m.qc / (qmax * 1.05);
+  mk("circle", { cx: X, cy: Y, r: 5, fill: "#fff" });
+}
+function teLeg() {
+  const lo = Math.min(...LEG), hi = Math.max(...LEG);
+  LEG.forEach((v, k) => document.getElementById("te-leg-" + k).setAttribute("fill", inferno((v - lo) / Math.max(hi - lo, 1e-9))));
+}
+function initTE() {
+  document.getElementById("te-pair").addEventListener("change", teUpdate);
+  document.getElementById("te-I").addEventListener("input", teUpdate);
+  teUpdate(); teLeg();
+}
+document.addEventListener("DOMContentLoaded", initTE);
+</script>
+</body>
+</html>

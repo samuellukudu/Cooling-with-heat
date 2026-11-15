@@ -572,7 +572,8 @@ def step_episode(carry, x, *, dt_s, phys, extra_source_w_m2=None,
     ), ys
 
 
-def advance_carry(carry, controls, *, n_steps, dt_s, phys):
+def advance_carry(carry, controls, *, n_steps, dt_s, phys,
+                  collect_fields=False):
     """Advance an episode carry by ``n_steps`` physics steps under constant
     per-call controls ``controls = (t_ads_s, t_des_s, t_f_des_c)``.
 
@@ -583,17 +584,36 @@ def advance_carry(carry, controls, *, n_steps, dt_s, phys):
     update the directive between calls (the env's action semantics).
     Returns ``(new_carry, ys)`` with ``ys`` shaped ``(n_steps,
     len(SERIES_CHANNELS))``.
+
+    With ``collect_fields=True`` the scan additionally stacks the per-step
+    bed profiles, returning ``(new_carry, (ys, T_hist, q_hist))`` with
+    ``T_hist``/``q_hist`` shaped ``(n_steps, n_cells)``. The stepped
+    physics is untouched — the flag only widens the scan output — so the
+    trajectory (and every V-gate) is bit-identical either way.
     """
     t_ads_x, t_des_x, t_f_des_x = (
         jnp.full((n_steps,), c) for c in controls
     )
 
-    return jax.lax.scan(
-        lambda c, x: step_episode(c, x, dt_s=dt_s, phys=phys),
+    if not collect_fields:
+        return jax.lax.scan(
+            lambda c, x: step_episode(c, x, dt_s=dt_s, phys=phys),
+            carry,
+            (t_ads_x, t_des_x, t_f_des_x),
+            length=n_steps,
+        )
+
+    def _body_fields(c, x):
+        c2, ys = step_episode(c, x, dt_s=dt_s, phys=phys)
+        return c2, (ys, c2[_CARRY_T], c2[_CARRY_Q])
+
+    carry_f, (ys, T_hist, q_hist) = jax.lax.scan(
+        _body_fields,
         carry,
         (t_ads_x, t_des_x, t_f_des_x),
         length=n_steps,
     )
+    return carry_f, (ys, T_hist, q_hist)
 
 
 def cycle_totals_from_carry(carry):
@@ -673,6 +693,7 @@ def simulate_bed(
     q_init_kg_kg=None,
     n_steps=None,
     collect_trace=False,
+    collect_fields=False,
     soft_switch=False,
     vapor_void_m3_m2=0.0,
     vapor_tau_s=0.0,
@@ -696,6 +717,11 @@ def simulate_bed(
     ``k_act_J_mol`` enables Arrhenius LDF kinetics about ``k_ref_T_C``
     (the T_hs-trend head behind benchmarks finding 2). All default to
     the v1 behaviour (bit-identical at defaults).
+
+    ``collect_fields=True`` additionally returns per-step bed profiles
+    thinned to ≤ 512 snapshots (``fields = {"T_K", "q_kg_kg", "t_s",
+    "x_m"}``) for hydrogym-style field playback — capture only, the
+    trajectory is identical to ``collect_fields=False``.
     """
     n_cells = int(n_cells)
     n_cycles = int(n_cycles)
@@ -758,9 +784,15 @@ def simulate_bed(
         p_init_pa=p_evap,
     )
     controls = (t_ads_s, t_des_s, t_f_des_c)
-    carry_f, ys = advance_carry(
-        carry, controls, n_steps=n_steps, dt_s=dt_s, phys=phys
-    )
+    if collect_fields:
+        carry_f, (ys, T_hist, q_hist) = advance_carry(
+            carry, controls, n_steps=n_steps, dt_s=dt_s, phys=phys,
+            collect_fields=True,
+        )
+    else:
+        carry_f, ys = advance_carry(
+            carry, controls, n_steps=n_steps, dt_s=dt_s, phys=phys
+        )
     summary = summary_from_carry(
         carry_f, p_evap_pa=p_evap, p_cond_pa=p_cond, h_fg_evap_j_kg=h_fg
     )
@@ -772,7 +804,19 @@ def simulate_bed(
         series = {
             name: thinned[:, i] for i, name in enumerate(SERIES_CHANNELS)
         }
-    return {"summary": summary, "series": series, "m_s_kg_m2": m_s}
+    fields = None
+    if collect_fields:
+        stride = max(1, -(-n_steps // 512))  # ceil: never more than 512 frames
+        fields = {
+            "T_K": T_hist[::stride],
+            "q_kg_kg": q_hist[::stride],
+            "t_s": (jnp.arange(n_steps, dtype=jnp.float64) + 1.0)
+            * dt_s,
+            "x_m": (jnp.arange(n_cells, dtype=jnp.float64) + 0.5) * dx,
+        }
+        fields["t_s"] = fields["t_s"][::stride]
+    return {"summary": summary, "series": series, "fields": fields,
+            "m_s_kg_m2": m_s}
 
 
 __all__ = [

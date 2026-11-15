@@ -1,0 +1,552 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>datacenter_dynamic — Data-center waste-heat cooling, time-varying coolant loop (adsorption cooling)</title>
+<style>
+body { background:#0f1115; color:#e2e8f0; font-family:system-ui,sans-serif; max-width:760px; margin:0 auto; padding:16px; }
+h1 { font-size:22px; } h2 { font-size:16px; margin-top:28px; }
+
+.flow { stroke-dasharray: 7 6; animation: dashfwd 0.9s linear infinite; }
+.flow-rev { stroke-dasharray: 7 6; animation: dashrev 0.9s linear infinite; }
+@keyframes dashfwd { to { stroke-dashoffset: -26; } }
+@keyframes dashrev { to { stroke-dashoffset: 26; } }
+
+.chips span { display:inline-block; background:#161a21; border:1px solid #1e222a; border-radius:6px; padding:3px 9px; margin:2px; font-size:12px; }
+.controls { display:flex; gap:10px; align-items:center; margin:10px 0; flex-wrap:wrap; font-size:13px; }
+select, input[type=range] { accent-color:#f59e0b; } select { background:#161a21; color:#e2e8f0; border:1px solid #1e222a; border-radius:6px; padding:4px; }
+button { background:#161a21; color:#e2e8f0; border:1px solid #1e222a; border-radius:6px; padding:4px 10px; cursor:pointer; }
+table { border-collapse:collapse; width:100%; font-size:12px; } td, th { border:1px solid #1e222a; padding:4px 6px; text-align:left; }
+th { color:#94a3b8; } .dim { color:#94a3b8; font-size:12px; } a { color:#06b6d4; }
+</style>
+</head>
+<body>
+<p class="dim"><a href="index.html">← all applications</a> · generated 2026-09-27 · T2 sweep 10 rows + Bed1D/TwoBed replays + coolant schedule</p>
+<h1>datacenter_dynamic — Data-center waste-heat cooling, time-varying coolant loop</h1>
+<p class="dim">Same scenario as 'datacenter' with the 45-70 C coolant loop following the IT load on a 4 h period; schedules are data — pass your own to the envs.</p>
+<div class="chips">
+<span>T_evap 16 °C</span><span>T_cond 35 °C</span>
+<span>T_des 60 °C</span><span>half-cycle 300 s</span>
+<span>COP wt 0.35</span><span>SCP wt 0.30</span>
+<span>fluid 45–70 °C</span>
+</div>
+
+<h2>Simulation — bed cross-section (Bed1D solver replay, silica gel RD)</h2>
+<p class="dim">One slice through the coated bed: heat-transfer fluid | metal wall |
+adsorbent cells colored by the solved temperature | vapour pipe. Cyan dots are
+adsorbed water per cell; pipe dots are vapour flowing to/from the bed, sized by
+the solved duty rate. Episode COP 0.513 · SCP 216 W/kg ·
+transport defaults flagged (DESIGN §8.1). Drag the slider or press play.</p>
+<div class="controls"><button id="bx-play">▶ play</button>
+<input id="bx-slider" type="range" min="0" max="60" value="0" step="1">
+<span class="dim">0 – 1199 s</span></div>
+<svg viewBox="0 0 720 320" width="100%" role="img" style="background:#0f1115;border:1px solid #1e222a;border-radius:8px">
+<text x="16" y="24" fill="#e2e8f0" font-size="13" font-weight="bold">Bed cross-section — live solver replay <tspan id="bx-badge" font-size="11">–</tspan></text>
+<rect id="bx-fluid" x="20" y="60" width="44" height="180" rx="4" fill="#334155" stroke="#1e222a"/>
+<polyline class="flow" points="26,100 38,90 26,80" fill="none" stroke="#e2e8f0" stroke-width="2" opacity="0.7"/>
+<polyline class="flow" points="26,150 38,140 26,130" fill="none" stroke="#e2e8f0" stroke-width="2" opacity="0.7"/>
+<polyline class="flow" points="26,200 38,190 26,180" fill="none" stroke="#e2e8f0" stroke-width="2" opacity="0.7"/>
+<text id="bx-flab" x="42" y="255" fill="#94a3b8" font-size="10" text-anchor="middle">–</text>
+<rect x="64" y="60" width="14" height="180" fill="#6b7280" stroke="#1e222a"/><text x="71" y="255" fill="#94a3b8" font-size="10" text-anchor="middle">wall</text>
+<rect id="bx-cell-0" x="78.0" y="60" width="48.0" height="180" fill="#141428" stroke="#1e222a"/>
+<g id="bx-dots-0">
+<circle id="bx-qd-0-0" cx="90.0" cy="95" r="6" fill="#67e8f9" opacity="0.9" visibility="hidden"/>
+<circle id="bx-qd-0-1" cx="109.0" cy="95" r="6" fill="#67e8f9" opacity="0.9" visibility="hidden"/>
+<circle id="bx-qd-0-2" cx="90.0" cy="150" r="6" fill="#67e8f9" opacity="0.9" visibility="hidden"/>
+<circle id="bx-qd-0-3" cx="109.0" cy="150" r="6" fill="#67e8f9" opacity="0.9" visibility="hidden"/>
+<circle id="bx-qd-0-4" cx="90.0" cy="205" r="6" fill="#67e8f9" opacity="0.9" visibility="hidden"/>
+<circle id="bx-qd-0-5" cx="109.0" cy="205" r="6" fill="#67e8f9" opacity="0.9" visibility="hidden"/>
+</g>
+<rect id="bx-cell-1" x="128.0" y="60" width="48.0" height="180" fill="#141428" stroke="#1e222a"/>
+<g id="bx-dots-1">
+<circle id="bx-qd-1-0" cx="140.0" cy="95" r="6" fill="#67e8f9" opacity="0.9" visibility="hidden"/>
+<circle id="bx-qd-1-1" cx="159.0" cy="95" r="6" fill="#67e8f9" opacity="0.9" visibility="hidden"/>
+<circle id="bx-qd-1-2" cx="140.0" cy="150" r="6" fill="#67e8f9" opacity="0.9" visibility="hidden"/>
+<circle id="bx-qd-1-3" cx="159.0" cy="150" r="6" fill="#67e8f9" opacity="0.9" visibility="hidden"/>
+<circle id="bx-qd-1-4" cx="140.0" cy="205" r="6" fill="#67e8f9" opacity="0.9" visibility="hidden"/>
+<circle id="bx-qd-1-5" cx="159.0" cy="205" r="6" fill="#67e8f9" opacity="0.9" visibility="hidden"/>
+</g>
+<rect id="bx-cell-2" x="178.0" y="60" width="48.0" height="180" fill="#141428" stroke="#1e222a"/>
+<g id="bx-dots-2">
+<circle id="bx-qd-2-0" cx="190.0" cy="95" r="6" fill="#67e8f9" opacity="0.9" visibility="hidden"/>
+<circle id="bx-qd-2-1" cx="209.0" cy="95" r="6" fill="#67e8f9" opacity="0.9" visibility="hidden"/>
+<circle id="bx-qd-2-2" cx="190.0" cy="150" r="6" fill="#67e8f9" opacity="0.9" visibility="hidden"/>
+<circle id="bx-qd-2-3" cx="209.0" cy="150" r="6" fill="#67e8f9" opacity="0.9" visibility="hidden"/>
+<circle id="bx-qd-2-4" cx="190.0" cy="205" r="6" fill="#67e8f9" opacity="0.9" visibility="hidden"/>
+<circle id="bx-qd-2-5" cx="209.0" cy="205" r="6" fill="#67e8f9" opacity="0.9" visibility="hidden"/>
+</g>
+<rect id="bx-cell-3" x="228.0" y="60" width="48.0" height="180" fill="#141428" stroke="#1e222a"/>
+<g id="bx-dots-3">
+<circle id="bx-qd-3-0" cx="240.0" cy="95" r="6" fill="#67e8f9" opacity="0.9" visibility="hidden"/>
+<circle id="bx-qd-3-1" cx="259.0" cy="95" r="6" fill="#67e8f9" opacity="0.9" visibility="hidden"/>
+<circle id="bx-qd-3-2" cx="240.0" cy="150" r="6" fill="#67e8f9" opacity="0.9" visibility="hidden"/>
+<circle id="bx-qd-3-3" cx="259.0" cy="150" r="6" fill="#67e8f9" opacity="0.9" visibility="hidden"/>
+<circle id="bx-qd-3-4" cx="240.0" cy="205" r="6" fill="#67e8f9" opacity="0.9" visibility="hidden"/>
+<circle id="bx-qd-3-5" cx="259.0" cy="205" r="6" fill="#67e8f9" opacity="0.9" visibility="hidden"/>
+</g>
+<rect id="bx-cell-4" x="278.0" y="60" width="48.0" height="180" fill="#141428" stroke="#1e222a"/>
+<g id="bx-dots-4">
+<circle id="bx-qd-4-0" cx="290.0" cy="95" r="6" fill="#67e8f9" opacity="0.9" visibility="hidden"/>
+<circle id="bx-qd-4-1" cx="309.0" cy="95" r="6" fill="#67e8f9" opacity="0.9" visibility="hidden"/>
+<circle id="bx-qd-4-2" cx="290.0" cy="150" r="6" fill="#67e8f9" opacity="0.9" visibility="hidden"/>
+<circle id="bx-qd-4-3" cx="309.0" cy="150" r="6" fill="#67e8f9" opacity="0.9" visibility="hidden"/>
+<circle id="bx-qd-4-4" cx="290.0" cy="205" r="6" fill="#67e8f9" opacity="0.9" visibility="hidden"/>
+<circle id="bx-qd-4-5" cx="309.0" cy="205" r="6" fill="#67e8f9" opacity="0.9" visibility="hidden"/>
+</g>
+<rect id="bx-cell-5" x="328.0" y="60" width="48.0" height="180" fill="#141428" stroke="#1e222a"/>
+<g id="bx-dots-5">
+<circle id="bx-qd-5-0" cx="340.0" cy="95" r="6" fill="#67e8f9" opacity="0.9" visibility="hidden"/>
+<circle id="bx-qd-5-1" cx="359.0" cy="95" r="6" fill="#67e8f9" opacity="0.9" visibility="hidden"/>
+<circle id="bx-qd-5-2" cx="340.0" cy="150" r="6" fill="#67e8f9" opacity="0.9" visibility="hidden"/>
+<circle id="bx-qd-5-3" cx="359.0" cy="150" r="6" fill="#67e8f9" opacity="0.9" visibility="hidden"/>
+<circle id="bx-qd-5-4" cx="340.0" cy="205" r="6" fill="#67e8f9" opacity="0.9" visibility="hidden"/>
+<circle id="bx-qd-5-5" cx="359.0" cy="205" r="6" fill="#67e8f9" opacity="0.9" visibility="hidden"/>
+</g>
+<rect id="bx-cell-6" x="378.0" y="60" width="48.0" height="180" fill="#141428" stroke="#1e222a"/>
+<g id="bx-dots-6">
+<circle id="bx-qd-6-0" cx="390.0" cy="95" r="6" fill="#67e8f9" opacity="0.9" visibility="hidden"/>
+<circle id="bx-qd-6-1" cx="409.0" cy="95" r="6" fill="#67e8f9" opacity="0.9" visibility="hidden"/>
+<circle id="bx-qd-6-2" cx="390.0" cy="150" r="6" fill="#67e8f9" opacity="0.9" visibility="hidden"/>
+<circle id="bx-qd-6-3" cx="409.0" cy="150" r="6" fill="#67e8f9" opacity="0.9" visibility="hidden"/>
+<circle id="bx-qd-6-4" cx="390.0" cy="205" r="6" fill="#67e8f9" opacity="0.9" visibility="hidden"/>
+<circle id="bx-qd-6-5" cx="409.0" cy="205" r="6" fill="#67e8f9" opacity="0.9" visibility="hidden"/>
+</g>
+<rect id="bx-cell-7" x="428.0" y="60" width="48.0" height="180" fill="#141428" stroke="#1e222a"/>
+<g id="bx-dots-7">
+<circle id="bx-qd-7-0" cx="440.0" cy="95" r="6" fill="#67e8f9" opacity="0.9" visibility="hidden"/>
+<circle id="bx-qd-7-1" cx="459.0" cy="95" r="6" fill="#67e8f9" opacity="0.9" visibility="hidden"/>
+<circle id="bx-qd-7-2" cx="440.0" cy="150" r="6" fill="#67e8f9" opacity="0.9" visibility="hidden"/>
+<circle id="bx-qd-7-3" cx="459.0" cy="150" r="6" fill="#67e8f9" opacity="0.9" visibility="hidden"/>
+<circle id="bx-qd-7-4" cx="440.0" cy="205" r="6" fill="#67e8f9" opacity="0.9" visibility="hidden"/>
+<circle id="bx-qd-7-5" cx="459.0" cy="205" r="6" fill="#67e8f9" opacity="0.9" visibility="hidden"/>
+</g>
+<text x="278" y="255" fill="#94a3b8" font-size="10" text-anchor="middle">adsorbent (T-colored cells · cyan dots = adsorbed water)</text>
+<rect x="478" y="130" width="182" height="40" rx="20" fill="#161a21" stroke="#1e222a"/>
+<line id="bx-flow" x1="486" y1="150" x2="652" y2="150" stroke="#06b6d4" stroke-width="2.5" class="flow"/>
+<g id="bx-vapor">
+<circle id="bx-vd-0" cx="500" cy="150" r="3.5" fill="#a5f3fc" visibility="hidden"/>
+<circle id="bx-vd-1" cx="500" cy="150" r="3.5" fill="#a5f3fc" visibility="hidden"/>
+<circle id="bx-vd-2" cx="500" cy="150" r="3.5" fill="#a5f3fc" visibility="hidden"/>
+<circle id="bx-vd-3" cx="500" cy="150" r="3.5" fill="#a5f3fc" visibility="hidden"/>
+<circle id="bx-vd-4" cx="500" cy="150" r="3.5" fill="#a5f3fc" visibility="hidden"/>
+<circle id="bx-vd-5" cx="500" cy="150" r="3.5" fill="#a5f3fc" visibility="hidden"/>
+<circle id="bx-vd-6" cx="500" cy="150" r="3.5" fill="#a5f3fc" visibility="hidden"/>
+<circle id="bx-vd-7" cx="500" cy="150" r="3.5" fill="#a5f3fc" visibility="hidden"/>
+<circle id="bx-vd-8" cx="500" cy="150" r="3.5" fill="#a5f3fc" visibility="hidden"/>
+<circle id="bx-vd-9" cx="500" cy="150" r="3.5" fill="#a5f3fc" visibility="hidden"/>
+<circle id="bx-vd-10" cx="500" cy="150" r="3.5" fill="#a5f3fc" visibility="hidden"/>
+<circle id="bx-vd-11" cx="500" cy="150" r="3.5" fill="#a5f3fc" visibility="hidden"/>
+</g>
+<text id="bx-conn" x="569" y="120" fill="#06b6d4" font-size="11" text-anchor="middle">–</text>
+<text x="16" y="292" fill="#94a3b8" font-size="11">cooling <tspan id="bx-qcool-lab">–</tspan></text>
+<rect x="150" y="282" width="200" height="10" fill="#161a21" stroke="#1e222a"/><rect id="bx-qcool" x="150" y="282" width="0" height="10" fill="#06b6d4"/>
+<text x="366" y="292" fill="#94a3b8" font-size="11">heat in <tspan id="bx-qin-lab">–</tspan></text>
+<rect x="470" y="282" width="200" height="10" fill="#161a21" stroke="#1e222a"/><rect id="bx-qin" x="470" y="282" width="0" height="10" fill="#f59e0b"/>
+<text id="bx-t" x="704" y="292" fill="#e2e8f0" font-size="11" text-anchor="end">–</text>
+</svg>
+
+<h2>Simulation — two-bed machine (TwoBed system replay, 20 s recovery window)</h2>
+<p class="dim">Counter-phase pair on silica gel RD: twin cross-sections (cell color =
+bed temperature, green bar = mean uptake) · vapor valves open/close with the solved
+phases · evaporator/condenser levels integrate the solved vapor duty · the amber link
+carries the solved heat-recovery power. System COP 0.460 · SCP 196 W/kg.</p>
+<div class="controls"><button id="m-play">▶ play</button>
+<input id="m-slider" type="range" min="0" max="60" value="0" step="1">
+<span class="dim">0 – 1199 s · track: cyan = A adsorbs, amber = B adsorbs</span></div>
+<svg viewBox="0 0 720 480" width="100%" role="img" style="background:#0f1115;border:1px solid #1e222a;border-radius:8px">
+<text x="16" y="24" fill="#e2e8f0" font-size="13" font-weight="bold">Two-bed machine — live system replay <tspan id="m-t" font-size="11">–</tspan></text>
+<text x="48" y="48" fill="#e2e8f0" font-size="12">Bed A <tspan id="mA-badge">–</tspan></text>
+<rect id="mA-fluid" x="16" y="56" width="26" height="114" rx="4" fill="#334155" stroke="#1e222a"/>
+<text id="mA-flab" x="29" y="182" fill="#94a3b8" font-size="9" text-anchor="middle">–</text>
+<rect x="42" y="56" width="8" height="114" fill="#6b7280" stroke="#1e222a"/>
+<rect id="mA-cell-0" x="50.0" y="56" width="28.0" height="114" fill="#141428" stroke="#1e222a"/>
+<rect id="mA-cell-1" x="80.0" y="56" width="28.0" height="114" fill="#141428" stroke="#1e222a"/>
+<rect id="mA-cell-2" x="110.0" y="56" width="28.0" height="114" fill="#141428" stroke="#1e222a"/>
+<rect id="mA-cell-3" x="140.0" y="56" width="28.0" height="114" fill="#141428" stroke="#1e222a"/>
+<rect id="mA-cell-4" x="170.0" y="56" width="28.0" height="114" fill="#141428" stroke="#1e222a"/>
+<rect id="mA-cell-5" x="200.0" y="56" width="28.0" height="114" fill="#141428" stroke="#1e222a"/>
+<rect id="mA-cell-6" x="230.0" y="56" width="28.0" height="114" fill="#141428" stroke="#1e222a"/>
+<rect id="mA-cell-7" x="260.0" y="56" width="28.0" height="114" fill="#141428" stroke="#1e222a"/>
+<rect x="48" y="176" width="244" height="8" fill="#161a21" stroke="#1e222a"/><rect id="mA-qbar" x="48" y="176" width="0" height="8" fill="#22c55e"/>
+<text id="mA-vlab" x="170" y="198" fill="#94a3b8" font-size="9" text-anchor="middle">–</text>
+<text x="432" y="48" fill="#e2e8f0" font-size="12">Bed B <tspan id="mB-badge">–</tspan></text>
+<rect id="mB-fluid" x="400" y="56" width="26" height="114" rx="4" fill="#334155" stroke="#1e222a"/>
+<text id="mB-flab" x="413" y="182" fill="#94a3b8" font-size="9" text-anchor="middle">–</text>
+<rect x="426" y="56" width="8" height="114" fill="#6b7280" stroke="#1e222a"/>
+<rect id="mB-cell-0" x="434.0" y="56" width="28.0" height="114" fill="#141428" stroke="#1e222a"/>
+<rect id="mB-cell-1" x="464.0" y="56" width="28.0" height="114" fill="#141428" stroke="#1e222a"/>
+<rect id="mB-cell-2" x="494.0" y="56" width="28.0" height="114" fill="#141428" stroke="#1e222a"/>
+<rect id="mB-cell-3" x="524.0" y="56" width="28.0" height="114" fill="#141428" stroke="#1e222a"/>
+<rect id="mB-cell-4" x="554.0" y="56" width="28.0" height="114" fill="#141428" stroke="#1e222a"/>
+<rect id="mB-cell-5" x="584.0" y="56" width="28.0" height="114" fill="#141428" stroke="#1e222a"/>
+<rect id="mB-cell-6" x="614.0" y="56" width="28.0" height="114" fill="#141428" stroke="#1e222a"/>
+<rect id="mB-cell-7" x="644.0" y="56" width="28.0" height="114" fill="#141428" stroke="#1e222a"/>
+<rect x="432" y="176" width="244" height="8" fill="#161a21" stroke="#1e222a"/><rect id="mB-qbar" x="432" y="176" width="0" height="8" fill="#22c55e"/>
+<text id="mB-vlab" x="554" y="198" fill="#94a3b8" font-size="9" text-anchor="middle">–</text>
+<line id="m-rec" x1="300" y1="210" x2="420" y2="210" stroke="#f59e0b" stroke-width="4" opacity="0.15"/>
+<text id="m-rec-lab" x="360" y="202" fill="#f59e0b" font-size="10" text-anchor="middle">heat recovery —</text>
+<g id="m-track"></g>
+<line id="m-head" x1="40" y1="216" x2="40" y2="240" stroke="#fff" stroke-width="1.5"/>
+<line x1="320" y1="170" x2="320" y2="252" stroke="#1e222a" stroke-width="6"/>
+<line x1="320" y1="262" x2="140" y2="300" stroke="#1e222a" stroke-width="5"/>
+<line x1="320" y1="262" x2="580" y2="300" stroke="#1e222a" stroke-width="5"/>
+<g id="mV-AE"><polygon points="221,273 221,289 232,281" fill="#161a21" stroke="#94a3b8" stroke-width="1.5"/><polygon points="243,273 243,289 232,281" fill="#161a21" stroke="#94a3b8" stroke-width="1.5"/><line id="mV-AE-h" x1="232" y1="281" x2="232" y2="267" stroke="#22c55e" stroke-width="2.5"/></g>
+<line id="mF-AE" x1="202" y1="281" x2="262" y2="281" stroke="#06b6d4" stroke-width="2" class="flow" visibility="hidden"/>
+<g id="mV-AC"><polygon points="477,273 477,289 488,281" fill="#161a21" stroke="#94a3b8" stroke-width="1.5"/><polygon points="499,273 499,289 488,281" fill="#161a21" stroke="#94a3b8" stroke-width="1.5"/><line id="mV-AC-h" x1="488" y1="281" x2="488" y2="267" stroke="#22c55e" stroke-width="2.5"/></g>
+<line id="mF-AC" x1="458" y1="281" x2="518" y2="281" stroke="#06b6d4" stroke-width="2" class="flow" visibility="hidden"/>
+<line x1="400" y1="170" x2="400" y2="252" stroke="#1e222a" stroke-width="6"/>
+<line x1="400" y1="262" x2="140" y2="300" stroke="#1e222a" stroke-width="5"/>
+<line x1="400" y1="262" x2="580" y2="300" stroke="#1e222a" stroke-width="5"/>
+<g id="mV-BE"><polygon points="221,273 221,289 232,281" fill="#161a21" stroke="#94a3b8" stroke-width="1.5"/><polygon points="243,273 243,289 232,281" fill="#161a21" stroke="#94a3b8" stroke-width="1.5"/><line id="mV-BE-h" x1="232" y1="281" x2="232" y2="267" stroke="#22c55e" stroke-width="2.5"/></g>
+<line id="mF-BE" x1="202" y1="281" x2="262" y2="281" stroke="#06b6d4" stroke-width="2" class="flow" visibility="hidden"/>
+<g id="mV-BC"><polygon points="477,273 477,289 488,281" fill="#161a21" stroke="#94a3b8" stroke-width="1.5"/><polygon points="499,273 499,289 488,281" fill="#161a21" stroke="#94a3b8" stroke-width="1.5"/><line id="mV-BC-h" x1="488" y1="281" x2="488" y2="267" stroke="#22c55e" stroke-width="2.5"/></g>
+<line id="mF-BC" x1="458" y1="281" x2="518" y2="281" stroke="#06b6d4" stroke-width="2" class="flow" visibility="hidden"/>
+<rect x="60" y="300" width="160" height="110" rx="8" fill="#161a21" stroke="#1e222a"/>
+<text x="140" y="322" fill="#e2e8f0" font-size="11" text-anchor="middle">evaporator <tspan id="m-evap-lab">–</tspan></text>
+<rect id="m-evap-lvl" x="70" y="340" width="140" height="60" fill="#155e75"/>
+<rect x="500" y="300" width="160" height="110" rx="8" fill="#161a21" stroke="#1e222a"/>
+<text x="580" y="322" fill="#e2e8f0" font-size="11" text-anchor="middle">condenser <tspan id="m-cond-lab">–</tspan></text>
+<rect id="m-cond-lvl" x="510" y="340" width="140" height="60" fill="#155e75"/>
+<text x="16" y="440" fill="#94a3b8" font-size="11">system COP <tspan id="m-cop">–</tspan> · SCP <tspan id="m-scp">–</tspan> · recovery gain <tspan id="m-gain">–</tspan> <tspan id="m-gain-note"></tspan></text>
+<text x="16" y="462" fill="#94a3b8" font-size="11">cooling delivered <tspan id="m-qcool-lab">–</tspan></text>
+<rect x="170" y="452" width="300" height="10" fill="#161a21" stroke="#1e222a"/><rect id="m-qcool" x="170" y="452" width="0" height="10" fill="#06b6d4"/>
+</svg>
+<h2>Equilibrium cycle — live physics</h2>
+<div class="controls"><label>material <select id="mat-select"><option value="Silica gel RD" selected>Silica gel RD</option>
+<option value="MIL-100">MIL-100</option>
+<option value="CuBTC">CuBTC</option>
+<option value="Xtrusorb oxidized">Xtrusorb oxidized</option>
+<option value="Silica Gel">Silica Gel</option>
+<option value="Sorbonorit 4 Activated Carbon">Sorbonorit 4 Activated Carbon</option>
+<option value="Activated carbon: Sorbonorit 4">Activated carbon: Sorbonorit 4</option>
+<option value="Carbon Molecular Sieve">Carbon Molecular Sieve</option>
+<option value="Zn2C14N2O8H4">Zn2C14N2O8H4</option>
+<option value="WVA 1100 oxidized">WVA 1100 oxidized</option>
+<option value="Grade 03 Silica Gel">Grade 03 Silica Gel</option></select></label>
+<label>hx <input id="hx-slider" type="range" min="1" max="2" step="0.01" value="1.35"><span id="hx-val">1.35</span></label>
+<label>cycle <input id="cyc-slider" type="range" min="30" max="3600" step="5" value="300"><span id="cyc-val"></span></label></div>
+<svg viewBox="0 0 720 250" width="100%" role="img" style="background:#0f1115;border:1px solid #1e222a;border-radius:8px">
+<text x="16" y="24" fill="#e2e8f0" font-size="13" font-weight="bold">Adsorption cycle at profile setpoints</text>
+<rect x="30" y="60" width="135" height="120" rx="8" fill="#161a21" stroke="#1e222a"/>
+<text x="40" y="82" fill="#e2e8f0" font-size="11">Evaporator</text>
+<text id="sch-T_evap" x="40" y="108" fill="#f59e0b" font-size="12">–</text>
+<text id="sch-P_evap" x="40" y="128" fill="#06b6d4" font-size="11">–</text>
+<rect x="205" y="60" width="135" height="120" rx="8" fill="#161a21" stroke="#1e222a"/>
+<text x="215" y="82" fill="#e2e8f0" font-size="11">Bed · adsorb</text>
+<text id="sch-T_ads" x="215" y="108" fill="#f59e0b" font-size="12">–</text>
+<text id="sch-P_evap" x="215" y="128" fill="#06b6d4" font-size="11">–</text>
+<text id="sch-q_ads" x="215" y="148" fill="#22c55e" font-size="11">–</text>
+<rect x="380" y="60" width="135" height="120" rx="8" fill="#161a21" stroke="#1e222a"/>
+<text x="390" y="82" fill="#e2e8f0" font-size="11">Bed · desorb</text>
+<text id="sch-T_des" x="390" y="108" fill="#f59e0b" font-size="12">–</text>
+<text id="sch-P_cond" x="390" y="128" fill="#06b6d4" font-size="11">–</text>
+<text id="sch-q_des" x="390" y="148" fill="#22c55e" font-size="11">–</text>
+<rect x="555" y="60" width="135" height="120" rx="8" fill="#161a21" stroke="#1e222a"/>
+<text x="565" y="82" fill="#e2e8f0" font-size="11">Condenser</text>
+<text id="sch-T_cond" x="565" y="108" fill="#f59e0b" font-size="12">–</text>
+<text id="sch-P_cond" x="565" y="128" fill="#06b6d4" font-size="11">–</text>
+<line x1="165" y1="120" x2="205" y2="120" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#ah)"/>
+<text x="185.0" y="110" fill="#94a3b8" font-size="9" text-anchor="middle">vapour</text>
+<line x1="340" y1="120" x2="380" y2="120" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#ah)"/>
+<text x="360.0" y="110" fill="#94a3b8" font-size="9" text-anchor="middle">heat in</text>
+<line x1="515" y1="120" x2="555" y2="120" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#ah)"/>
+<text x="535.0" y="110" fill="#94a3b8" font-size="9" text-anchor="middle">vapour</text>
+<defs><marker id="ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#94a3b8"/></marker></defs>
+<text x="16" y="212" fill="#94a3b8" font-size="11">Working capacity <tspan id="sch-dq" fill="#e2e8f0">–</tspan> · Cooling <tspan id="sch-qcool" fill="#e2e8f0">–</tspan> · Heat in <tspan id="sch-qin" fill="#e2e8f0">–</tspan></text>
+<text x="16" y="234" fill="#94a3b8" font-size="11">COP <tspan id="sch-cop" fill="#f59e0b" font-weight="bold">–</tspan> · SCP <tspan id="sch-scp" fill="#f59e0b" font-weight="bold">–</tspan> · score <tspan id="sch-score">–</tspan> <tspan id="sch-oow"></tspan></text>
+</svg>
+<h2>Isotherms — D–A operating window (live)</h2>
+<p class="dim">Uptake vs vapour pressure at bed adsorption / desorption temperatures. Dots mark the cycle operating points.</p>
+<svg viewBox="0 0 720 300" width="100%" role="img" style="background:#0f1115;border:1px solid #1e222a;border-radius:8px">
+<text x="16" y="24" fill="#e2e8f0" font-size="13" font-weight="bold">q*(T, P) — Dubinin–Astakhov</text>
+<g id="iso-grid"></g>
+<path id="iso-a" fill="none" stroke="#f59e0b" stroke-width="2"/>
+<path id="iso-b" fill="none" stroke="#06b6d4" stroke-width="2"/>
+<g id="iso-pts"></g>
+<text x="16" y="290" fill="#94a3b8" font-size="10">P [Pa, log]</text><text x="16" y="42" fill="#94a3b8" font-size="10">q* [kg/kg]</text>
+<g id="iso-legend"></g>
+</svg>
+
+<h2>Source schedule — 45–70 °C coolant loop (4 h period)</h2>
+<svg viewBox="0 0 720 240" width="100%" role="img" style="background:#0f1115;border:1px solid #1e222a;border-radius:8px">
+<text x="16" y="24" fill="#e2e8f0" font-size="13" font-weight="bold">Time-varying drive (H2.2 schedule work)</text>
+<polyline points="56,130 61,126 67,123 72,119 78,115 83,112 88,108 94,105 99,101 105,98 110,95 116,92 121,89 126,86 132,83 137,80 143,78 148,75 153,73 159,71 164,69 170,67 175,66 180,64 186,63 191,62 197,61 202,61 208,60 213,60 218,60 224,60 229,61 235,61 240,62 245,63 251,64 256,65 262,67 267,68 272,70 278,72 283,74 289,76 294,79 300,82 305,84 310,87 316,90 321,93 327,96 332,100 337,103 343,106 348,110 354,114 359,117 364,121 370,124 375,128 381,132 386,136 392,139 397,143 402,146 408,150 413,154 419,157 424,160 429,164 435,167 440,170 446,173 451,176 456,178 462,181 467,184 473,186 478,188 484,190 489,192 494,193 500,195 505,196 511,197 516,198 521,199 527,199 532,200 538,200 543,200 548,200 554,199 559,199 565,198 570,197 576,196 581,194 586,193 592,191 597,189 603,187 608,185 613,182 619,180 624,177 630,174 635,171 640,168 646,165 651,162 657,159 662,155 668,152 673,148 678,145 684,141 689,137 695,134 700,130" fill="none" stroke="#06b6d4" stroke-width="2"/>
+<text x="16" y="230" fill="#94a3b8" font-size="10">t [0–4 h] · T_source [45–70 °C] — schedules are data; pass your own callable to the env.</text>
+</svg>
+<h2>Reference ranking — top 10 (equilibrium, hx = 1.35)</h2>
+<p class="dim">Click a row to load it into the cycle panel. ⚠️ = out-of-window (extrapolated). Ranks never compare across profiles.</p>
+<table id="rank-table"><tr><th>rank</th><th>material</th><th>COP</th><th>SCP</th><th>score</th><th>flag</th></tr>
+<tr data-mat="MIL-100"><td>1</td><td>MIL-100</td><td>0.567</td><td>523</td><td>0.495</td><td></td></tr>
+<tr data-mat="CuBTC"><td>2</td><td>CuBTC</td><td>0.446</td><td>311</td><td>0.352</td><td></td></tr>
+<tr data-mat="Xtrusorb oxidized"><td>3</td><td>Xtrusorb oxidized</td><td>0.491</td><td>141</td><td>0.332</td><td>⚠️</td></tr>
+<tr data-mat="Silica Gel"><td>4</td><td>Silica Gel</td><td>0.436</td><td>216</td><td>0.317</td><td></td></tr>
+<tr data-mat="Sorbonorit 4 Activated Carbon"><td>5</td><td>Sorbonorit 4 Activated Carbon</td><td>0.449</td><td>138</td><td>0.303</td><td></td></tr>
+<tr data-mat="Activated carbon: Sorbonorit 4"><td>6</td><td>Activated carbon: Sorbonorit 4</td><td>0.439</td><td>129</td><td>0.294</td><td>⚠️</td></tr>
+<tr data-mat="Carbon Molecular Sieve"><td>7</td><td>Carbon Molecular Sieve</td><td>0.413</td><td>125</td><td>0.275</td><td></td></tr>
+<tr data-mat="Zn2C14N2O8H4"><td>8</td><td>Zn2C14N2O8H4</td><td>0.376</td><td>171</td><td>0.263</td><td>⚠️</td></tr>
+<tr data-mat="WVA 1100 oxidized"><td>9</td><td>WVA 1100 oxidized</td><td>0.393</td><td>125</td><td>0.261</td><td>⚠️</td></tr>
+<tr data-mat="Grade 03 Silica Gel"><td>10</td><td>Grade 03 Silica Gel</td><td>0.367</td><td>175</td><td>0.259</td><td></td></tr></table>
+<p class="dim">Model proposes; simulator disposes — ML predictions are judged by this physics, never by held-out ML metrics alone.</p>
+<script>
+
+const R = 8.314, CP_S = 1000.0, CP_L = 4184.0;
+function psatPa(tK) {
+  const tC = tK - 273.15;
+  if (tC < 100.0) return 611.2 * Math.exp(17.502 * tC / (240.97 + tC));
+  return Math.pow(10, 8.10765 - 1750.286 / (235.0 + tC)) * 133.322;
+}
+function hFg(tK) {
+  const Tc = 647.1, Tr = 373.15, Hr = 2256400.0;
+  const t = Math.min(tK, Tc - 1.0);
+  return Hr * Math.pow((Tc - t) / (Tc - Tr), 0.321);
+}
+function daUptake(tK, pPa, qSat, E, n) {
+  const ratio = Math.max(psatPa(tK) / pPa, 1.0);
+  const A = R * tK * Math.log(ratio);
+  return qSat * Math.exp(-Math.pow(A / E, n));
+}
+function cycle(m, P, hx, cyc) {
+  const tE = P.t_evap_c + 273.15, tC = P.t_cond_c + 273.15, tD = P.t_des_c + 273.15;
+  const pE = psatPa(tE), pCd = psatPa(tC), hfg = hFg(tE);
+  const qA = daUptake(tC, pE, m.q_sat_kg_kg, m.e_char_j_mol, m.n_da);
+  const qD = daUptake(tD, pCd, m.q_sat_kg_kg, m.e_char_j_mol, m.n_da);
+  const dq = Math.max(0, qA - qD), qc = dq * hfg;
+  const qin = hx * ((CP_S + qA * CP_L) * (tD - tC) + dq * m.Q_st_MJ_kg * 1e6);
+  return { COP: qin > 0 ? qc / qin : 0, SCP: cyc > 0 ? qc / cyc : 0,
+    dq, qA, qD, pE, pCd, hfg, qc, qin };
+}
+function scoreOf(c, P) {
+  const w = P.cop_weight + P.scp_weight;
+  const nC = Math.min(Math.max((c.COP - 0.05) / (0.85 - 0.05), 0), 1);
+  const nS = Math.min(Math.max((c.SCP - 20) / (1600 - 20), 0), 1);
+  return (P.cop_weight / w) * nC + (P.scp_weight / w) * nS;
+}
+
+const PROFILE = {"name": "datacenter_dynamic", "description": "Data-center waste-heat cooling, time-varying coolant loop", "t_evap_c": 16.0, "t_cond_c": 35.0, "t_des_c": 60.0, "cycle_time_s": 300.0, "cop_weight": 0.35, "scp_weight": 0.3, "t_fluid_min_c": 45.0, "t_fluid_max_c": 70.0, "notes": "Same scenario as 'datacenter' with the 45-70 C coolant loop following the IT load on a 4 h period; schedules are data \u2014 pass your own to the envs.", "dynamic": true};
+const MATERIALS = {"Silica gel RD": {"material": "Silica gel RD", "source": "anchor", "q_sat_kg_kg": 0.35, "Q_st_MJ_kg": 2.5, "e_char_j_mol": 4500.0, "n_da": 1.8, "rank": 0, "score": NaN, "COP": NaN, "SCP_W_kg": NaN, "delta_q": NaN, "t_window_c": "20-100", "out_of_window": false}, "MIL-100": {"material": "MIL-100", "source": "isodb", "rank": 1, "score": 0.4950454469191439, "COP": 0.5672499967138442, "SCP_W_kg": 522.8753791917198, "delta_q": 0.06379973360165853, "q_sat_kg_kg": 0.3551899177559613, "Q_st_MJ_kg": 2.4717424846356786, "e_char_j_mol": 3691.808047653496, "n_da": 2.7084163119787394, "t_window_c": "20-76", "out_of_window": false}, "CuBTC": {"material": "CuBTC", "source": "isodb", "rank": 2, "score": 0.3517832047551076, "COP": 0.4463404644307633, "SCP_W_kg": 311.0366841524341, "delta_q": 0.03795179191635334, "q_sat_kg_kg": 0.49104069759264335, "Q_st_MJ_kg": 2.3329078526802087, "e_char_j_mol": 6299.311877437709, "n_da": 1.9616960933050525, "t_window_c": "20-85", "out_of_window": false}, "Xtrusorb oxidized": {"material": "Xtrusorb oxidized", "source": "isodb", "rank": 3, "score": 0.33244871577140944, "COP": 0.491287578895024, "SCP_W_kg": 141.28264062017354, "delta_q": 0.017238897054284313, "q_sat_kg_kg": 0.4287945267503611, "Q_st_MJ_kg": 1.9842777614579146, "e_char_j_mol": 1283.1957745594875, "n_da": 1.0000000000000002, "t_window_c": "10-25", "out_of_window": true}, "Silica Gel": {"material": "Silica Gel", "source": "isodb", "rank": 4, "score": 0.3171007264087352, "COP": 0.43605912225708027, "SCP_W_kg": 215.99692587188096, "delta_q": 0.02635531692218071, "q_sat_kg_kg": 0.3470742012642356, "Q_st_MJ_kg": 2.5920903528307124, "e_char_j_mol": 3678.2973308500823, "n_da": 1.0753776159332535, "t_window_c": "20-85", "out_of_window": false}, "Sorbonorit 4 Activated Carbon": {"material": "Sorbonorit 4 Activated Carbon", "source": "isodb", "rank": 5, "score": 0.3033535012236911, "COP": 0.4493617698957556, "SCP_W_kg": 138.28407438763213, "delta_q": 0.01687302072038846, "q_sat_kg_kg": 0.1975890410937949, "Q_st_MJ_kg": 1.939646143544124, "e_char_j_mol": 4032.573537546727, "n_da": 1.243142564070835, "t_window_c": "20-100", "out_of_window": false}, "Activated carbon: Sorbonorit 4": {"material": "Activated carbon: Sorbonorit 4", "source": "isodb", "rank": 6, "score": 0.2938798230367618, "COP": 0.43934314463966234, "SCP_W_kg": 128.9370984219589, "delta_q": 0.015732529887729836, "q_sat_kg_kg": 0.3652088304192862, "Q_st_MJ_kg": 2.42302647311166, "e_char_j_mol": 1777.7949236198538, "n_da": 2.185431470949344, "t_window_c": "20-40", "out_of_window": true}, "Carbon Molecular Sieve": {"material": "Carbon Molecular Sieve", "source": "isodb", "rank": 7, "score": 0.27506022231949606, "COP": 0.4128792165744626, "SCP_W_kg": 125.48863288341707, "delta_q": 0.015311758148518153, "q_sat_kg_kg": 0.1198264754130959, "Q_st_MJ_kg": 2.630140046644204, "e_char_j_mol": 2386.931610807529, "n_da": 2.7777025380880724, "t_window_c": "20-60", "out_of_window": false}, "Zn2C14N2O8H4": {"material": "Zn2C14N2O8H4", "source": "isodb", "rank": 8, "score": 0.2634060384065247, "COP": 0.37575141031927234, "SCP_W_kg": 171.14113020101277, "delta_q": 0.020882143144681994, "q_sat_kg_kg": 0.1478354707553403, "Q_st_MJ_kg": 3.101860023539148, "e_char_j_mol": 4485.724774346777, "n_da": 2.7391172398579586, "t_window_c": "15-45", "out_of_window": true}, "WVA 1100 oxidized": {"material": "WVA 1100 oxidized", "source": "isodb", "rank": 9, "score": 0.2614883228865896, "COP": 0.39296994331228585, "SCP_W_kg": 124.90178096636612, "delta_q": 0.015240152183767335, "q_sat_kg_kg": 0.2180477974809857, "Q_st_MJ_kg": 2.499232485501497, "e_char_j_mol": 2616.158737015588, "n_da": 1.0000000000000002, "t_window_c": "10-20", "out_of_window": true}, "Grade 03 Silica Gel": {"material": "Grade 03 Silica Gel", "source": "isodb", "rank": 10, "score": 0.2588653630618107, "COP": 0.36742615655561955, "SCP_W_kg": 174.77965715135818, "delta_q": 0.021326105624792147, "q_sat_kg_kg": 0.3014655443432801, "Q_st_MJ_kg": 3.1120397426578204, "e_char_j_mol": 3673.896630117336, "n_da": 1.0000000000000002, "t_window_c": "20-100", "out_of_window": false}};
+const BX = {"t_s": [0.008, 18.82, 39.984, 58.797, 79.961, 98.773, 119.938, 138.75, 159.914, 178.727, 199.891, 218.703, 239.867, 258.68, 279.844, 298.656, 319.82, 338.633, 359.797, 378.609, 399.773, 418.586, 439.75, 458.562, 479.727, 498.539, 519.703, 538.516, 559.68, 578.492, 599.656, 618.469, 639.633, 658.445, 679.609, 698.422, 719.586, 738.398, 759.562, 778.375, 799.539, 818.352, 839.516, 858.328, 879.492, 898.305, 919.469, 938.281, 959.445, 978.258, 999.422, 1018.234, 1039.398, 1058.211, 1079.375, 1098.188, 1119.352, 1138.164, 1159.328, 1178.141, 1199.305], "x_mm": [0.125, 0.375, 0.625, 0.875, 1.125, 1.375, 1.625, 1.875], "T_C": [[35.0, 35.0, 35.0, 35.0, 35.0, 35.0, 35.0, 35.0], [35.0, 35.0, 35.0, 35.0, 35.0, 35.0, 35.0, 35.0], [35.0, 35.0, 35.0, 35.0, 35.0, 35.0, 35.0, 35.0], [35.0, 35.0, 35.0, 35.0, 35.0, 35.0, 35.0, 35.0], [35.0, 35.0, 35.0, 35.0, 35.0, 35.0, 35.0, 35.0], [35.0, 35.0, 35.0, 35.0, 35.0, 35.0, 35.0, 35.0], [35.0, 35.0, 35.0, 35.0, 35.0, 35.0, 35.0, 35.0], [35.0, 35.0, 35.0, 35.0, 35.0, 35.0, 35.0, 35.0], [35.0, 35.0, 35.0, 35.0, 35.0, 35.0, 35.0, 35.0], [35.0, 35.0, 35.0, 35.0, 35.0, 35.0, 35.0, 35.0], [35.0, 35.0, 35.0, 35.0, 35.0, 35.0, 35.0, 35.0], [35.0, 35.0, 35.0, 35.0, 35.0, 35.0, 35.0, 35.0], [35.0, 35.0, 35.0, 35.0, 35.0, 35.0, 35.0, 35.0], [35.0, 35.0, 35.0, 35.0, 35.0, 35.0, 35.0, 35.0], [35.0, 35.0, 35.0, 35.0, 35.0, 35.0, 35.0, 35.0], [35.0, 35.0, 35.0, 35.0, 35.0, 35.0, 35.0, 35.0], [57.38, 56.64, 56.07, 55.62, 55.29, 55.05, 54.9, 54.82], [57.81, 57.16, 56.62, 56.19, 55.85, 55.6, 55.44, 55.36], [58.18, 57.61, 57.13, 56.73, 56.41, 56.17, 56.01, 55.93], [58.43, 57.94, 57.5, 57.14, 56.84, 56.62, 56.47, 56.39], [58.66, 58.23, 57.86, 57.53, 57.27, 57.07, 56.93, 56.86], [58.83, 58.46, 58.12, 57.84, 57.6, 57.42, 57.3, 57.23], [58.99, 58.67, 58.38, 58.13, 57.92, 57.77, 57.66, 57.6], [59.12, 58.84, 58.58, 58.36, 58.18, 58.04, 57.94, 57.89], [59.24, 59.0, 58.78, 58.58, 58.43, 58.3, 58.22, 58.18], [59.33, 59.12, 58.93, 58.76, 58.62, 58.51, 58.44, 58.4], [59.43, 59.24, 59.07, 58.93, 58.81, 58.71, 58.65, 58.62], [59.5, 59.33, 59.19, 59.06, 58.95, 58.87, 58.82, 58.79], [59.56, 59.42, 59.3, 59.19, 59.1, 59.03, 58.98, 58.95], [59.62, 59.5, 59.38, 59.29, 59.21, 59.15, 59.1, 59.08], [59.67, 59.56, 59.47, 59.39, 59.32, 59.26, 59.23, 59.21], [37.2, 37.79, 38.24, 38.58, 38.82, 38.99, 39.1, 39.15], [36.79, 37.31, 37.73, 38.07, 38.33, 38.52, 38.64, 38.7], [36.52, 36.98, 37.37, 37.69, 37.95, 38.14, 38.26, 38.32], [36.29, 36.69, 37.04, 37.33, 37.57, 37.75, 37.87, 37.92], [36.12, 36.48, 36.79, 37.06, 37.27, 37.44, 37.55, 37.6], [35.97, 36.28, 36.55, 36.79, 36.98, 37.13, 37.23, 37.28], [35.85, 36.13, 36.37, 36.58, 36.76, 36.89, 36.98, 37.02], [35.74, 35.98, 36.19, 36.38, 36.53, 36.65, 36.73, 36.77], [35.66, 35.87, 36.06, 36.22, 36.36, 36.46, 36.53, 36.57], [35.57, 35.76, 35.92, 36.07, 36.19, 36.28, 36.34, 36.37], [35.51, 35.67, 35.82, 35.94, 36.05, 36.13, 36.19, 36.22], [35.44, 35.58, 35.71, 35.82, 35.92, 35.99, 36.04, 36.06], [35.39, 35.52, 35.63, 35.73, 35.81, 35.88, 35.92, 35.94], [35.34, 35.45, 35.55, 35.64, 35.71, 35.77, 35.8, 35.82], [35.3, 35.4, 35.49, 35.57, 35.63, 35.68, 35.71, 35.73], [57.65, 57.01, 56.52, 56.14, 55.87, 55.68, 55.56, 55.5], [58.06, 57.49, 57.02, 56.65, 56.36, 56.16, 56.02, 55.96], [58.39, 57.9, 57.48, 57.13, 56.85, 56.65, 56.51, 56.44], [58.62, 58.19, 57.81, 57.49, 57.23, 57.04, 56.91, 56.85], [58.82, 58.45, 58.12, 57.84, 57.61, 57.43, 57.32, 57.26], [58.97, 58.65, 58.36, 58.11, 57.9, 57.74, 57.64, 57.58], [59.12, 58.84, 58.58, 58.37, 58.18, 58.05, 57.95, 57.91], [59.23, 58.98, 58.76, 58.57, 58.41, 58.28, 58.2, 58.16], [59.34, 59.12, 58.93, 58.76, 58.62, 58.52, 58.44, 58.41], [59.42, 59.23, 59.06, 58.91, 58.79, 58.7, 58.63, 58.6], [59.5, 59.34, 59.19, 59.06, 58.96, 58.88, 58.82, 58.79], [59.56, 59.42, 59.29, 59.18, 59.09, 59.01, 58.97, 58.94], [59.62, 59.5, 59.39, 59.29, 59.21, 59.15, 59.11, 59.09], [59.67, 59.56, 59.46, 59.38, 59.31, 59.25, 59.22, 59.2], [59.71, 59.62, 59.54, 59.46, 59.4, 59.36, 59.32, 59.31]], "q": [[0.22272, 0.22272, 0.22272, 0.22272, 0.22272, 0.22272, 0.22272, 0.22272], [0.22272, 0.22272, 0.22272, 0.22272, 0.22272, 0.22272, 0.22272, 0.22272], [0.22272, 0.22272, 0.22272, 0.22272, 0.22272, 0.22272, 0.22272, 0.22272], [0.22272, 0.22272, 0.22272, 0.22272, 0.22272, 0.22272, 0.22272, 0.22272], [0.22272, 0.22272, 0.22272, 0.22272, 0.22272, 0.22272, 0.22272, 0.22272], [0.22272, 0.22272, 0.22272, 0.22272, 0.22272, 0.22272, 0.22272, 0.22272], [0.22272, 0.22272, 0.22272, 0.22272, 0.22272, 0.22272, 0.22272, 0.22272], [0.22272, 0.22272, 0.22272, 0.22272, 0.22272, 0.22272, 0.22272, 0.22272], [0.22272, 0.22272, 0.22272, 0.22272, 0.22272, 0.22272, 0.22272, 0.22272], [0.22272, 0.22272, 0.22272, 0.22272, 0.22272, 0.22272, 0.22272, 0.22272], [0.22272, 0.22272, 0.22272, 0.22272, 0.22272, 0.22272, 0.22272, 0.22272], [0.22272, 0.22272, 0.22272, 0.22272, 0.22272, 0.22272, 0.22272, 0.22272], [0.22272, 0.22272, 0.22272, 0.22272, 0.22272, 0.22272, 0.22272, 0.22272], [0.22272, 0.22272, 0.22272, 0.22272, 0.22272, 0.22272, 0.22272, 0.22272], [0.22272, 0.22272, 0.22272, 0.22272, 0.22272, 0.22272, 0.22272, 0.22272], [0.22272, 0.22272, 0.22272, 0.22272, 0.22272, 0.22272, 0.22272, 0.22272], [0.21755, 0.22245, 0.22612, 0.22884, 0.23079, 0.23214, 0.23299, 0.23339], [0.20961, 0.21514, 0.21954, 0.22296, 0.22554, 0.22738, 0.22856, 0.22913], [0.20406, 0.20935, 0.21376, 0.21733, 0.22011, 0.22215, 0.22348, 0.22414], [0.20073, 0.20553, 0.20966, 0.21308, 0.2158, 0.21783, 0.21917, 0.21984], [0.19797, 0.20219, 0.20588, 0.209, 0.21153, 0.21343, 0.2147, 0.21534], [0.19607, 0.19978, 0.20308, 0.2059, 0.2082, 0.20995, 0.21112, 0.21171], [0.19433, 0.19754, 0.20041, 0.20289, 0.20493, 0.20649, 0.20754, 0.20807], [0.19305, 0.19586, 0.19839, 0.20058, 0.2024, 0.20378, 0.20472, 0.2052], [0.19182, 0.19424, 0.19643, 0.19834, 0.19991, 0.20112, 0.20195, 0.20236], [0.19088, 0.193, 0.19493, 0.1966, 0.19799, 0.19906, 0.19979, 0.20015], [0.18997, 0.1918, 0.19346, 0.19491, 0.19611, 0.19703, 0.19766, 0.19798], [0.18927, 0.19087, 0.19233, 0.1936, 0.19465, 0.19546, 0.19602, 0.1963], [0.18858, 0.18997, 0.19122, 0.19232, 0.19323, 0.19393, 0.1944, 0.19465], [0.18805, 0.18927, 0.19037, 0.19133, 0.19212, 0.19274, 0.19316, 0.19337], [0.18754, 0.18858, 0.18953, 0.19036, 0.19104, 0.19157, 0.19194, 0.19212], [0.19167, 0.18796, 0.18537, 0.1836, 0.18243, 0.18167, 0.18123, 0.18103], [0.19997, 0.19533, 0.19176, 0.18908, 0.18713, 0.18577, 0.18492, 0.18451], [0.20448, 0.19989, 0.19618, 0.19326, 0.19104, 0.18944, 0.18841, 0.18791], [0.20788, 0.20368, 0.20014, 0.19726, 0.195, 0.19334, 0.19226, 0.19172], [0.21006, 0.20628, 0.20302, 0.2003, 0.19814, 0.19653, 0.19546, 0.19493], [0.21196, 0.20863, 0.20572, 0.20325, 0.20126, 0.19976, 0.19875, 0.19825], [0.21331, 0.21036, 0.20775, 0.20552, 0.2037, 0.20232, 0.20139, 0.20093], [0.21459, 0.21201, 0.20971, 0.20773, 0.20611, 0.20488, 0.20404, 0.20362], [0.21555, 0.21327, 0.21122, 0.20945, 0.208, 0.20689, 0.20614, 0.20576], [0.21649, 0.21449, 0.2127, 0.21115, 0.20987, 0.20888, 0.20822, 0.20788], [0.21721, 0.21544, 0.21385, 0.21247, 0.21133, 0.21045, 0.20985, 0.20955], [0.21791, 0.21637, 0.21498, 0.21377, 0.21277, 0.212, 0.21148, 0.21121], [0.21846, 0.21709, 0.21586, 0.21479, 0.2139, 0.21321, 0.21275, 0.21251], [0.219, 0.21781, 0.21673, 0.21579, 0.21501, 0.21442, 0.21401, 0.2138], [0.21943, 0.21837, 0.21741, 0.21658, 0.21589, 0.21536, 0.21499, 0.21481], [0.21481, 0.21875, 0.22156, 0.22353, 0.22486, 0.22574, 0.22626, 0.2265], [0.20717, 0.21187, 0.21552, 0.21829, 0.22032, 0.22174, 0.22264, 0.22307], [0.20193, 0.20651, 0.21028, 0.21328, 0.2156, 0.21727, 0.21836, 0.21889], [0.19885, 0.20303, 0.20659, 0.20952, 0.21183, 0.21354, 0.21466, 0.21522], [0.19634, 0.20002, 0.20322, 0.20592, 0.20809, 0.20972, 0.2108, 0.21135], [0.19464, 0.19788, 0.20075, 0.20319, 0.20518, 0.20668, 0.2077, 0.2082], [0.19309, 0.19589, 0.1984, 0.20055, 0.20232, 0.20367, 0.20458, 0.20503], [0.19195, 0.19441, 0.19662, 0.19853, 0.2001, 0.20131, 0.20212, 0.20254], [0.19087, 0.19299, 0.1949, 0.19656, 0.19793, 0.19898, 0.1997, 0.20006], [0.19005, 0.1919, 0.19358, 0.19504, 0.19625, 0.19718, 0.19781, 0.19813], [0.18925, 0.19085, 0.1923, 0.19356, 0.19461, 0.19541, 0.19596, 0.19624], [0.18864, 0.19004, 0.19131, 0.19241, 0.19333, 0.19404, 0.19452, 0.19477], [0.18804, 0.18925, 0.19034, 0.1913, 0.19209, 0.1927, 0.19312, 0.19333], [0.18758, 0.18863, 0.18959, 0.19043, 0.19113, 0.19166, 0.19203, 0.19221], [0.18712, 0.18804, 0.18886, 0.18958, 0.19018, 0.19065, 0.19096, 0.19112]], "phase": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0], "dq_cool": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -135.79, 5.41, 4.44, 3.74, 3.19, 2.76, 2.4, 2.1, 1.84, 1.61, 1.42, 1.24, 1.09, 0.96, 0.84, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -135.34], "dq_in": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 66.89, 7.06, 5.83, 4.92, 4.18, 3.6, 3.12, 2.7, 2.35, 2.04, 1.78, 1.55, 1.34, 1.17, 1.02, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 66.08, 6.29, 5.15, 4.33, 3.67, 3.15, 2.72, 2.36, 2.05, 1.78, 1.55, 1.35, 1.17, 1.02, 0.89, 0.0], "t_fluid_c": [35.0, 35.0, 35.0, 35.0, 35.0, 35.0, 35.0, 35.0, 35.0, 35.0, 35.0, 35.0, 35.0, 35.0, 35.0, 60.0, 60.0, 60.0, 60.0, 60.0, 60.0, 60.0, 60.0, 60.0, 60.0, 60.0, 60.0, 60.0, 60.0, 60.0, 35.0, 35.0, 35.0, 35.0, 35.0, 35.0, 35.0, 35.0, 35.0, 35.0, 35.0, 35.0, 35.0, 35.0, 35.0, 60.0, 60.0, 60.0, 60.0, 60.0, 60.0, 60.0, 60.0, 60.0, 60.0, 60.0, 60.0, 60.0, 60.0, 60.0, 35.0], "vapor_kpa": [1.817, 1.817, 1.817, 1.817, 1.817, 1.817, 1.817, 1.817, 1.817, 1.817, 1.817, 1.817, 1.817, 1.817, 1.817, 5.626, 5.626, 5.626, 5.626, 5.626, 5.626, 5.626, 5.626, 5.626, 5.626, 5.626, 5.626, 5.626, 5.626, 5.626, 1.817, 1.817, 1.817, 1.817, 1.817, 1.817, 1.817, 1.817, 1.817, 1.817, 1.817, 1.817, 1.817, 1.817, 1.817, 5.626, 5.626, 5.626, 5.626, 5.626, 5.626, 5.626, 5.626, 5.626, 5.626, 5.626, 5.626, 5.626, 5.626, 5.626, 1.817], "Qcool_cum": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -135.8, -248.9, -82.9, 55.2, 175.8, 276.4, 363.6, 439.8, 506.4, 564.8, 616.1, 661.2, 701.9, 736.7, 767.2, 793.4, 793.4, 793.4, 793.4, 793.4, 793.4, 793.4, 793.4, 793.4, 793.4, 793.4, 793.4, 793.4, 793.4, 793.4, 658.0], "Qin_cum": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 66.9, 406.0, 623.4, 805.0, 963.4, 1095.1, 1208.8, 1307.4, 1393.0, 1467.4, 1532.2, 1588.5, 1638.9, 1681.4, 1718.5, 1749.8, 1749.8, 1749.8, 1749.8, 1749.8, 1749.8, 1749.8, 1749.8, 1749.8, 1749.8, 1749.8, 1749.8, 1749.8, 1749.8, 1749.8, 1815.8, 2125.3, 2318.2, 2478.3, 2617.4, 2732.8, 2832.2, 2918.4, 2993.1, 3058.0, 3114.5, 3163.6, 3207.6, 3244.6, 3276.8, 3304.1], "qmax": 0.23339, "dqmax": 135.787, "COP": 0.513, "SCP_W_kg": 215.95, "n_cells": 8, "n_cycles": 2};
+const MS = {"t_s": [0.01, 18.82, 39.98, 58.8, 79.96, 98.77, 119.94, 138.75, 159.91, 178.73, 199.89, 218.7, 239.87, 258.68, 279.84, 298.66, 319.82, 338.63, 359.8, 378.61, 399.77, 418.59, 439.75, 458.56, 479.73, 498.54, 519.7, 538.52, 559.68, 578.49, 599.66, 618.47, 639.63, 658.45, 679.61, 698.42, 719.59, 738.4, 759.56, 778.38, 799.54, 818.35, 839.52, 858.33, 879.49, 898.3, 919.47, 938.28, 959.45, 978.26, 999.42, 1018.23, 1039.4, 1058.21, 1079.38, 1098.19, 1119.35, 1138.16, 1159.33, 1178.14, 1199.3], "x_mm": [0.125, 0.375, 0.625, 0.875, 1.125, 1.375, 1.625, 1.875], "A_T_C": [[59.9, 59.9, 59.9, 59.9, 59.9, 59.9, 59.9, 59.9], [41.3, 41.3, 41.3, 41.3, 41.3, 41.3, 41.3, 41.3], [37.7, 38.4, 39.0, 39.4, 39.7, 40.0, 40.1, 40.2], [37.2, 37.9, 38.4, 38.9, 39.2, 39.4, 39.6, 39.7], [36.9, 37.4, 37.9, 38.3, 38.6, 38.9, 39.0, 39.1], [36.6, 37.1, 37.6, 37.9, 38.2, 38.4, 38.6, 38.7], [36.4, 36.8, 37.2, 37.5, 37.8, 38.0, 38.1, 38.2], [36.2, 36.6, 36.9, 37.2, 37.5, 37.7, 37.8, 37.9], [36.1, 36.4, 36.7, 37.0, 37.2, 37.3, 37.4, 37.5], [35.9, 36.2, 36.5, 36.7, 36.9, 37.1, 37.2, 37.2], [35.8, 36.1, 36.3, 36.5, 36.7, 36.8, 36.9, 36.9], [35.7, 35.9, 36.2, 36.3, 36.5, 36.6, 36.7, 36.7], [35.6, 35.8, 36.0, 36.2, 36.3, 36.4, 36.5, 36.5], [35.6, 35.7, 35.9, 36.0, 36.1, 36.2, 36.3, 36.3], [35.5, 35.6, 35.8, 35.9, 36.0, 36.1, 36.1, 36.2], [35.4, 35.6, 35.7, 35.8, 35.9, 36.0, 36.0, 36.0], [53.9, 54.0, 54.0, 54.0, 54.1, 54.1, 54.1, 54.1], [57.4, 56.7, 56.2, 55.9, 55.6, 55.4, 55.3, 55.2], [57.9, 57.3, 56.9, 56.5, 56.2, 56.0, 55.8, 55.8], [58.3, 57.7, 57.3, 56.9, 56.6, 56.4, 56.3, 56.2], [58.5, 58.1, 57.7, 57.4, 57.1, 56.9, 56.8, 56.7], [58.7, 58.3, 58.0, 57.7, 57.4, 57.3, 57.1, 57.1], [58.9, 58.6, 58.3, 58.0, 57.8, 57.6, 57.5, 57.5], [59.1, 58.8, 58.5, 58.2, 58.1, 57.9, 57.8, 57.8], [59.2, 58.9, 58.7, 58.5, 58.3, 58.2, 58.1, 58.1], [59.3, 59.1, 58.9, 58.7, 58.5, 58.4, 58.3, 58.3], [59.4, 59.2, 59.0, 58.9, 58.7, 58.6, 58.6, 58.5], [59.5, 59.3, 59.1, 59.0, 58.9, 58.8, 58.7, 58.7], [59.5, 59.4, 59.3, 59.1, 59.0, 59.0, 58.9, 58.9], [59.6, 59.5, 59.3, 59.2, 59.2, 59.1, 59.0, 59.0], [59.6, 59.5, 59.4, 59.3, 59.3, 59.2, 59.2, 59.2], [40.8, 40.7, 40.7, 40.7, 40.7, 40.6, 40.6, 40.6], [37.4, 38.1, 38.6, 39.0, 39.2, 39.4, 39.5, 39.6], [37.0, 37.6, 38.1, 38.5, 38.7, 38.9, 39.1, 39.1], [36.7, 37.2, 37.6, 38.0, 38.3, 38.5, 38.6, 38.7], [36.5, 36.9, 37.3, 37.6, 37.9, 38.1, 38.2, 38.3], [36.2, 36.6, 37.0, 37.3, 37.5, 37.7, 37.8, 37.9], [36.1, 36.4, 36.7, 37.0, 37.2, 37.4, 37.5, 37.5], [35.9, 36.2, 36.5, 36.7, 36.9, 37.1, 37.2, 37.2], [35.8, 36.1, 36.3, 36.5, 36.7, 36.8, 36.9, 37.0], [35.7, 36.0, 36.2, 36.3, 36.5, 36.6, 36.7, 36.7], [35.6, 35.8, 36.0, 36.2, 36.3, 36.4, 36.5, 36.5], [35.6, 35.7, 35.9, 36.0, 36.2, 36.2, 36.3, 36.3], [35.5, 35.7, 35.8, 35.9, 36.0, 36.1, 36.2, 36.2], [35.4, 35.6, 35.7, 35.8, 35.9, 36.0, 36.0, 36.0], [35.4, 35.5, 35.6, 35.7, 35.8, 35.9, 35.9, 35.9], [53.9, 53.9, 53.9, 53.9, 54.0, 54.0, 54.0, 54.0], [57.4, 56.7, 56.2, 55.8, 55.5, 55.3, 55.2, 55.1], [57.9, 57.3, 56.8, 56.4, 56.1, 55.9, 55.7, 55.7], [58.2, 57.7, 57.2, 56.9, 56.6, 56.3, 56.2, 56.1], [58.5, 58.0, 57.6, 57.3, 57.0, 56.8, 56.7, 56.6], [58.7, 58.3, 57.9, 57.6, 57.4, 57.2, 57.1, 57.0], [58.9, 58.5, 58.2, 58.0, 57.7, 57.6, 57.5, 57.4], [59.0, 58.7, 58.5, 58.2, 58.0, 57.9, 57.8, 57.7], [59.2, 58.9, 58.7, 58.5, 58.3, 58.2, 58.1, 58.0], [59.3, 59.0, 58.8, 58.6, 58.5, 58.4, 58.3, 58.3], [59.4, 59.2, 59.0, 58.8, 58.7, 58.6, 58.5, 58.5], [59.5, 59.3, 59.1, 59.0, 58.9, 58.8, 58.7, 58.7], [59.5, 59.4, 59.2, 59.1, 59.0, 58.9, 58.9, 58.9], [59.6, 59.5, 59.3, 59.2, 59.1, 59.1, 59.0, 59.0], [59.6, 59.5, 59.4, 59.3, 59.3, 59.2, 59.2, 59.1]], "B_T_C": [[35.1, 35.1, 35.1, 35.1, 35.1, 35.1, 35.1, 35.1], [53.2, 53.2, 53.2, 53.2, 53.2, 53.2, 53.2, 53.2], [57.1, 56.3, 55.7, 55.2, 54.9, 54.6, 54.5, 54.4], [57.6, 56.9, 56.3, 55.8, 55.5, 55.2, 55.0, 55.0], [58.0, 57.4, 56.9, 56.4, 56.1, 55.8, 55.6, 55.6], [58.3, 57.7, 57.3, 56.9, 56.5, 56.3, 56.1, 56.1], [58.5, 58.1, 57.7, 57.3, 57.0, 56.8, 56.6, 56.6], [58.7, 58.3, 57.9, 57.6, 57.4, 57.2, 57.0, 57.0], [58.9, 58.5, 58.2, 58.0, 57.7, 57.6, 57.4, 57.4], [59.0, 58.7, 58.4, 58.2, 58.0, 57.9, 57.7, 57.7], [59.2, 58.9, 58.7, 58.5, 58.3, 58.1, 58.1, 58.0], [59.3, 59.0, 58.8, 58.6, 58.5, 58.4, 58.3, 58.2], [59.4, 59.2, 59.0, 58.8, 58.7, 58.6, 58.5, 58.5], [59.4, 59.3, 59.1, 59.0, 58.9, 58.8, 58.7, 58.7], [59.5, 59.4, 59.2, 59.1, 59.0, 58.9, 58.9, 58.9], [59.6, 59.4, 59.3, 59.2, 59.1, 59.1, 59.0, 59.0], [40.7, 40.7, 40.6, 40.6, 40.6, 40.5, 40.5, 40.5], [37.4, 38.1, 38.5, 38.9, 39.2, 39.3, 39.4, 39.5], [37.0, 37.5, 38.0, 38.3, 38.6, 38.8, 38.9, 39.0], [36.7, 37.2, 37.6, 37.9, 38.2, 38.4, 38.5, 38.6], [36.4, 36.8, 37.2, 37.5, 37.8, 38.0, 38.1, 38.2], [36.2, 36.6, 36.9, 37.2, 37.5, 37.6, 37.8, 37.8], [36.1, 36.4, 36.7, 36.9, 37.2, 37.3, 37.4, 37.5], [35.9, 36.2, 36.5, 36.7, 36.9, 37.0, 37.1, 37.2], [35.8, 36.1, 36.3, 36.5, 36.7, 36.8, 36.9, 36.9], [35.7, 35.9, 36.1, 36.3, 36.5, 36.6, 36.7, 36.7], [35.6, 35.8, 36.0, 36.2, 36.3, 36.4, 36.5, 36.5], [35.5, 35.7, 35.9, 36.0, 36.1, 36.2, 36.3, 36.3], [35.5, 35.6, 35.8, 35.9, 36.0, 36.1, 36.1, 36.2], [35.4, 35.6, 35.7, 35.8, 35.9, 36.0, 36.0, 36.0], [35.4, 35.5, 35.6, 35.7, 35.8, 35.8, 35.9, 35.9], [53.9, 53.9, 53.9, 54.0, 54.0, 54.0, 54.0, 54.0], [57.4, 56.7, 56.2, 55.8, 55.5, 55.3, 55.2, 55.1], [57.9, 57.3, 56.7, 56.4, 56.0, 55.8, 55.7, 55.6], [58.2, 57.7, 57.2, 56.9, 56.6, 56.4, 56.2, 56.1], [58.5, 58.0, 57.6, 57.3, 57.0, 56.8, 56.6, 56.6], [58.7, 58.3, 58.0, 57.6, 57.4, 57.2, 57.1, 57.0], [58.9, 58.5, 58.2, 57.9, 57.7, 57.5, 57.4, 57.4], [59.0, 58.7, 58.5, 58.2, 58.0, 57.9, 57.8, 57.7], [59.2, 58.9, 58.6, 58.4, 58.3, 58.1, 58.0, 58.0], [59.3, 59.0, 58.8, 58.7, 58.5, 58.4, 58.3, 58.3], [59.4, 59.2, 59.0, 58.8, 58.7, 58.6, 58.5, 58.5], [59.5, 59.3, 59.1, 59.0, 58.9, 58.8, 58.7, 58.7], [59.5, 59.4, 59.2, 59.1, 59.0, 58.9, 58.9, 58.8], [59.6, 59.5, 59.3, 59.2, 59.1, 59.1, 59.0, 59.0], [59.6, 59.5, 59.4, 59.3, 59.2, 59.2, 59.1, 59.1], [40.8, 40.8, 40.7, 40.7, 40.7, 40.6, 40.6, 40.6], [37.5, 38.1, 38.6, 39.0, 39.2, 39.4, 39.5, 39.6], [37.0, 37.6, 38.0, 38.4, 38.7, 38.9, 39.0, 39.1], [36.7, 37.2, 37.6, 38.0, 38.3, 38.5, 38.6, 38.7], [36.4, 36.9, 37.3, 37.6, 37.9, 38.0, 38.2, 38.2], [36.2, 36.6, 37.0, 37.3, 37.5, 37.7, 37.8, 37.9], [36.1, 36.4, 36.7, 37.0, 37.2, 37.4, 37.5, 37.5], [35.9, 36.3, 36.5, 36.8, 36.9, 37.1, 37.2, 37.2], [35.8, 36.1, 36.3, 36.5, 36.7, 36.8, 36.9, 37.0], [35.7, 36.0, 36.2, 36.4, 36.5, 36.6, 36.7, 36.7], [35.6, 35.8, 36.0, 36.2, 36.3, 36.4, 36.5, 36.5], [35.6, 35.7, 35.9, 36.0, 36.2, 36.3, 36.3, 36.3], [35.5, 35.6, 35.8, 35.9, 36.0, 36.1, 36.1, 36.2], [35.4, 35.6, 35.7, 35.8, 35.9, 36.0, 36.0, 36.0], [35.4, 35.5, 35.6, 35.7, 35.8, 35.8, 35.9, 35.9]], "A_q": [[0.1842, 0.1842, 0.1842, 0.1842, 0.1842, 0.1842, 0.1842, 0.1842], [0.1684, 0.1684, 0.1684, 0.1684, 0.1684, 0.1684, 0.1684, 0.1684], [0.1847, 0.1802, 0.177, 0.1746, 0.173, 0.1719, 0.1712, 0.1709], [0.1939, 0.1883, 0.1839, 0.1806, 0.1782, 0.1765, 0.1754, 0.1749], [0.2003, 0.1947, 0.1901, 0.1864, 0.1837, 0.1817, 0.1804, 0.1797], [0.204, 0.1988, 0.1944, 0.1908, 0.188, 0.186, 0.1846, 0.184], [0.2071, 0.2025, 0.1984, 0.1951, 0.1924, 0.1904, 0.1891, 0.1885], [0.2092, 0.2051, 0.2014, 0.1984, 0.1959, 0.194, 0.1928, 0.1921], [0.2111, 0.2075, 0.2043, 0.2015, 0.1993, 0.1976, 0.1965, 0.1959], [0.2125, 0.2093, 0.2064, 0.204, 0.202, 0.2004, 0.1994, 0.1989], [0.2139, 0.2111, 0.2086, 0.2064, 0.2046, 0.2032, 0.2023, 0.2018], [0.2149, 0.2124, 0.2102, 0.2083, 0.2067, 0.2054, 0.2046, 0.2042], [0.2159, 0.2138, 0.2118, 0.2101, 0.2087, 0.2076, 0.2069, 0.2065], [0.2167, 0.2148, 0.213, 0.2115, 0.2103, 0.2093, 0.2087, 0.2083], [0.2175, 0.2158, 0.2143, 0.213, 0.2119, 0.211, 0.2104, 0.2102], [0.2181, 0.2166, 0.2152, 0.2141, 0.2131, 0.2123, 0.2118, 0.2116], [0.234, 0.2333, 0.2326, 0.2319, 0.2313, 0.2308, 0.2304, 0.2302], [0.2189, 0.2225, 0.2249, 0.2265, 0.2275, 0.2282, 0.2285, 0.2287], [0.2089, 0.2137, 0.2174, 0.2202, 0.2222, 0.2236, 0.2245, 0.2249], [0.2036, 0.2085, 0.2124, 0.2154, 0.2178, 0.2195, 0.2206, 0.2211], [0.1998, 0.2042, 0.2079, 0.2109, 0.2133, 0.2151, 0.2162, 0.2168], [0.1973, 0.2012, 0.2047, 0.2075, 0.2098, 0.2115, 0.2126, 0.2132], [0.1952, 0.1986, 0.2017, 0.2042, 0.2063, 0.2079, 0.2089, 0.2095], [0.1938, 0.1968, 0.1994, 0.2017, 0.2036, 0.205, 0.206, 0.2065], [0.1924, 0.195, 0.1973, 0.1993, 0.201, 0.2022, 0.2031, 0.2035], [0.1913, 0.1936, 0.1957, 0.1974, 0.1989, 0.2, 0.2008, 0.2012], [0.1904, 0.1923, 0.1941, 0.1956, 0.1969, 0.1979, 0.1985, 0.1989], [0.1896, 0.1913, 0.1929, 0.1942, 0.1953, 0.1962, 0.1968, 0.1971], [0.1889, 0.1904, 0.1917, 0.1929, 0.1938, 0.1946, 0.1951, 0.1953], [0.1883, 0.1896, 0.1908, 0.1918, 0.1926, 0.1933, 0.1938, 0.194], [0.1878, 0.1889, 0.1899, 0.1908, 0.1915, 0.1921, 0.1924, 0.1926], [0.1726, 0.1731, 0.1737, 0.1743, 0.1747, 0.1751, 0.1754, 0.1755], [0.1877, 0.1839, 0.1813, 0.1796, 0.1784, 0.1776, 0.1772, 0.177], [0.1965, 0.1915, 0.1878, 0.185, 0.183, 0.1816, 0.1807, 0.1803], [0.2024, 0.1974, 0.1934, 0.1902, 0.1878, 0.1861, 0.185, 0.1845], [0.2059, 0.2012, 0.1973, 0.1942, 0.1917, 0.1899, 0.1887, 0.1882], [0.2087, 0.2046, 0.201, 0.198, 0.1956, 0.1939, 0.1927, 0.1921], [0.2106, 0.2069, 0.2037, 0.2009, 0.1987, 0.1971, 0.196, 0.1954], [0.2123, 0.2091, 0.2062, 0.2038, 0.2018, 0.2003, 0.1992, 0.1987], [0.2136, 0.2107, 0.2082, 0.206, 0.2042, 0.2028, 0.2019, 0.2014], [0.2148, 0.2123, 0.2101, 0.2081, 0.2065, 0.2053, 0.2045, 0.204], [0.2157, 0.2135, 0.2115, 0.2098, 0.2084, 0.2073, 0.2065, 0.2061], [0.2166, 0.2147, 0.2129, 0.2114, 0.2102, 0.2092, 0.2086, 0.2082], [0.2173, 0.2156, 0.2141, 0.2127, 0.2116, 0.2107, 0.2102, 0.2099], [0.218, 0.2165, 0.2152, 0.214, 0.213, 0.2123, 0.2117, 0.2115], [0.2186, 0.2172, 0.216, 0.215, 0.2141, 0.2134, 0.213, 0.2128], [0.2346, 0.234, 0.2333, 0.2327, 0.2321, 0.2317, 0.2313, 0.2312], [0.2197, 0.2232, 0.2257, 0.2274, 0.2284, 0.2291, 0.2295, 0.2297], [0.2094, 0.2144, 0.2181, 0.221, 0.223, 0.2245, 0.2254, 0.2258], [0.2041, 0.209, 0.213, 0.2161, 0.2185, 0.2202, 0.2213, 0.2219], [0.2001, 0.2046, 0.2084, 0.2115, 0.2139, 0.2157, 0.2169, 0.2175], [0.1976, 0.2016, 0.2051, 0.208, 0.2103, 0.2121, 0.2132, 0.2138], [0.1955, 0.199, 0.202, 0.2047, 0.2068, 0.2084, 0.2095, 0.21], [0.194, 0.197, 0.1998, 0.2021, 0.204, 0.2055, 0.2065, 0.207], [0.1926, 0.1952, 0.1976, 0.1996, 0.2013, 0.2026, 0.2035, 0.2039], [0.1915, 0.1938, 0.1959, 0.1977, 0.1992, 0.2004, 0.2012, 0.2016], [0.1905, 0.1925, 0.1943, 0.1959, 0.1972, 0.1982, 0.1989, 0.1992], [0.1897, 0.1915, 0.1931, 0.1944, 0.1956, 0.1965, 0.1971, 0.1974], [0.189, 0.1905, 0.1919, 0.193, 0.194, 0.1948, 0.1953, 0.1956], [0.1884, 0.1897, 0.1909, 0.192, 0.1928, 0.1935, 0.194, 0.1942], [0.1878, 0.189, 0.19, 0.1909, 0.1917, 0.1922, 0.1926, 0.1928]], "B_q": [[0.2228, 0.2228, 0.2228, 0.2228, 0.2228, 0.2228, 0.2228, 0.2228], [0.2398, 0.2398, 0.2398, 0.2398, 0.2398, 0.2398, 0.2398, 0.2398], [0.2227, 0.2273, 0.2307, 0.2332, 0.2349, 0.2361, 0.2368, 0.2372], [0.213, 0.2188, 0.2233, 0.2268, 0.2293, 0.2311, 0.2323, 0.2329], [0.2064, 0.2121, 0.2168, 0.2205, 0.2235, 0.2256, 0.2269, 0.2276], [0.2025, 0.2077, 0.2122, 0.2159, 0.2188, 0.2209, 0.2223, 0.223], [0.1994, 0.204, 0.208, 0.2114, 0.2141, 0.2161, 0.2175, 0.2182], [0.1972, 0.2013, 0.2049, 0.208, 0.2105, 0.2124, 0.2136, 0.2143], [0.1953, 0.1988, 0.202, 0.2047, 0.2069, 0.2086, 0.2097, 0.2103], [0.1939, 0.197, 0.1997, 0.2021, 0.2041, 0.2056, 0.2067, 0.2072], [0.1925, 0.1952, 0.1976, 0.1997, 0.2014, 0.2027, 0.2036, 0.2041], [0.1915, 0.1938, 0.1959, 0.1978, 0.1993, 0.2005, 0.2013, 0.2017], [0.1905, 0.1925, 0.1943, 0.1959, 0.1972, 0.1982, 0.1989, 0.1993], [0.1897, 0.1915, 0.1931, 0.1945, 0.1956, 0.1965, 0.1971, 0.1974], [0.189, 0.1905, 0.1919, 0.1931, 0.1941, 0.1948, 0.1954, 0.1956], [0.1884, 0.1897, 0.1909, 0.192, 0.1929, 0.1935, 0.194, 0.1942], [0.1731, 0.1738, 0.1744, 0.175, 0.1756, 0.176, 0.1763, 0.1765], [0.1877, 0.1842, 0.1818, 0.1802, 0.1792, 0.1785, 0.1782, 0.178], [0.1974, 0.1926, 0.1889, 0.1862, 0.1842, 0.1828, 0.182, 0.1816], [0.2026, 0.1977, 0.1938, 0.1907, 0.1884, 0.1867, 0.1857, 0.1852], [0.2065, 0.2019, 0.1981, 0.1951, 0.1927, 0.1909, 0.1898, 0.1892], [0.2089, 0.2048, 0.2013, 0.1984, 0.1961, 0.1944, 0.1932, 0.1927], [0.211, 0.2074, 0.2043, 0.2016, 0.1995, 0.1978, 0.1968, 0.1962], [0.2125, 0.2093, 0.2065, 0.2041, 0.2021, 0.2006, 0.1996, 0.1991], [0.2139, 0.2111, 0.2086, 0.2065, 0.2047, 0.2034, 0.2025, 0.202], [0.2149, 0.2125, 0.2103, 0.2083, 0.2068, 0.2056, 0.2048, 0.2043], [0.216, 0.2138, 0.2119, 0.2102, 0.2088, 0.2077, 0.207, 0.2066], [0.2167, 0.2148, 0.2131, 0.2116, 0.2104, 0.2094, 0.2088, 0.2085], [0.2175, 0.2158, 0.2143, 0.213, 0.2119, 0.2111, 0.2105, 0.2103], [0.2181, 0.2166, 0.2153, 0.2141, 0.2132, 0.2124, 0.2119, 0.2117], [0.2187, 0.2174, 0.2162, 0.2152, 0.2144, 0.2137, 0.2133, 0.2131], [0.2346, 0.2339, 0.2333, 0.2326, 0.2321, 0.2316, 0.2313, 0.2311], [0.2189, 0.2227, 0.2253, 0.2271, 0.2283, 0.229, 0.2294, 0.2296], [0.2099, 0.2148, 0.2186, 0.2214, 0.2234, 0.2248, 0.2257, 0.2261], [0.2038, 0.2087, 0.2127, 0.2159, 0.2183, 0.2201, 0.2212, 0.2217], [0.2003, 0.2048, 0.2086, 0.2118, 0.2142, 0.2161, 0.2172, 0.2178], [0.1975, 0.2015, 0.2049, 0.2079, 0.2102, 0.2119, 0.2131, 0.2137], [0.1956, 0.1991, 0.2022, 0.2049, 0.207, 0.2086, 0.2097, 0.2103], [0.1939, 0.1969, 0.1997, 0.202, 0.2039, 0.2054, 0.2064, 0.2069], [0.1926, 0.1953, 0.1977, 0.1998, 0.2015, 0.2028, 0.2037, 0.2041], [0.1915, 0.1938, 0.1958, 0.1976, 0.1991, 0.2003, 0.2011, 0.2015], [0.1906, 0.1926, 0.1944, 0.196, 0.1973, 0.1983, 0.199, 0.1994], [0.1897, 0.1914, 0.193, 0.1944, 0.1955, 0.1964, 0.197, 0.1973], [0.189, 0.1905, 0.1919, 0.1931, 0.1941, 0.1949, 0.1954, 0.1957], [0.1884, 0.1897, 0.1909, 0.1919, 0.1928, 0.1934, 0.1939, 0.1941], [0.1879, 0.189, 0.1901, 0.191, 0.1917, 0.1923, 0.1927, 0.1929], [0.1725, 0.1731, 0.1736, 0.1742, 0.1747, 0.175, 0.1753, 0.1754], [0.187, 0.1834, 0.1809, 0.1793, 0.1782, 0.1775, 0.1771, 0.1769], [0.1969, 0.1919, 0.1882, 0.1854, 0.1833, 0.1819, 0.1811, 0.1806], [0.2022, 0.1972, 0.1931, 0.19, 0.1876, 0.1859, 0.1848, 0.1843], [0.2061, 0.2015, 0.1976, 0.1945, 0.192, 0.1902, 0.189, 0.1885], [0.2086, 0.2044, 0.2008, 0.1979, 0.1955, 0.1937, 0.1926, 0.192], [0.2107, 0.2071, 0.2038, 0.2011, 0.1989, 0.1973, 0.1962, 0.1956], [0.2123, 0.209, 0.2061, 0.2036, 0.2016, 0.2001, 0.1991, 0.1986], [0.2137, 0.2108, 0.2083, 0.2061, 0.2043, 0.203, 0.202, 0.2016], [0.2148, 0.2122, 0.21, 0.208, 0.2064, 0.2052, 0.2044, 0.2039], [0.2158, 0.2136, 0.2116, 0.2099, 0.2085, 0.2074, 0.2067, 0.2063], [0.2166, 0.2147, 0.2129, 0.2114, 0.2101, 0.2091, 0.2085, 0.2081], [0.2174, 0.2157, 0.2141, 0.2128, 0.2117, 0.2108, 0.2103, 0.21], [0.218, 0.2165, 0.2151, 0.2139, 0.2129, 0.2122, 0.2117, 0.2114], [0.2186, 0.2173, 0.2161, 0.215, 0.2142, 0.2135, 0.2131, 0.2128]], "sys_phase": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0], "A_phase": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0], "B_phase": [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1], "A_dq": [-132.27, -3.53, 6.78, 5.56, 4.65, 3.98, 3.44, 2.99, 2.61, 2.29, 2.01, 1.76, 1.54, 1.36, 1.19, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -135.66, -3.94, 6.11, 4.99, 4.16, 3.56, 3.07, 2.67, 2.33, 2.04, 1.79, 1.57, 1.38, 1.21, 1.07, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -135.01], "B_dq": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -136.7, -4.01, 5.98, 4.88, 4.07, 3.48, 3.0, 2.61, 2.28, 2.0, 1.75, 1.54, 1.35, 1.18, 1.04, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -135.38, -3.95, 6.09, 4.97, 4.15, 3.55, 3.06, 2.66, 2.32, 2.04, 1.79, 1.57, 1.37, 1.21, 1.06, 0.0], "q_rec": [1250.0, -592.1, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -1172.1, 672.1, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1175.3, -660.9, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -1166.1, 662.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1158.6], "A_fluid_c": [35.0, 35.0, 35.0, 35.0, 35.0, 35.0, 35.0, 35.0, 35.0, 35.0, 35.0, 35.0, 35.0, 35.0, 35.0, 60.0, 60.0, 60.0, 60.0, 60.0, 60.0, 60.0, 60.0, 60.0, 60.0, 60.0, 60.0, 60.0, 60.0, 60.0, 35.0, 35.0, 35.0, 35.0, 35.0, 35.0, 35.0, 35.0, 35.0, 35.0, 35.0, 35.0, 35.0, 35.0, 35.0, 60.0, 60.0, 60.0, 60.0, 60.0, 60.0, 60.0, 60.0, 60.0, 60.0, 60.0, 60.0, 60.0, 60.0, 60.0, 35.0], "B_fluid_c": [60.0, 60.0, 60.0, 60.0, 60.0, 60.0, 60.0, 60.0, 60.0, 60.0, 60.0, 60.0, 60.0, 60.0, 60.0, 35.0, 35.0, 35.0, 35.0, 35.0, 35.0, 35.0, 35.0, 35.0, 35.0, 35.0, 35.0, 35.0, 35.0, 35.0, 60.0, 60.0, 60.0, 60.0, 60.0, 60.0, 60.0, 60.0, 60.0, 60.0, 60.0, 60.0, 60.0, 60.0, 60.0, 35.0, 35.0, 35.0, 35.0, 35.0, 35.0, 35.0, 35.0, 35.0, 35.0, 35.0, 35.0, 35.0, 35.0, 35.0, 60.0], "A_vapor_kpa": [1.82, 1.82, 1.82, 1.82, 1.82, 1.82, 1.82, 1.82, 1.82, 1.82, 1.82, 1.82, 1.82, 1.82, 1.82, 5.63, 5.63, 5.63, 5.63, 5.63, 5.63, 5.63, 5.63, 5.63, 5.63, 5.63, 5.63, 5.63, 5.63, 5.63, 1.82, 1.82, 1.82, 1.82, 1.82, 1.82, 1.82, 1.82, 1.82, 1.82, 1.82, 1.82, 1.82, 1.82, 1.82, 5.63, 5.63, 5.63, 5.63, 5.63, 5.63, 5.63, 5.63, 5.63, 5.63, 5.63, 5.63, 5.63, 5.63, 5.63, 1.82], "B_vapor_kpa": [5.63, 5.63, 5.63, 5.63, 5.63, 5.63, 5.63, 5.63, 5.63, 5.63, 5.63, 5.63, 5.63, 5.63, 5.63, 1.82, 1.82, 1.82, 1.82, 1.82, 1.82, 1.82, 1.82, 1.82, 1.82, 1.82, 1.82, 1.82, 1.82, 1.82, 5.63, 5.63, 5.63, 5.63, 5.63, 5.63, 5.63, 5.63, 5.63, 5.63, 5.63, 5.63, 5.63, 5.63, 5.63, 1.82, 1.82, 1.82, 1.82, 1.82, 1.82, 1.82, 1.82, 1.82, 1.82, 1.82, 1.82, 1.82, 1.82, 1.82, 5.63], "evap_lvl": [1.0, 1.0, 0.9826, 0.9676, 0.9547, 0.9441, 0.935, 0.9271, 0.9202, 0.9142, 0.9089, 0.9043, 0.9001, 0.8966, 0.8934, 0.8908, 0.8908, 0.8755, 0.8622, 0.851, 0.8417, 0.8338, 0.8269, 0.8209, 0.8156, 0.811, 0.807, 0.8033, 0.8002, 0.7975, 0.7952, 0.7952, 0.7796, 0.766, 0.7545, 0.7451, 0.7369, 0.7299, 0.7237, 0.7184, 0.7137, 0.7095, 0.7058, 0.7026, 0.6998, 0.6975, 0.6975, 0.6819, 0.6684, 0.6569, 0.6475, 0.6394, 0.6323, 0.6262, 0.6209, 0.6162, 0.6121, 0.6083, 0.6052, 0.6024, 0.6], "cond_lvl": [0.3, 0.3, 0.3174, 0.3324, 0.3453, 0.3559, 0.365, 0.3729, 0.3798, 0.3858, 0.3911, 0.3957, 0.3999, 0.4034, 0.4066, 0.4092, 0.4092, 0.4245, 0.4378, 0.449, 0.4583, 0.4662, 0.4731, 0.4791, 0.4844, 0.489, 0.493, 0.4967, 0.4998, 0.5025, 0.5048, 0.5048, 0.5204, 0.534, 0.5455, 0.5549, 0.5631, 0.5701, 0.5763, 0.5816, 0.5863, 0.5905, 0.5942, 0.5974, 0.6002, 0.6025, 0.6025, 0.6181, 0.6316, 0.6431, 0.6525, 0.6606, 0.6677, 0.6738, 0.6791, 0.6838, 0.6879, 0.6917, 0.6948, 0.6976, 0.7], "Qcool_cum": [-132.3, -39504.6, -21898.0, -6259.7, 7085.6, 18060.9, 27500.0, 35685.1, 42820.1, 49060.2, 54529.4, 59329.7, 63662.7, 67355.6, 70603.3, 73322.6, 32077.1, 47515.0, 61279.4, 72977.3, 82573.8, 90815.4, 97956.8, 104179.7, 109621.5, 114391.0, 118577.5, 122356.8, 125578.2, 128411.5, 130630.6, 89786.0, 105568.8, 119622.6, 131575.4, 141385.5, 149812.7, 157115.9, 163480.3, 169046.1, 173924.3, 178206.1, 182071.4, 185366.1, 188263.8, 190403.1, 149653.4, 165404.2, 179420.5, 191340.5, 201123.1, 209526.5, 216809.1, 223155.4, 228705.3, 233569.6, 237839.3, 241693.6, 244978.9, 247868.4, 249864.5], "segs": [[0.0, 0.2495, 0], [0.25, 0.4995, 1], [0.5, 0.7495, 0], [0.75, 0.9995, 1], [1.0, 1.0, 0]], "qmax": 0.2398, "dqmax": 136.696, "recmax": 1250.0, "COP": 0.4601, "SCP_W_kg": 195.6, "gain": -0.061, "Q_rec_kJ_m2": 50.29, "t_rec_s": 20.0, "ua": 50.0, "n_cells": 8, "n_cycles": 2};
+
+
+function inferno(f) {
+  f = Math.min(Math.max(f, 0), 1);
+  const stops = [[13,13,31],[59,15,112],[140,29,64],[199,92,20],[249,200,70]];
+  const x = f * (stops.length - 1), i = Math.min(Math.floor(x), stops.length - 2), t = x - i;
+  const c = stops[i].map((v, k) => Math.round(v + t * (stops[i + 1][k] - v)));
+  return "rgb(" + c[0] + "," + c[1] + "," + c[2] + ")";
+}
+function fluidCol(tC, lo, hi) {
+  const f = Math.min(Math.max((tC - lo) / Math.max(hi - lo, 1e-9), 0), 1);
+  const cold = [56,189,248], mid = [100,116,139], hot = [249,115,22];
+  const a = f < 0.5 ? [cold, mid, f * 2] : [mid, hot, (f - 0.5) * 2];
+  const c = a[0].map((v, k) => Math.round(v + a[2] * (a[1][k] - v)));
+  return "rgb(" + c[0] + "," + c[1] + "," + c[2] + ")";
+}
+function valve(key, open) {
+  const g = document.getElementById(key);
+  const h = document.getElementById(key + "-h");
+  const y = parseFloat(g.querySelector("line").getAttribute("y1"));
+  h.setAttribute("y2", open ? y - 14 : y);
+  h.setAttribute("stroke", open ? "#22c55e" : "#f87171");
+  h.setAttribute("transform", open ? "" : "rotate(80 " + g.querySelector("line").getAttribute("x1") + " " + y + ")");
+}
+function drawBedX(i) {
+  const B = BX, T = B.T_C[i], Q = B.q[i], ads = B.phase[i] === 0;
+  const tLo = Math.min(...B.T_C.flat()), tHi = Math.max(...B.T_C.flat());
+  for (let k = 0; k < T.length; k++) {
+    document.getElementById("bx-cell-" + k).setAttribute("fill", inferno((T[k] - tLo) / Math.max(tHi - tLo, 1e-9)));
+    const n = Math.round(6 * Q[k] / B.qmax);
+    for (let d = 0; d < 6; d++)
+      document.getElementById("bx-qd-" + k + "-" + d).setAttribute("visibility", d < n ? "visible" : "hidden");
+  }
+  document.getElementById("bx-fluid").setAttribute("fill", fluidCol(B.t_fluid_c[i], PROFILE.t_fluid_min_c, PROFILE.t_fluid_max_c));
+  document.getElementById("bx-flab").textContent = B.t_fluid_c[i].toFixed(0) + " °C HTF";
+  const badge = document.getElementById("bx-badge");
+  badge.textContent = ads ? "● ADSORBING" : "● DESORBING";
+  badge.setAttribute("fill", ads ? "#06b6d4" : "#f59e0b");
+  const conn = document.getElementById("bx-conn");
+  conn.textContent = ads ? "← evaporator · " + B.vapor_kpa[i].toFixed(2) + " kPa" : "→ condenser · " + B.vapor_kpa[i].toFixed(2) + " kPa";
+  const fl = document.getElementById("bx-flow");
+  fl.setAttribute("class", ads ? "flow-rev" : "flow");
+  const n = Math.round(12 * Math.abs(B.dq_cool[i]) / B.dqmax);
+  for (let d = 0; d < 12; d++) {
+    const el = document.getElementById("bx-vd-" + d);
+    if (d < n) {
+      const x = ads ? 648 - d * 13 : 492 + d * 13;
+      el.setAttribute("cx", x); el.setAttribute("cy", 150 + ((d * 37) % 5 - 2) * 6);
+      el.setAttribute("visibility", "visible");
+    } else el.setAttribute("visibility", "hidden");
+  }
+  const qMax = Math.max(...B.Qcool_cum), iMax = Math.max(...B.Qin_cum);
+  document.getElementById("bx-qcool").setAttribute("width", 200 * B.Qcool_cum[i] / Math.max(qMax, 1e-9));
+  document.getElementById("bx-qin").setAttribute("width", 200 * B.Qin_cum[i] / Math.max(iMax, 1e-9));
+  document.getElementById("bx-qcool-lab").textContent = (B.Qcool_cum[i] / 1000).toFixed(1) + " kJ/kg";
+  document.getElementById("bx-qin-lab").textContent = (B.Qin_cum[i] / 1000).toFixed(1) + " kJ/kg";
+  document.getElementById("bx-t").textContent = "t = " + B.t_s[i].toFixed(1) + " s";
+}
+function bedCells(p, T, Q, M) {
+  const tLo = Math.min(...M.A_T_C.flat(), ...M.B_T_C.flat());
+  const tHi = Math.max(...M.A_T_C.flat(), ...M.B_T_C.flat());
+  for (let k = 0; k < T.length; k++)
+    document.getElementById(p + "-cell-" + k).setAttribute("fill", inferno((T[k] - tLo) / Math.max(tHi - tLo, 1e-9)));
+  const qm = Q.reduce((a, b) => a + b, 0) / Q.length;
+  document.getElementById(p + "-qbar").setAttribute("width", 244 * qm / M.qmax);
+}
+function drawMachine(i) {
+  const M = MS, adsA = M.A_phase[i] === 0, adsB = M.B_phase[i] === 0;
+  bedCells("mA", M.A_T_C[i], M.A_q[i], M);
+  bedCells("mB", M.B_T_C[i], M.B_q[i], M);
+  const bA = document.getElementById("mA-badge"), bB = document.getElementById("mB-badge");
+  bA.textContent = adsA ? "● ADSORB" : "● DESORB"; bA.setAttribute("fill", adsA ? "#06b6d4" : "#f59e0b");
+  bB.textContent = adsB ? "● ADSORB" : "● DESORB"; bB.setAttribute("fill", adsB ? "#06b6d4" : "#f59e0b");
+  document.getElementById("mA-fluid").setAttribute("fill", fluidCol(M.A_fluid_c[i], PROFILE.t_fluid_min_c, PROFILE.t_fluid_max_c));
+  document.getElementById("mB-fluid").setAttribute("fill", fluidCol(M.B_fluid_c[i], PROFILE.t_fluid_min_c, PROFILE.t_fluid_max_c));
+  document.getElementById("mA-flab").textContent = M.A_fluid_c[i].toFixed(0) + " °C";
+  document.getElementById("mB-flab").textContent = M.B_fluid_c[i].toFixed(0) + " °C";
+  document.getElementById("mA-vlab").textContent = "P " + M.A_vapor_kpa[i].toFixed(2) + " kPa · q̄ " + (M.A_q[i].reduce((a,b)=>a+b,0)/M.A_q[i].length).toFixed(3);
+  document.getElementById("mB-vlab").textContent = "P " + M.B_vapor_kpa[i].toFixed(2) + " kPa · q̄ " + (M.B_q[i].reduce((a,b)=>a+b,0)/M.B_q[i].length).toFixed(3);
+  valve("mV-AE", adsA); valve("mV-AC", !adsA); valve("mV-BE", adsB); valve("mV-BC", !adsB);
+  const show = (id, on, rev) => {
+    const el = document.getElementById(id);
+    el.setAttribute("visibility", on ? "visible" : "hidden");
+    if (on) el.setAttribute("class", rev ? "flow-rev" : "flow");
+  };
+  const fA = Math.abs(M.A_dq[i]) / M.dqmax, fB = Math.abs(M.B_dq[i]) / M.dqmax;
+  show("mF-AE", adsA && fA > 0.02, true); show("mF-AC", !adsA && fA > 0.02, false);
+  show("mF-BE", adsB && fB > 0.02, true); show("mF-BC", !adsB && fB > 0.02, false);
+  const rec = document.getElementById("m-rec");
+  rec.setAttribute("opacity", 0.15 + 0.85 * Math.abs(M.q_rec[i]) / M.recmax);
+  rec.setAttribute("stroke-width", 2 + 5 * Math.abs(M.q_rec[i]) / M.recmax);
+  document.getElementById("m-rec-lab").textContent = "heat recovery " + Math.abs(M.q_rec[i]).toFixed(0) + " W/m²";
+  const setLvl = (id, f) => {
+    const el = document.getElementById(id), H = 60, y0 = 340;
+    el.setAttribute("y", y0 + H * (1 - f)); el.setAttribute("height", H * f);
+  };
+  setLvl("m-evap-lvl", M.evap_lvl[i]); setLvl("m-cond-lvl", M.cond_lvl[i]);
+  document.getElementById("m-evap-lab").textContent = PROFILE.t_evap_c.toFixed(0) + " °C · " + Math.round(100 * M.evap_lvl[i]) + "%";
+  document.getElementById("m-cond-lab").textContent = PROFILE.t_cond_c.toFixed(0) + " °C · " + Math.round(100 * M.cond_lvl[i]) + "%";
+  document.getElementById("m-cop").textContent = M.COP.toFixed(3);
+  document.getElementById("m-scp").textContent = M.SCP_W_kg.toFixed(0) + " W/kg";
+  const g = document.getElementById("m-gain");
+  g.textContent = (M.gain >= 0 ? "+" : "") + M.gain.toFixed(4);
+  g.setAttribute("fill", M.gain >= 0 ? "#22c55e" : "#f87171");
+  document.getElementById("m-gain-note").textContent = M.gain >= 0 ? "(recovery pays here)" : "(transient-bound: recovery hurts here — DESIGN §4.3)";
+  const qcMax = Math.max(...M.Qcool_cum);
+  document.getElementById("m-qcool").setAttribute("width", 300 * M.Qcool_cum[i] / Math.max(qcMax, 1e-9));
+  document.getElementById("m-qcool-lab").textContent = (M.Qcool_cum[i] / 1000).toFixed(1) + " kJ/kg";
+  const head = document.getElementById("m-head");
+  const x = 40 + 640 * (M.t_s[i] / M.t_s[M.t_s.length - 1]);
+  head.setAttribute("x1", x); head.setAttribute("x2", x);
+  document.getElementById("m-t").textContent = "t = " + M.t_s[i].toFixed(1) + " s · σ=" + M.sys_phase[i] + (M.sys_phase[i] === 0 ? " (A adsorbs)" : " (B adsorbs)");
+}
+function initDesign() {
+  const g = document.getElementById("m-track");
+  if (g && typeof MS !== "undefined") {
+    MS.segs.forEach(([f0, f1, s]) => {
+      const r = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+      r.setAttribute("x", 40 + 640 * f0); r.setAttribute("y", 224);
+      r.setAttribute("width", Math.max(640 * (f1 - f0), 2)); r.setAttribute("height", 10);
+      r.setAttribute("fill", s === 0 ? "#06b6d4" : "#f59e0b"); r.setAttribute("opacity", "0.55");
+      g.appendChild(r);
+    });
+  }
+  const bs = document.getElementById("bx-slider"), ms = document.getElementById("m-slider");
+  if (bs) bs.addEventListener("input", (e) => drawBedX(parseInt(e.target.value, 10)));
+  if (ms) ms.addEventListener("input", (e) => drawMachine(parseInt(e.target.value, 10)));
+  const wire = (btn, slider, fn) => {
+    let playing = false, timer = null;
+    document.getElementById(btn).addEventListener("click", () => {
+      playing = !playing; document.getElementById(btn).textContent = playing ? "⏸ pause" : "▶ play";
+      if (playing) timer = setInterval(() => {
+        const el = document.getElementById(slider), n = el.max * 1;
+        el.value = (parseInt(el.value, 10) + 1) % (n + 1); fn(parseInt(el.value, 10));
+      }, 140);
+      else clearInterval(timer);
+    });
+  };
+  if (document.getElementById("bx-play")) wire("bx-play", "bx-slider", drawBedX);
+  if (document.getElementById("m-play")) wire("m-play", "m-slider", drawMachine);
+  if (typeof BX !== "undefined") drawBedX(0);
+  if (typeof MS !== "undefined") drawMachine(0);
+}
+
+
+const $ = (id) => document.getElementById(id);
+const fmt = (v, d=3) => Number(v).toFixed(d);
+function currentMaterial() { return MATERIALS[$("mat-select").value]; }
+function outOfWindow(m) {
+  const lo = parseFloat(m.t_window_c.split("-")[0]), hi = parseFloat(m.t_window_c.split("-")[1]);
+  return (PROFILE.t_des_c > hi || PROFILE.t_cond_c < lo);
+}
+function updateCycle() {
+  const m = currentMaterial();
+  const hx = parseFloat($("hx-slider").value), cyc = parseFloat($("cyc-slider").value);
+  $("hx-val").textContent = fmt(hx, 2); $("cyc-val").textContent = fmt(cyc, 0) + " s";
+  const c = cycle(m, PROFILE, hx, cyc), s = scoreOf(c, PROFILE);
+  $("sch-T_evap").textContent = fmt(PROFILE.t_evap_c, 1) + " °C";
+  $("sch-P_evap").textContent = fmt(c.pE / 1000, 2) + " kPa · h_fg " + fmt(c.hfg / 1e6, 2) + " MJ/kg";
+  $("sch-T_ads").textContent = fmt(PROFILE.t_cond_c, 1) + " °C (bed)";
+  $("sch-T_des").textContent = fmt(PROFILE.t_des_c, 1) + " °C (bed)";
+  $("sch-P_cond").textContent = fmt(c.pCd / 1000, 2) + " kPa";
+  $("sch-q_ads").textContent = "q* = " + fmt(c.qA, 4) + " kg/kg";
+  $("sch-q_des").textContent = "q* = " + fmt(c.qD, 4) + " kg/kg";
+  $("sch-dq").textContent = "Δq = " + fmt(c.dq, 4) + " kg/kg";
+  $("sch-qcool").textContent = fmt(c.qc / 1000, 1) + " kJ/kg";
+  $("sch-qin").textContent = fmt(c.qin / 1000, 1) + " kJ/kg";
+  $("sch-cop").textContent = fmt(c.COP, 3); $("sch-scp").textContent = fmt(c.SCP, 0) + " W/kg";
+  $("sch-score").textContent = fmt(s, 3);
+  const oow = outOfWindow(m);
+  $("sch-oow").textContent = oow ? "· OUT-OF-WINDOW (extrapolated)" : "";
+  $("sch-oow").setAttribute("fill", oow ? "#f87171" : "#22c55e");
+  drawIsotherm(m, c);
+  document.querySelectorAll("#rank-table tr[data-mat]").forEach((tr) => {
+    tr.style.background = tr.dataset.mat === $("mat-select").value ? "#223042" : "";
+  });
+}
+function xLog(p, lo, hi, ox, pw) { return ox + pw * (Math.log(p) - Math.log(lo)) / (Math.log(hi) - Math.log(lo)); }
+function yLin(v, lo, hi, oy, ph) { return oy + ph * (1 - (v - lo) / (hi - lo)); }
+function drawIsotherm(m, c) {
+  const W = 720, ox = 56, oy = 40, pw = W - 76, ph = 200;
+  const lo = Math.min(c.pE, c.pCd) * 0.1, hi = Math.max(c.pE, c.pCd) * 1.3;
+  let qmax = 0; const ptsA = [], ptsD = [];
+  for (let i = 0; i <= 60; i++) {
+    const p = lo * Math.pow(hi / lo, i / 60);
+    const a = daUptake(PROFILE.t_cond_c + 273.15, p, m.q_sat_kg_kg, m.e_char_j_mol, m.n_da);
+    const d = daUptake(PROFILE.t_des_c + 273.15, p, m.q_sat_kg_kg, m.e_char_j_mol, m.n_da);
+    qmax = Math.max(qmax, a, d); ptsA.push([p, a]); ptsD.push([p, d]);
+  }
+  qmax *= 1.1;
+  const path = (pts) => pts.map(([p, q], i) =>
+    (i ? "L" : "M") + xLog(p, lo, hi, ox, pw).toFixed(1) + "," + yLin(q, 0, qmax, oy, ph).toFixed(1)).join(" ");
+  $("iso-a").setAttribute("d", path(ptsA)); $("iso-b").setAttribute("d", path(ptsD));
+  const g = $("iso-pts"); g.innerHTML = "";
+  [[c.pE, c.qA, "#f59e0b"], [c.pCd, c.qD, "#06b6d4"]].forEach(([p, q]) => {
+    const el = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+    el.setAttribute("cx", xLog(p, lo, hi, ox, pw)); el.setAttribute("cy", yLin(q, 0, qmax, oy, ph));
+    el.setAttribute("r", 5); el.setAttribute("fill", "#fff");
+    g.appendChild(el);
+  });
+  const lg = $("iso-legend"); lg.innerHTML = "";
+  [["T_ads = " + PROFILE.t_cond_c + " °C", "#f59e0b"], ["T_des = " + PROFILE.t_des_c + " °C", "#06b6d4"]].forEach(([t, col], i) => {
+    const el = document.createElementNS("http://www.w3.org/2000/svg", "text");
+    el.setAttribute("x", 560); el.setAttribute("y", 56 + 18 * i);
+    el.setAttribute("fill", col); el.setAttribute("font-size", 11); el.textContent = t;
+    lg.appendChild(el);
+  });
+}
+function init() {
+  $("mat-select").addEventListener("change", updateCycle);
+  $("hx-slider").addEventListener("input", updateCycle);
+  $("cyc-slider").addEventListener("input", updateCycle);
+  document.querySelectorAll("#rank-table tr[data-mat]").forEach((tr) => {
+    tr.addEventListener("click", () => { $("mat-select").value = tr.dataset.mat; updateCycle(); });
+    tr.style.cursor = "pointer";
+  });
+  updateCycle();
+}
+document.addEventListener("DOMContentLoaded", init);
+
+</script>
+</body>
+</html>

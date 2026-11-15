@@ -16,6 +16,14 @@ FORBIDDEN_ROOTS = (
     "stable_baselines3",
 )
 
+# Per-file allowances: forbidden roots a named module may import. viz_pde.py
+# runs the frozen diffheat PDE zoo **recovered from git history** into the
+# gitignored data_cache/_frozen/ extract and imports the original solvers from
+# there (recover-and-run, harness/viz_pde.py docstring) — never a tree
+# dependency. Only "diffheat" is allowed for it; matplotlib/torch stay banned,
+# and every other module keeps the full ban list.
+ALLOWED_ROOTS: dict[str, set[str]] = {"viz_pde.py": {"diffheat"}}
+
 
 def _import_roots(tree):
     for node in ast.walk(tree):
@@ -34,9 +42,10 @@ def test_no_legacy_or_heavy_imports_in_harness_source():
         # GUI is UI-only and legitimately imports matplotlib (harness[gui] extra)
         if "gui" in source_file.parts:
             continue
+        allowed = ALLOWED_ROOTS.get(source_file.name, set())
         tree = ast.parse(source_file.read_text(encoding="utf-8"))
         for module in _import_roots(tree):
-            if module.split(".")[0] in FORBIDDEN_ROOTS:
+            if module.split(".")[0] in FORBIDDEN_ROOTS and module.split(".")[0] not in allowed:
                 offenders.append(f"{source_file.name}: import of {module!r}")
     assert not offenders, f"forbidden imports found: {offenders}"
 

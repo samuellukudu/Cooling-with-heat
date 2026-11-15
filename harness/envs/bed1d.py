@@ -116,7 +116,7 @@ OBS_SENSORS = (
     Sensor("P_over_P_evap", "-", 0.0, 60.0),
     Sensor("time_in_phase_over_t_switch", "-", 0.0, 2.0),
     Sensor("T_fluid", "K", 250.0, 450.0),
-    Sensor("Q_cool_cum", "J/kg", 0.0, 1.0e8),
+    Sensor("Q_cool_cum", "J/kg", -1.0e8, 1.0e8),
     Sensor("Q_in_cum", "J/kg", 0.0, 1.0e8),
 )
 
@@ -322,7 +322,8 @@ class Bed1D:
                  controls: Mapping[str, float] | None = None) -> dict[str, float]:
         return {k: float(v) for k, v in self.metrics_jax(design, controls).items()}
 
-    def rollout(self, design=None, controls=None, *, n_steps: int = 1) -> EpisodeTrace:
+    def rollout(self, design=None, controls=None, *, n_steps: int = 1,
+                collect_fields: bool = False) -> EpisodeTrace:
         del n_steps  # episode length is n_cycles of the profile (§5.2)
         merged = self.design_space.merge(design)
         ctrl = {**self.default_controls(), **(controls or {})}
@@ -334,6 +335,7 @@ class Bed1D:
             dt_s=self.dt_phys_s,
             n_cycles=self.n_cycles,
             collect_trace=True,
+            collect_fields=collect_fields,
             vapor_void_m3_m2=self.vapor_void_m3_m2,
             vapor_tau_s=self.vapor_tau_s,
             valve_closed=self.valve_closed,
@@ -342,7 +344,10 @@ class Bed1D:
         )
         summary = {k: float(v) for k, v in out["summary"].items()}
         series = {k: np.asarray(v) for k, v in (out["series"] or {}).items()}
-        return EpisodeTrace(series=series, summary=summary)
+        fields = None
+        if out.get("fields") is not None:
+            fields = {k: np.asarray(v) for k, v in out["fields"].items()}
+        return EpisodeTrace(series=series, summary=summary, fields=fields)
 
     # -- dynamic face (numpy boundary) -------------------------------------
 
@@ -616,12 +621,15 @@ class Bed1DGymEnv(gym.Env):
     """Gymnasium wrapper around :class:`Bed1D` (numpy boundary, §5.2).
 
     Separate from the Problem class so the harness ``spec`` (a
-    ProblemSpec) never collides with ``gym.Env.spec``.
+    ProblemSpec) never collides with ``gym.Env.spec``. ``render()``
+    returns an ``rgb_array`` hydrogym-style field frame of the current
+    bed state (call ``reset()`` first).
     """
 
-    metadata = {"render_modes": []}
+    metadata = {"render_modes": ["rgb_array"]}
 
-    def __init__(self, **kwargs):
+    def __init__(self, render_mode: str | None = None, **kwargs):
+        self.render_mode = render_mode
         self._env = Bed1D(**kwargs)
 
     @property
@@ -635,6 +643,25 @@ class Bed1DGymEnv(gym.Env):
 
     def step(self, action):
         return self._env.step(action)
+
+    def render(self):
+        """Current bed ``(T(x), q(x))`` as an ``rgb_array`` frame."""
+        from .. import viz as viz_mod  # noqa: PLC0415 (lazy: no mpl at import)
+        from ..physics import bed1d as bed1d_phys  # noqa: PLC0415
+
+        if self._env._carry is None:
+            raise RuntimeError("call reset() before render()")
+        c = self._env._carry
+        n = self._env.n_cells
+        L = float(self._env.design_space.defaults["L_m"])
+        x_m = (np.arange(n, dtype=np.float64) + 0.5) * L / n
+        return viz_mod.bed_frame(
+            np.asarray(c[bed1d_phys._CARRY_T], dtype=float),
+            np.asarray(c[bed1d_phys._CARRY_Q], dtype=float),
+            x_m,
+            title=f"Bed1D-v0 {self._env.profile.name}",
+            t_s=float(c[bed1d_phys._CARRY_T_ABS]),
+        )
 
     @property
     def observation_space(self) -> gym.spaces.Box:

@@ -81,6 +81,7 @@ class GradientBackend:
         n_starts: int = 3,
         n_steps: int = 400,
         step_size: float = 0.05,
+        progress: Any | None = None,
     ) -> OptimizeResult:
         validate_problem(problem)
         del budget  # budget = n_starts × n_steps for this backend
@@ -124,6 +125,9 @@ class GradientBackend:
                 history.append({"objective": value_f, **unit_to_design(np.asarray(x))})
                 if value_f > best_obj:
                     best_obj, best_x = value_f, np.array(x)
+                if progress is not None and n_evals % 25 == 0:
+                    progress({"kind": "history", "objective": value_f,
+                              "eval": n_evals, "best": float(best_obj)})
                 updates, opt_state = optimizer.update(grad, opt_state, x)
                 # optax transforms minimize: their updates are meant to be
                 # ADDED for descent, so subtract them to ascend the objective.
@@ -164,6 +168,7 @@ class SearchBackend:
         budget: int | None = None,
         seed: int = 0,
         sigma0: float | None = None,
+        progress: Any | None = None,
     ) -> OptimizeResult:
         validate_problem(problem)
         keys = problem.design_space.keys
@@ -180,14 +185,23 @@ class SearchBackend:
 
         history: list[dict[str, Any]] = []
         n_evals = 0
+        best_seen = -np.inf
 
         def score(x01: np.ndarray) -> float:
-            nonlocal n_evals
+            nonlocal n_evals, best_seen
             n_evals += 1
             metrics = problem.evaluate(unit_to_design(np.asarray(x01)))
             value = float(objective_value(objective, metrics))
             if len(history) < 2000:
                 history.append({"objective": value, **unit_to_design(np.asarray(x01))})
+            if value > best_seen:
+                best_seen = value
+                improved = True
+            else:
+                improved = False
+            if progress is not None and (n_evals % 10 == 0 or improved):
+                progress({"kind": "history", "objective": value,
+                          "eval": n_evals, "best": float(best_seen)})
             return value
 
         method = method.lower()
@@ -201,7 +215,17 @@ class SearchBackend:
                 sigma,
                 {"bounds": [[0.0] * len(keys), [1.0] * len(keys)], "seed": int(seed), "maxfevals": budget, "verbose": -9},
             )
-            es.optimize(lambda x01: -score(x01))
+            try:
+                es.optimize(lambda x01: -score(x01))
+            except ValueError as exc:
+                # cma 4.x raises "not yet initialized (dimension needed)"
+                # for 1-D problems with tiny maxfevals (seen: dim=1,
+                # budget=30 fails while budget=100 works). Fail loudly
+                # with a remedy instead of leaking the internal error.
+                raise ValueError(
+                    f"cmaes failed on a {len(keys)}-D problem with budget={budget} "
+                    f"({exc}); use method='tpe' for 1-D or small-budget searches"
+                ) from exc
             best_design = unit_to_design(np.asarray(es.result.xbest))
             best_objective = -float(es.result.fbest)
         elif method == "tpe":
@@ -235,6 +259,26 @@ class SearchBackend:
         )
 
 
+def _rescale_box_actions(env, gym):
+    """Map a raw-unit Box action space onto [-1, 1] for SB3.
+
+    Bed/TwoBed act in engineering units (fluid °C, switch seconds); SB3's
+    Gaussian policy starts at mean ~0, so every sample clipped to the
+    space corner and exploration died there (seen: constant
+    [t_f_min, t_switch_min]). ``RescaleAction`` puts mid-range actions at
+    the policy origin. Plain mock envs in tests are not ``gym.Env``
+    instances and pass through untouched.
+    """
+    try:
+        from gymnasium.wrappers import RescaleAction
+
+        if isinstance(env, gym.Env) and isinstance(env.action_space, gym.spaces.Box):
+            return RescaleAction(env, min_action=-1.0, max_action=1.0)
+    except Exception:
+        pass
+    return env
+
+
 class RLBackend:
     """PPO over the gym-compatible API (behind the ``rl`` extra, DESIGN §6/§12).
 
@@ -263,6 +307,8 @@ class RLBackend:
         policy: str = "MlpPolicy",
         n_eval_episodes: int = 5,
         verbose: int = 0,
+        progress: Any | None = None,
+        save_dir: Any | None = None,
         **kwargs,
     ) -> OptimizeResult:
         validate_problem(problem)
@@ -294,9 +340,10 @@ class RLBackend:
         Monitor = getattr(mon_mod, "Monitor")
 
         # ``budget`` is the legacy name for total training timesteps; alias it.
+        # Falsy values (e.g. 0 from an untouched GUI knob) mean "default".
         if total_timesteps is None and budget is not None:
             total_timesteps = int(budget)
-        if total_timesteps is None:
+        if not total_timesteps:
             # Small default that completes fast in CI/tests; callers that need
             # real training pass a larger budget.
             total_timesteps = int(max(64, n_steps * 4))
@@ -311,6 +358,10 @@ class RLBackend:
 
         # Extra kwargs meant for PPO (e.g. learning_rate) flow through
         ppo_extra = {k: v for k, v in kwargs.items() if k not in ("method", "sigma0")}
+        # CPU default (project posture: harness.gpu pins JAX to CPU; the 4 GB
+        # laptop GPU also breaks torch's CUDA init). Callers may override
+        # with device="cuda".
+        ppo_extra.setdefault("device", "cpu")
 
         # -- build the single or wrapped env factory --------------------------
         spec_kind = getattr(getattr(problem, "spec", None), "kind", "")
@@ -367,7 +418,7 @@ class RLBackend:
                 return StaticSingleStep()
             # Dynamic: delegate to the problem's own reset/step if it looks like a gym env
             if isinstance(problem, gym.Env):
-                return problem
+                return _rescale_box_actions(problem, gym)
             if hasattr(problem, "observation_space") and hasattr(problem, "action_space") and hasattr(problem, "reset") and hasattr(problem, "step"):
                 # Wrap by delegation so SB3's Monitor sees a proper gym.Env
                 prob = problem
@@ -389,7 +440,7 @@ class RLBackend:
                     def step(self, action):
                         return self._p.step(action)
 
-                return DelegatingGym(prob)
+                return _rescale_box_actions(DelegatingGym(prob), gym)
             # Fallback: treat as static (should not happen for dynamic specs)
             keys = problem.design_space.keys
             lo, hi = problem.design_space.bounds_for(keys)
@@ -435,6 +486,21 @@ class RLBackend:
                 # plain gym.Env in some SB3 versions, but we keep VecEnv shape.
                 vec_env = _make_env()  # type: ignore[assignment]
 
+        # -- running normalization (dynamic envs only) ----------------------
+        # Bed/TwoBed obs mix Kelvin (~300), ratios (~1) and cumulative
+        # energies (~1e5); per-step rewards are J/kg (~1e4). Without
+        # normalization PPO collapses to a saturated corner (seen: constant
+        # [t_f_min, t_switch_min]). Static single-step problems already live
+        # in unit-box/reward ~ O(1), so leave them unnormalized (a running
+        # std over near-constant rewards would explode).
+        if not is_static:
+            try:
+                norm_mod = importlib.import_module("stable_baselines3.common.vec_env")
+                VecNormalize = getattr(norm_mod, "VecNormalize")
+                vec_env = VecNormalize(vec_env, norm_obs=True, norm_reward=True, clip_obs=10.0)
+            except Exception:
+                pass  # mocked vec envs in tests lack the VecEnv API; run raw
+
         # -- PPO training -----------------------------------------------------
         # Use a tiny batch for CI/tests when budget is small; the caller
         # controls the real budget via ``total_timesteps``.
@@ -445,7 +511,38 @@ class RLBackend:
             model = PPO(policy, vec_env, verbose=verbose, seed=int(seed), **ppo_extra)
 
         # ``budget`` vs ``total_timesteps``: already unified above
+        if progress is not None:
+            progress({"kind": "log",
+                      "message": f"PPO training {total_timesteps} timesteps …"})
         model.learn(total_timesteps=total_timesteps)
+        if progress is not None:
+            progress({"kind": "log", "message": "PPO training done — evaluating"})
+
+        # -- policy persistence (H2.4): SB3 model + frozen obs/reward stats --
+        policy_path: Any | None = None
+        if save_dir is not None:
+            from pathlib import Path as _Path  # noqa: PLC0415 (local: optional)
+
+            sd = _Path(save_dir)
+            sd.mkdir(parents=True, exist_ok=True)
+            model.save(str(sd / "policy"))
+            if hasattr(vec_env, "save"):  # VecNormalize stats ride along
+                try:
+                    vec_env.save(str(sd / "vecnormalize.pkl"))
+                except Exception:
+                    pass
+            policy_path = str(sd)
+            if progress is not None:
+                progress({"kind": "log", "message": f"policy saved to {sd}"})
+
+        # Eval in raw units: freeze the running stats and stop normalizing
+        # rewards (obs stay normalized — the policy was trained on them).
+        if hasattr(vec_env, "training"):
+            try:
+                vec_env.training = False
+                vec_env.norm_reward = False
+            except Exception:
+                pass
 
         # -- evaluation: deterministic rollouts, collect best --------------
         history: list[dict[str, Any]] = []
@@ -511,6 +608,9 @@ class RLBackend:
                     done = True
                     break
             history.append({"objective": float(ep_reward), "episode": int(ep), "reward": float(ep_reward)})
+            if progress is not None:
+                progress({"kind": "history", "objective": float(ep_reward),
+                          "eval": int(ep), "best": float(max(best_obj, float(ep_reward)))})
             if float(ep_reward) > best_obj:
                 best_obj = float(ep_reward)
                 # Prefer design/metrics from the env's info when present
@@ -599,8 +699,77 @@ class RLBackend:
                 "n_eval_episodes": int(n_eval),
                 "is_static": bool(is_static),
                 "seed": int(seed),
+                **({"policy_path": policy_path} if policy_path else {}),
             },
         )
+
+
+def load_policy(save_dir):
+    """Load a policy saved by :meth:`RLBackend.solve` (H2.4).
+
+    Returns ``(model, vec_normalize_or_None)``. Import-light: the heavy deps
+    load lazily behind the ``rl`` extra.
+    """
+    import importlib  # noqa: PLC0415
+    from pathlib import Path  # noqa: PLC0415
+
+    sd = Path(save_dir)
+    ppo_mod = importlib.import_module("stable_baselines3")
+    model = ppo_mod.PPO.load(str(sd / "policy"), device="cpu")
+    vn = None
+    vn_file = sd / "vecnormalize.pkl"
+    if vn_file.exists():
+        try:
+            vec_mod = importlib.import_module("stable_baselines3.common.vec_env")
+            VecNormalize = getattr(vec_mod, "VecNormalize")
+            vn = VecNormalize.load(str(vn_file), venv=None)
+        except Exception:
+            # stats-only load: bypass set_venv, the pickle carries the RMS
+            import pickle  # noqa: PLC0415
+
+            with open(vn_file, "rb") as f:
+                vn = pickle.load(f)
+        vn.training = False
+        vn.norm_reward = False
+    return model, vn
+
+
+def evaluate_policy(problem, model, objective: Objective, seeds, *,
+                    vec_normalize=None) -> "list[dict[str, Any]]":
+    """Evaluate a trained policy on ``problem`` over explicit seeds.
+
+    The honest H2.4 comparator: every seed draws the *same duty envelope*
+    for the policy and for the search-floor baselines. Manually inverts the
+    training wrapper chain (RescaleAction → VecNormalize obs stats) so the
+    policy sees exactly what it saw in training while the raw action lands
+    in the problem's engineering units.
+    """
+    import importlib  # noqa: PLC0415
+
+    gym = importlib.import_module("gymnasium")
+    keys = problem.design_space.keys
+    lo, hi = problem.design_space.bounds_for(keys)
+    lo_a, hi_a = np.asarray(lo, dtype=np.float64), np.asarray(hi, dtype=np.float64)
+    rows = []
+    for seed in seeds:
+        obs, info = problem.reset(seed=int(seed))
+        o = np.asarray(obs, dtype=np.float64).ravel()
+        if vec_normalize is not None:
+            rms = vec_normalize.obs_rms
+            o = np.clip((o - rms.mean) / np.sqrt(rms.var + vec_normalize.epsilon),
+                        -vec_normalize.clip_obs, vec_normalize.clip_obs)
+        a, _ = model.predict(np.asarray(o, dtype=np.float32), deterministic=True)
+        a = np.clip(np.asarray(a, dtype=np.float64).ravel(), -1.0, 1.0)
+        raw = lo_a + (a + 1.0) / 2.0 * (hi_a - lo_a)
+        metrics = problem.evaluate({k: float(v) for k, v in zip(keys, raw)})
+        rows.append({
+            "seed": int(seed),
+            "objective": float(objective_value(objective, metrics)),
+            **{k: float(v) for k, v in metrics.items()},
+            "design": {k: float(v) for k, v in zip(keys, raw)},
+            "scenario": dict(info.get("scenario", {})),
+        })
+    return rows
 
 
 def optimize(

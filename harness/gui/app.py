@@ -24,6 +24,7 @@ from PyQt6.QtWidgets import (
     QLabel,
     QLineEdit,
     QMainWindow,
+    QProgressBar,
     QScrollArea,
     QSpinBox,
     QSplitter,
@@ -177,6 +178,15 @@ class ConfigPanel(QWidget):
             if abs(float(w.value()) - default) > 1e-12:
                 overrides[key] = float(w.value())
         backend_kwargs = self._collect(self._backend_widgets)
+        # Unset knobs read as 0/"" — drop them so backend defaults apply.
+        # (Passing budget=0 / total_timesteps=0 explicitly would silently
+        # shrink a search to nothing or train PPO for zero steps.)
+        backend_kwargs = {
+            k: v for k, v in backend_kwargs.items()
+            if (isinstance(v, str) and v.strip())
+            or (isinstance(v, bool))
+            or (isinstance(v, (int, float)) and v != 0)
+        }
         return runner.RunSpec(
             env_name=self.env_combo.currentText(),
             material_ref=self.material_combo.currentText().strip(),
@@ -244,8 +254,6 @@ class ConfigPanel(QWidget):
         self._backend_widgets.clear()
         params = runner.backend_params().get(self.backend_combo.currentText(), {})
         for name, info in params.items():
-            if name == "total_timesteps":
-                continue
             w = self._widget_for(info, lo=1 if info["kind"] == "int" else 0)
             self.backend_form.addRow(name, w)
             self._backend_widgets[name] = (info["kind"], w)
@@ -307,15 +315,23 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(splitter)
 
         self.runner_thread = JobRunner(self)
-        self.runner_thread.started.connect(lambda label: (self._status_msg(label),
-                                                          self.scopes.append_log(f"## {label}")))
+        self.runner_thread.started.connect(self._on_started)
         self.runner_thread.log.connect(self.scopes.append_log)
+        self.runner_thread.progressed.connect(self._on_progress)
         self.runner_thread.finished.connect(self._on_finished)
         self.runner_thread.failed.connect(self._on_failed)
 
         self._build_toolbar()
         self._status = QStatusBar(self)
         self.setStatusBar(self._status)
+        # Indeterminate busy bar: the only visible proof of life during
+        # first-run JAX imports / jitted calls, which otherwise log nothing.
+        self._busy = QProgressBar(self)
+        self._busy.setRange(0, 0)
+        self._busy.setFixedWidth(160)
+        self._busy.hide()
+        self._status.addPermanentWidget(self._busy)
+        self._ran_once = False
         self._status_msg("ready — pick an environment and Run")
 
     # -- toolbar ---------------------------------------------------------------
@@ -352,6 +368,9 @@ class MainWindow(QMainWindow):
     def run(self) -> None:
         spec = self.panel.current_spec()
         self.run_btn.setEnabled(False)
+        self._busy.show()
+        self._live_history: list = []
+        self._live_switched = False
         self.runner_thread.start(
             f"Running {spec.env_name} ({spec.sweep_axis or spec.mode})",
             lambda worker, spec=spec: self._execute(spec, worker),
@@ -359,11 +378,38 @@ class MainWindow(QMainWindow):
 
     @staticmethod
     def _execute(spec, worker):
+        progressed = getattr(worker, "progressed", None)
         return runner.execute(
             spec,
             log=worker.log.emit,
             is_cancelled=lambda: worker.cancel_requested,
+            progress=(getattr(progressed, "emit", None)
+                      if progressed is not None else None),
         )
+
+    def _on_progress(self, d: dict) -> None:
+        kind = d.get("kind") if isinstance(d, dict) else None
+        if kind == "log":
+            self.scopes.append_log(str(d.get("message", "")))
+        elif kind == "history":
+            self._live_history.append({"objective": float(d.get("objective", 0.0))})
+            best = d.get("best")
+            self.scopes.history.set_history(
+                list(self._live_history),
+                best_objective=(float(best) if best is not None else None))
+            if not self._live_switched:
+                self._live_switched = True
+                self.scopes.setCurrentWidget(self.scopes.history)
+        elif kind == "sweep":
+            rows = d.get("rows") or []
+            if rows:
+                import pandas as pd  # noqa: PLC0415
+
+                self.scopes.sweep.set_dataframe(
+                    pd.DataFrame(rows), title="Sweep — live")
+                if not self._live_switched:
+                    self._live_switched = True
+                    self.scopes.setCurrentWidget(self.scopes.sweep)
     def _stop(self) -> None:
         self.runner_thread.request_cancel()
         self._status_msg("cancel requested (takes effect between sweep points)")
@@ -394,14 +440,26 @@ class MainWindow(QMainWindow):
 
     # -- worker callbacks --------------------------------------------------------
 
+    def _on_started(self, label: str) -> None:
+        self._status_msg(label)
+        self.scopes.append_log(f"## {label}")
+        if not self._ran_once:
+            self._ran_once = True
+            self.scopes.append_log(
+                "(first run imports JAX and compiles — expect up to ~1 min "
+                "with no further output; watch the status-bar spinner)")
+        self._busy.show()
+
     def _on_finished(self, payload) -> None:
         self.run_btn.setEnabled(True)
+        self._busy.hide()
         self._last_payload = payload
         self.scopes.set_result(payload)
         self._status_msg(f"done in {payload.elapsed_s:.2f}s")
 
     def _on_failed(self, message: str) -> None:
         self.run_btn.setEnabled(True)
+        self._busy.hide()
         self.scopes.append_log(f"FAILED: {message}")
         self._status_msg("run failed — see Log tab")
 

@@ -72,7 +72,15 @@ from ..physics.thermo import (
 )
 from ..profiles import ApplicationProfile, get_profile
 from ..registry import REGISTRIES
-from .base import ActionSpec, DesignSpace, EpisodeTrace, ProblemSpec, Sensor
+from .base import (
+    ActionSpec,
+    DesignSpace,
+    EpisodeTrace,
+    Objective,
+    ProblemSpec,
+    Sensor,
+    objective_value,
+)
 from .bed1d import (
     BED_DESIGN_BOUNDS,
     BED_N_CELLS,
@@ -300,7 +308,8 @@ class TwoBed:
 
     # -- harness Problem face ----------------------------------------------
 
-    def _simulate(self, merged, ctrl, *, recovery_ua_w_m2_k, collect_trace=False):
+    def _simulate(self, merged, ctrl, *, recovery_ua_w_m2_k,
+                  collect_trace=False, collect_fields=False):
         bed_a, bed_b = self._bed_dicts(merged)
         return system.simulate_two_bed(
             bed_a=bed_a,
@@ -316,6 +325,7 @@ class TwoBed:
             dt_s=self.dt_phys_s,
             n_cycles=self.n_cycles,
             collect_trace=collect_trace,
+            collect_fields=collect_fields,
         )
 
     def metrics_jax(self, design: Mapping[str, Any] | None = None,
@@ -334,19 +344,24 @@ class TwoBed:
                  controls: Mapping[str, float] | None = None) -> dict[str, float]:
         return {k: float(v) for k, v in self.metrics_jax(design, controls).items()}
 
-    def rollout(self, design=None, controls=None, *, n_steps: int = 1) -> EpisodeTrace:
+    def rollout(self, design=None, controls=None, *, n_steps: int = 1,
+                collect_fields: bool = False) -> EpisodeTrace:
         del n_steps  # episode length is n_cycles system cycles (§5.3)
         merged = self.design_space.merge(design)
         ctrl = {**self.default_controls(), **(controls or {})}
         out = self._simulate(merged, ctrl,
                              recovery_ua_w_m2_k=merged["recovery_ua_w_m2_k"],
-                             collect_trace=True)
+                             collect_trace=True,
+                             collect_fields=collect_fields)
         summary = {k: float(v) for k, v in out["summary"].items()}
         if self.counterfactual:
             norec = self._simulate(merged, ctrl, recovery_ua_w_m2_k=0.0)
             summary["recovery_gain"] = summary["COP"] - float(norec["summary"]["COP"])
         series = {k: np.asarray(v) for k, v in (out["series"] or {}).items()}
-        return EpisodeTrace(series=series, summary=summary)
+        fields = None
+        if out.get("fields") is not None:
+            fields = {k: np.asarray(v) for k, v in out["fields"].items()}
+        return EpisodeTrace(series=series, summary=summary, fields=fields)
 
     # -- dynamic face (numpy boundary) --------------------------------------
 
@@ -695,12 +710,300 @@ def build_two_bed_schedule(bed: "TwoBed | None" = None, **kwargs) -> TwoBedSched
 REGISTRIES["envs"].register("TwoBedSchedule-v0", build_two_bed_schedule)
 
 
+# ---------------------------------------------------------------------------
+# H2.4: stochastic-source scenario bandit over the H2.2 schedule surface
+# ---------------------------------------------------------------------------
+
+SCENARIO_DESC_KEYS = (
+    "base_c", "amp_c", "period_s", "burst_depth_c", "burst_frac",
+    "band_lo_c", "band_hi_c", "t_evap_c", "t_cond_c", "t_des_c",
+    "cycle_time_s",
+)
+# Fixed normalization bounds — every observation channel lands in [0, 1].
+SCENARIO_DESC_BOUNDS = {
+    "base_c": (30.0, 150.0), "amp_c": (0.0, 40.0), "period_s": (600.0, 7200.0),
+    "burst_depth_c": (0.0, 40.0), "burst_frac": (0.0, 0.25),
+    "band_lo_c": (30.0, 150.0), "band_hi_c": (30.0, 150.0),
+    "t_evap_c": (5.0, 30.0), "t_cond_c": (20.0, 60.0),
+    "t_des_c": (40.0, 150.0), "cycle_time_s": (60.0, 1200.0),
+}
+
+
+def sample_source_scenario(rng: "np.random.Generator", band_lo_c: float,
+                           band_hi_c: float, *,
+                           period_range: "tuple[float, float]" = (900.0, 3600.0),
+                           burst_prob: float = 0.35):
+    """One seeded source scenario: sinusoid + optional IT-load bursts.
+
+    Draws (mid, amplitude, period) so the swing stays inside the profile's
+    fluid band, then — with probability ``burst_prob`` — adds periodic load
+    dips toward the band bottom (an IT-load crash: the source falls for a
+    fraction of each period). Returns ``(source_callable, descriptor_dict)``.
+    The callable is deterministic in wall-clock ``t`` (DESIGN §3: the seed
+    lives in the problem configuration, never in global state).
+    """
+    band = band_hi_c - band_lo_c
+    amp = float(rng.uniform(0.10, 0.45) * band)
+    mid = float(rng.uniform(band_lo_c + amp, band_hi_c - amp))
+    period = float(np.exp(rng.uniform(np.log(period_range[0]),
+                                      np.log(period_range[1]))))
+    burst = rng.random() < burst_prob
+    depth = float(rng.uniform(0.3, 0.7) * amp) if burst else 0.0
+    frac = float(rng.uniform(0.08, 0.25)) if burst else 0.0
+
+    def source(t: float) -> float:
+        s = mid + amp * np.sin(2.0 * np.pi * t / period)
+        if burst:
+            s = s - depth * (((t / period) % 1.0) < frac)
+        return float(s)
+
+    desc = {"base_c": mid, "amp_c": amp, "period_s": period,
+            "burst_depth_c": depth, "burst_frac": frac,
+            "band_lo_c": float(band_lo_c), "band_hi_c": float(band_hi_c)}
+    return source, desc
+
+
+def scenario_observation(desc: Mapping[str, float],
+                         profile: ApplicationProfile) -> np.ndarray:
+    """Scenario descriptor + profile setpoints -> ``[0, 1]`` obs vector."""
+    vals = dict(desc)
+    vals.update(t_evap_c=profile.t_evap_c, t_cond_c=profile.t_cond_c,
+                t_des_c=profile.t_des_c, cycle_time_s=profile.cycle_time_s)
+    out = []
+    for k in SCENARIO_DESC_KEYS:
+        lo, hi = SCENARIO_DESC_BOUNDS[k]
+        out.append(np.clip((float(vals[k]) - lo) / (hi - lo), 0.0, 1.0))
+    return np.asarray(out, dtype=np.float32)
+
+
+class TwoBedScenario:
+    """One-step contextual bandit over stochastic source scenarios (H2.4).
+
+    ROADMAP wording: "PPO with a schedule action space on TwoBedSchedule-v0
+    under time-varying/stochastic source profiles". Each episode samples a
+    seeded source scenario (sinusoid + optional IT-load bursts inside the
+    profile's fluid band); the action is the five H2.2 schedule parameters
+    (``TwoBedSchedule.POLICY_KEYS``); the step runs the same jitted
+    two-bed metrics path as :class:`TwoBedSchedule` — but with the source
+    series as a *jit argument*, so every episode reuses one compile; the
+    reward is the profile-weighted objective (the H2.2 gate's exact
+    objective). Honest floor (DESIGN §6): the per-scenario CMA-ES optimum —
+    freeze a seed with :meth:`freeze_scenario` and run ``search``.
+    """
+
+    POLICY_KEYS = TwoBedSchedule.POLICY_KEYS
+
+    def __init__(self, bed: "TwoBed | None" = None, *,
+                 horizon_s: float = 3600.0,
+                 dt_phys_s: "float | None" = None,
+                 period_range: "tuple[float, float]" = (900.0, 3600.0),
+                 burst_prob: float = 0.35,
+                 objective: "Objective | None" = None,
+                 seed: int = 0):
+        self.bed = bed if bed is not None else TwoBed()
+        prof = self.bed.profile
+        self.period_range = (float(period_range[0]), float(period_range[1]))
+        self.burst_prob = float(burst_prob)
+        self.horizon_s = float(horizon_s)
+        self.dt_phys_s = float(dt_phys_s) if dt_phys_s is not None else self.bed.dt_phys_s
+        self.n_steps = int(round(self.horizon_s / self.dt_phys_s))
+        self.t_f_cap_c = prof.t_fluid_max_c
+        self._t_f_cap_jnp = jnp.asarray(self.t_f_cap_c)
+        lo_t, hi_t = 120.0, 900.0
+        self.t_half_bounds = (lo_t, hi_t)
+        self.objective = objective
+        if self.objective is None:
+            from .cycle0d import CANONICAL_NORMALIZATION  # noqa: PLC0415
+
+            w = prof.cop_weight + prof.scp_weight
+            self.objective = Objective(
+                weights={"COP": prof.cop_weight / w,
+                         "SCP_W_kg": prof.scp_weight / w},
+                normalize=CANONICAL_NORMALIZATION)
+        nominal = {
+            "t_set_c": prof.t_des_c,
+            "t_thresh_c": prof.t_fluid_min_c,
+            "t_half_s": prof.cycle_time_s,
+            "t_rec_s": 0.0,
+            "t_dwell_s": max(1800.0, 2.0 * hi_t),
+        }
+        self.control_space = DesignSpace(
+            keys=self.POLICY_KEYS, defaults=nominal,
+            bounds={
+                "t_set_c": (prof.t_cond_c + 15.0, prof.t_fluid_max_c),
+                "t_thresh_c": (prof.t_fluid_min_c, prof.t_fluid_max_c),
+                "t_half_s": (lo_t, hi_t),
+                "t_rec_s": (0.0, min(240.0, hi_t / 2.0)),
+                "t_dwell_s": (30.0, max(1800.0, 2.0 * hi_t)),
+            },
+        )
+        self.design_space = self.control_space
+        self.spec = ProblemSpec(
+            name="TwoBedScenario-v0",
+            kind="dynamic",
+            action_spec=ActionSpec(
+                kind="continuous", names=self.POLICY_KEYS,
+                lo=tuple(self.control_space.bounds[k][0] for k in self.POLICY_KEYS),
+                hi=tuple(self.control_space.bounds[k][1] for k in self.POLICY_KEYS),
+            ),
+            metric_keys=_NO_COUNTERFACTUAL_KEYS,
+            schema_version=TWO_BED_SCHEMA_VERSION,
+            spatial_dim=1, time_resolved=True, grid_type="uniform_rect",
+        )
+        self._rng = np.random.default_rng(seed)
+        self._s_jnp: "jnp.ndarray | None" = None
+        self._desc: "Mapping[str, float] | None" = None
+        self.n_ring_cycles = int(np.ceil(
+            self.horizon_s / (2.0 * self.t_half_bounds[0])))
+        self._metrics_jit = jax.jit(self._metrics_impl)
+        self.observation_space = gym.spaces.Box(
+            low=0.0, high=1.0, shape=(len(SCENARIO_DESC_KEYS),), dtype=np.float32)
+        lo_a, hi_a = self.control_space.bounds_for(self.POLICY_KEYS)
+        self.action_space = gym.spaces.Box(
+            low=np.asarray(lo_a, dtype=np.float32),
+            high=np.asarray(hi_a, dtype=np.float32), dtype=np.float32)
+
+    # -- scenario lifecycle --------------------------------------------------
+
+    def observe(self) -> np.ndarray:
+        if self._desc is None:
+            raise RuntimeError("call reset() (or freeze_scenario()) first")
+        return scenario_observation(self._desc, self.bed.profile)
+
+    def reset(self, *, seed=None, options=None):
+        """Sample one source scenario. ``seed`` re-seeds the env RNG (gym
+        convention), so ``reset(seed=k)`` reproduces the same duty envelope."""
+        if seed is not None:
+            self._rng = np.random.default_rng(seed)
+        prof = self.bed.profile
+        source_fn, desc = sample_source_scenario(
+            self._rng, prof.t_fluid_min_c, prof.t_fluid_max_c,
+            period_range=self.period_range, burst_prob=self.burst_prob)
+        t_grid = np.arange(self.n_steps) * self.dt_phys_s
+        self._s_jnp = jnp.asarray(np.asarray(
+            [source_fn(t) for t in t_grid], dtype=np.float64))
+        self._desc = desc
+        info = {"scenario": dict(desc), "seed": seed}
+        return self.observe(), info
+
+    def freeze_scenario(self, seed: "int | None" = None) -> Mapping[str, float]:
+        """Pin the current scenario (for floors / evaluation); returns the descriptor."""
+        obs, info = self.reset(seed=seed)
+        del obs
+        return info["scenario"]
+
+    # -- metrics (same physics path as TwoBedSchedule, s as jit argument) ----
+
+    def _metrics_impl(self, s_c, t_set_c, t_thresh_c, t_half_s, t_rec_s,
+                      t_dwell_s):
+        t_f = jnp.minimum(t_set_c, jnp.minimum(s_c, self._t_f_cap_jnp))
+        req = jnp.where(s_c >= t_thresh_c, 1.0, 0.0)
+        n = self.n_steps
+        series = {
+            "t_ads_s": jnp.full((n,), t_half_s),
+            "t_des_s": jnp.full((n,), t_half_s),
+            "t_f_des_c": t_f,
+            "t_rec_s": jnp.full((n,), t_rec_s),
+            "t_dwell_min_s": jnp.full((n,), t_dwell_s),
+        }
+        prof = self.bed.profile
+        bed_a, bed_b = self.bed._bed_dicts(self.bed.design_space.defaults)
+        out = system.simulate_two_bed(
+            bed_a=bed_a, bed_b=bed_b,
+            t_evap_c=prof.t_evap_c, t_cond_c=prof.t_cond_c,
+            t_f_ads_c=prof.t_cond_c,
+            series=series, req=req,
+            dt_s=self.dt_phys_s, n_cycles=self.n_ring_cycles,
+        )
+        return out["summary"]
+
+    def _ensure_scenario(self) -> None:
+        if self._s_jnp is None:
+            self.reset(seed=0)
+
+    def metrics_jax(self, design: "Mapping[str, Any] | None" = None,
+                    controls: "Mapping[str, float] | None" = None) -> dict[str, Any]:
+        if controls is not None:
+            raise ValueError("TwoBedScenario embeds the schedule in its design space")
+        self._ensure_scenario()
+        merged = self.control_space.merge(design)
+        return self._metrics_jit(self._s_jnp, **merged)
+
+    def evaluate(self, design=None, controls=None) -> dict[str, float]:
+        values = {k: float(v) for k, v in self.metrics_jax(design, controls).items()}
+        # jax.jit sorts pytree dict keys; restore the documented schema order.
+        return {k: values[k] for k in self.spec.metric_keys}
+
+    def evaluate_seed(self, design, seed: int) -> dict[str, float]:
+        """Metrics of ``design`` on the scenario drawn with ``seed`` (the
+        identical-duty-envelope comparator for the H2.4 honesty floor)."""
+        self.freeze_scenario(seed)
+        return self.evaluate(design)
+
+    def rollout(self, design=None, controls=None, *, n_steps: int = 1) -> EpisodeTrace:
+        del n_steps
+        self._ensure_scenario()
+        merged = self.control_space.merge(design)
+        s = self._s_jnp
+        t_f = jnp.minimum(merged["t_set_c"], jnp.minimum(s, self._t_f_cap_jnp))
+        req = jnp.where(s >= merged["t_thresh_c"], 1.0, 0.0)
+        n = self.n_steps
+        series = {
+            "t_ads_s": jnp.full((n,), merged["t_half_s"]),
+            "t_des_s": jnp.full((n,), merged["t_half_s"]),
+            "t_f_des_c": t_f,
+            "t_rec_s": jnp.full((n,), merged["t_rec_s"]),
+            "t_dwell_min_s": jnp.full((n,), merged["t_dwell_s"]),
+        }
+        prof = self.bed.profile
+        bed_a, bed_b = self.bed._bed_dicts(self.bed.design_space.defaults)
+        out = system.simulate_two_bed(
+            bed_a=bed_a, bed_b=bed_b,
+            t_evap_c=prof.t_evap_c, t_cond_c=prof.t_cond_c,
+            t_f_ads_c=prof.t_cond_c,
+            series=series, req=req,
+            dt_s=self.dt_phys_s, n_cycles=self.n_ring_cycles,
+            collect_trace=True,
+        )
+        return EpisodeTrace(
+            series={k: np.asarray(v) for k, v in out["series"].items()},
+            summary={k: float(v) for k, v in out["summary"].items()},
+        )
+
+    # -- gym face ------------------------------------------------------------
+
+    def step(self, action):
+        if self._s_jnp is None:
+            raise RuntimeError("call reset() before step()")
+        lo, hi = self.control_space.bounds_for(self.POLICY_KEYS)
+        a = np.clip(np.asarray(action, dtype=np.float64).ravel(), lo, hi)
+        design = {k: float(v) for k, v in zip(self.POLICY_KEYS, a)}
+        raw = self.metrics_jax(design)
+        metrics = {k: float(raw[k]) for k in self.spec.metric_keys}
+        reward = float(objective_value(self.objective, metrics))
+        info = {"metrics": metrics, "design": design,
+                "scenario": dict(self._desc)}
+        return self.observe(), reward, True, False, info
+
+
+def build_two_bed_scenario(bed: "TwoBed | None" = None, **kwargs) -> TwoBedScenario:
+    return TwoBedScenario(bed, **kwargs)
+
+
+REGISTRIES["envs"].register("TwoBedScenario-v0", build_two_bed_scenario)
+
+
 class TwoBedGymEnv(gym.Env):
-    """Gymnasium wrapper around :class:`TwoBed` (numpy boundary, §5.3)."""
+    """Gymnasium wrapper around :class:`TwoBed` (numpy boundary, §5.3).
 
-    metadata = {"render_modes": []}
+    ``render()`` returns an ``rgb_array`` stacked A/B field frame of the
+    current system state (call ``reset()`` first).
+    """
 
-    def __init__(self, **kwargs):
+    metadata = {"render_modes": ["rgb_array"]}
+
+    def __init__(self, render_mode: str | None = None, **kwargs):
+        self.render_mode = render_mode
         self._env = TwoBed(**kwargs)
 
     @property
@@ -714,6 +1017,27 @@ class TwoBedGymEnv(gym.Env):
 
     def step(self, action):
         return self._env.step(action)
+
+    def render(self):
+        """Current A/B bed profiles as an ``rgb_array`` frame."""
+        from .. import viz as viz_mod  # noqa: PLC0415 (lazy: no mpl at import)
+        from ..physics import bed1d as bed1d_phys  # noqa: PLC0415
+
+        if self._env._carry is None:
+            raise RuntimeError("call reset() before render()")
+        ca, cb, _ = self._env._carry
+        n = self._env.n_cells
+        d = self._env.design_space.defaults
+        xa = (np.arange(n, dtype=np.float64) + 0.5) * float(d["A_L_m"]) / n
+        return viz_mod.twobed_frame(
+            np.asarray(ca[bed1d_phys._CARRY_T], dtype=float),
+            np.asarray(ca[bed1d_phys._CARRY_Q], dtype=float),
+            np.asarray(cb[bed1d_phys._CARRY_T], dtype=float),
+            np.asarray(cb[bed1d_phys._CARRY_Q], dtype=float),
+            xa,
+            title=f"TwoBed-v0 {self._env.profile.name}",
+            t_s=float(ca[bed1d_phys._CARRY_T_ABS]),
+        )
 
     @property
     def observation_space(self) -> gym.spaces.Box:

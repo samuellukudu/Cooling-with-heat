@@ -97,6 +97,8 @@ cd adsorbent-ml/data
 - [`harness/benchmarks.md`](harness/benchmarks.md) — V4 literature calibration (Uyun 2009, Sztekler 2021).
 - [`adsorbent-ml/README.md`](adsorbent-ml/README.md) + [`adsorbent-ml/data/ACQUISITION.md`](adsorbent-ml/data/ACQUISITION.md) — data sources, APIs, per-source status.
 - [`docs/datasets/`](docs/datasets/) — generated dataset cards (isodb, fits, labels, structures, stability, refrigerants, PINN corpus) + lineage; regenerate via `python adsorbent-ml/data/cards.py`. Gates: `datasets.validate_all()`.
+- [`docs/apps/`](docs/apps/) — one interactive physics-based HTML page per application profile (animated bed + two-bed machine replays, live Cycle0D cycle, D–A window, T2 ranking); regenerate via `python -m harness.viz_apps --out docs/apps`.
+- [`docs/apps/`](docs/apps/) `pde-*` + `absorption` — the frozen diffheat PDE zoo as offline field-replay pages (recover-and-run from git history) + three tracked future avenues (cold spot, junction, metamaterial) + live absorption chiller; regenerate via `python -m harness.viz_pde --out docs/apps`.
 
 ## Provenance notes
 

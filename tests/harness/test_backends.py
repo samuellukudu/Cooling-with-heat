@@ -142,7 +142,19 @@ def test_grad_is_deterministic_under_seed():
     assert first.best_objective == second.best_objective
 
 
-def test_rl_stub_refuses():
+def test_rl_stub_refuses(monkeypatch):
+    # Simulate the missing ``rl`` extra regardless of the ambient env
+    # (sb3/torch may be installed locally for real PPO runs).
+    import importlib.util
+
+    orig_find_spec = importlib.util.find_spec
+
+    def fake_find_spec(name, *a, **kw):
+        if name in ("stable_baselines3", "torch"):
+            return None
+        return orig_find_spec(name, *a, **kw)
+
+    monkeypatch.setattr(importlib.util, "find_spec", fake_find_spec)
     env = build_cycle0d(MATERIAL, "datacenter")
     with pytest.raises(NotImplementedError, match="rl backend ships with the dynamic envs"):
         harness.optimize(env, _objective(env.profile), backend="rl")

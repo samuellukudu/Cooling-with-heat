@@ -117,10 +117,13 @@ class EpisodeTrace:
     Static problems return an empty ``series``; dynamic envs record every
     documented channel. ``summary`` always carries the ``ProblemSpec``
     metric keys so downstream code never special-cases problem kinds.
+    ``fields`` optionally carries thinned per-step spatial profiles
+    (``T``/``q`` over ``x``) for hydrogym-style field playback.
     """
 
     series: dict[str, Any] = field(default_factory=dict)
     summary: dict[str, float] = field(default_factory=dict)
+    fields: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True)

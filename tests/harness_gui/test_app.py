@@ -81,3 +81,39 @@ def test_dataframe_and_compare_scopes(qapp):
     cmp_scope = CompareScope()
     cmp_scope.set_compare({"COP": 0.5}, {"COP": 0.6}, a_label="A", b_label="B")
     assert cmp_scope.table.rowCount() == 1
+
+
+def test_field_scope_plays_back_and_lands_tab(qapp):
+    import numpy as np
+
+    from harness.gui.scopes import FieldScope
+
+    scope = FieldScope()
+    n, nc = 24, 8
+    fields = {
+        "T_K": np.linspace(300, 350, n * nc).reshape(n, nc),
+        "q_kg_kg": np.linspace(0.2, 0.05, n * nc).reshape(n, nc),
+        "t_s": np.linspace(0, 120, n),
+        "x_m": np.linspace(0.0001, 0.0019, nc),
+    }
+    scope.set_fields(fields, kind="bed1d")
+    assert scope.slider.maximum() == n - 1
+    scope.slider.setValue(5)
+    assert "frame 6/24" in scope.time_label.text()
+    scope._toggle()
+    assert scope._timer.isActive()
+    scope._toggle()
+    assert not scope._timer.isActive()
+
+    w = MainWindow()
+    w.panel.env_combo.setCurrentText("Bed1D-v0")
+    w.panel.mode_combo.setCurrentText("evaluate")
+    spec = w.panel.current_spec()
+    payload = w._execute(spec, type("W", (), {
+        "log": type("S", (), {"emit": staticmethod(lambda _s: None)})(),
+        "cancel_requested": False,
+    })())
+    assert payload.trace is not None and payload.trace.fields is not None
+    w.scopes.setCurrentWidget(w.scopes.log)  # passive watcher on the Log tab
+    w._on_finished(payload)
+    assert w.scopes.currentWidget() is w.scopes.field

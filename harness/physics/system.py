@@ -224,7 +224,8 @@ def initial_two_carry(phys_a, phys_b, *, t_phase0_s, t_des_end_k, n_cycles):
 
 
 def advance_two_carry(carry, xs, *, n_steps, dt_s, phys_a, phys_b,
-                      recovery_ua_w_m2_k=0.0, use_req=False):
+                      recovery_ua_w_m2_k=0.0, use_req=False,
+                      collect_fields=False):
     """Advance a two-bed carry pair by ``n_steps`` lockstep physics steps.
 
     ``xs = (t_d0_s, t_d1_s, t_f_des_c, t_rec_s, t_dwell_min_s, req)`` —
@@ -237,7 +238,10 @@ def advance_two_carry(carry, xs, *, n_steps, dt_s, phys_a, phys_b,
     the lumped recovery conductance (0 disables the coupling).
 
     Returns ``((carry_a, carry_b, q_rec_acc), ys)`` with ``ys`` shaped
-    ``(n_steps, len(SYSTEM_SERIES_CHANNELS))``.
+    ``(n_steps, len(SYSTEM_SERIES_CHANNELS))``. With
+    ``collect_fields=True`` the scan additionally stacks both beds'
+    per-step profiles, returning ``((carry_a, carry_b, q_rec_acc),
+    (ys, T_a, q_a, T_b, q_b))`` — capture only, bit-identical physics.
     """
 
     def _col(v):
@@ -324,8 +328,19 @@ def advance_two_carry(carry, xs, *, n_steps, dt_s, phys_a, phys_b,
                        carry_b[bed1d._CARRY_QCOOL_CUM],
                        carry_b[bed1d._CARRY_QIN_CUM])),
         ))
+        if collect_fields:
+            return ((carry_a, carry_b, q_rec_acc),
+                    (row, carry_a[bed1d._CARRY_T], carry_a[bed1d._CARRY_Q],
+                     carry_b[bed1d._CARRY_T], carry_b[bed1d._CARRY_Q]))
         return (carry_a, carry_b, q_rec_acc), row
 
+    if collect_fields:
+        return jax.lax.scan(
+            body,
+            carry,
+            (d0_x, d1_x, tfd_x, trec_x, tdw_x, req_x),
+            length=n_steps,
+        )
     return jax.lax.scan(
         body,
         carry,
@@ -392,6 +407,7 @@ def simulate_two_bed(
     n_cycles=4,
     n_steps=None,
     collect_trace=False,
+    collect_fields=False,
     soft_switch=False,
     series=None,
     req=None,
@@ -413,7 +429,9 @@ def simulate_two_bed(
     Returns ``{"summary": …, "series": …, "m_s_a_kg_m2": …,
     "m_s_b_kg_m2": …}`` with ``summary`` mapping the metric keys to JAX
     scalars (gradients flow) and ``series`` a dict of decimated per-step
-    channels or ``None``.
+    channels or ``None``. ``collect_fields=True`` adds ``fields`` with
+    both beds' per-step ``T``/``q`` profiles thinned to ≤ 512 snapshots
+    (plus ``t_s`` and per-bed ``x_m``) — capture only, bit-identical.
     """
     for name, bed in (("bed_a", bed_a), ("bed_b", bed_b)):
         missing = [k for k in BED_KEYS if k not in bed and k not in _V2_DEFAULTS]
@@ -473,10 +491,12 @@ def simulate_two_bed(
         _s("t_dwell_min_s", t_dwell_min_s),
         0.0 if req is None else req,
     )
-    (carry_a, carry_b, q_rec_acc), ys = advance_two_carry(
+    (carry_a, carry_b, q_rec_acc), scan_out = advance_two_carry(
         carry, xs, n_steps=n_steps, dt_s=dt_s, phys_a=phys_a, phys_b=phys_b,
         recovery_ua_w_m2_k=recovery_ua_w_m2_k, use_req=req is not None,
+        collect_fields=collect_fields,
     )
+    ys = scan_out[0] if collect_fields else scan_out
     summary = summary_from_two_carry(
         (carry_a, carry_b, q_rec_acc),
         m_s_a=phys_a["rho_s_kg_m3"] * phys_a["L_m"],
@@ -493,9 +513,27 @@ def simulate_two_bed(
         out_series = {
             name: thinned[:, i] for i, name in enumerate(SYSTEM_SERIES_CHANNELS)
         }
+    out_fields = None
+    if collect_fields:
+        _, T_a, q_a, T_b, q_b = scan_out
+        stride = max(1, -(-n_steps // 512))  # ceil: never more than 512 frames
+        t_all = (jnp.arange(n_steps, dtype=jnp.float64) + 1.0) * dt_s
+        n_a, n_b = int(phys_a["n_cells"]), int(phys_b["n_cells"])
+        out_fields = {
+            "A_T_K": T_a[::stride],
+            "A_q_kg_kg": q_a[::stride],
+            "B_T_K": T_b[::stride],
+            "B_q_kg_kg": q_b[::stride],
+            "t_s": t_all[::stride],
+            "A_x_m": (jnp.arange(n_a, dtype=jnp.float64) + 0.5)
+            * phys_a["L_m"] / n_a,
+            "B_x_m": (jnp.arange(n_b, dtype=jnp.float64) + 0.5)
+            * phys_b["L_m"] / n_b,
+        }
     return {
         "summary": summary,
         "series": out_series,
+        "fields": out_fields,
         "m_s_a_kg_m2": phys_a["rho_s_kg_m3"] * phys_a["L_m"],
         "m_s_b_kg_m2": phys_b["rho_s_kg_m3"] * phys_b["L_m"],
     }

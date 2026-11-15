@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Absorption chiller (live tree core)</title>
+<style>
+body { background:#0f1115; color:#e2e8f0; font-family:system-ui,sans-serif; max-width:760px; margin:0 auto; padding:16px; }
+h1 { font-size:22px; } h2 { font-size:16px; margin-top:28px; }
+
+.flow { stroke-dasharray: 7 6; animation: dashfwd 0.9s linear infinite; }
+.flow-rev { stroke-dasharray: 7 6; animation: dashrev 0.9s linear infinite; }
+@keyframes dashfwd { to { stroke-dashoffset: -26; } }
+@keyframes dashrev { to { stroke-dashoffset: 26; } }
+
+.presets button { background:#161a21; color:#e2e8f0; border:1px solid #1e222a; border-radius:6px; padding:4px 10px; margin:2px; cursor:pointer; font-size:12px; }
+.controls { display:flex; gap:10px; align-items:center; margin:10px 0; flex-wrap:wrap; font-size:13px; }
+select, input[type=range] { accent-color:#f59e0b; } select { background:#161a21; color:#e2e8f0; border:1px solid #1e222a; border-radius:6px; padding:4px; }
+button { background:#161a21; color:#e2e8f0; border:1px solid #1e222a; border-radius:6px; padding:4px 10px; cursor:pointer; }
+.meters span { display:inline-block; background:#161a21; border:1px solid #1e222a; border-radius:6px; padding:3px 9px; margin:2px; font-size:12px; }
+table { border-collapse:collapse; width:100%; font-size:12px; } td, th { border:1px solid #1e222a; padding:4px 6px; text-align:left; }
+th { color:#94a3b8; } .dim { color:#94a3b8; font-size:12px; } a { color:#06b6d4; }
+.math { background:#161a21; border:1px solid #1e222a; border-radius:8px; padding:8px 12px; font-size:13px; }
+</style>
+</head>
+<body>
+
+<p class="dim"><a href="index.html">← all applications</a> · live tree core (harness.physics.absorption), generated 2026-09-27</p>
+<h1>Absorption chiller — 4-vessel machine</h1>
+<p class="dim">Ideal 3-temperature Novikov cycle derated by pair effectiveness, linear concentration-spread capacity. Move T_gen: machine values + chart dot recompute live. dx = 0 is the degenerate band bottom (no circulation → flows hide).</p>
+<div class="math">COP_ideal = ((T_gen−T_cond)/T_gen)·(T_evap/(T_cond−T_evap)) · dx = clip(a·(T_gen−T_cond) − b·(T_cond−T_evap), 0, dx_max) · Q_evap = dx·h_fg · COP = eps·COP_ideal</div>
+<div class="controls"><label>pair <select id="ab-pair"><option>LiBr-H2O</option><option>NH3-H2O</option><option>LiCl-H2O</option></select></label>
+<label>T_gen <input id="ab-tgen" type="range" min="60" max="95" step="0.5" value="85"><span id="ab-tgenval">85 °C</span></label></div>
+<div class="meters"><span>COP: <b id="ab-cop">–</b></span><span>SCP: <b id="ab-scp">–</b></span>
+<span>dx: <b id="ab-dx">–</b></span><span id="ab-flag"></span></div>
+<svg viewBox="0 0 720 200" width="100%" role="img" style="background:#0f1115;border:1px solid #1e222a;border-radius:8px">
+<text x="16" y="24" fill="#e2e8f0" font-size="13" font-weight="bold">Single-effect machine — live values</text>
+<rect x="20" y="50" width="140" height="100" rx="8" fill="#161a21" stroke="#1e222a"/>
+<text x="90" y="72" fill="#e2e8f0" font-size="11" text-anchor="middle">Generator</text>
+<text id="ab-gen" x="90" y="96" fill="#f59e0b" font-size="12" text-anchor="middle">–</text>
+<text id="ab-gen2" x="90" y="116" fill="#94a3b8" font-size="10" text-anchor="middle">–</text>
+<rect x="180" y="50" width="140" height="100" rx="8" fill="#161a21" stroke="#1e222a"/>
+<text x="250" y="72" fill="#e2e8f0" font-size="11" text-anchor="middle">Condenser</text>
+<text id="ab-con" x="250" y="96" fill="#f59e0b" font-size="12" text-anchor="middle">–</text>
+<text id="ab-con2" x="250" y="116" fill="#94a3b8" font-size="10" text-anchor="middle">–</text>
+<rect x="340" y="50" width="140" height="100" rx="8" fill="#161a21" stroke="#1e222a"/>
+<text x="410" y="72" fill="#e2e8f0" font-size="11" text-anchor="middle">Evaporator</text>
+<text id="ab-eva" x="410" y="96" fill="#f59e0b" font-size="12" text-anchor="middle">–</text>
+<text id="ab-eva2" x="410" y="116" fill="#94a3b8" font-size="10" text-anchor="middle">–</text>
+<rect x="500" y="50" width="140" height="100" rx="8" fill="#161a21" stroke="#1e222a"/>
+<text x="570" y="72" fill="#e2e8f0" font-size="11" text-anchor="middle">Absorber</text>
+<text id="ab-abs" x="570" y="96" fill="#f59e0b" font-size="12" text-anchor="middle">–</text>
+<text id="ab-abs2" x="570" y="116" fill="#94a3b8" font-size="10" text-anchor="middle">–</text>
+<line x1="160" y1="100" x2="180" y2="100" stroke="#94a3b8" stroke-width="2"/>
+<line x1="320" y1="100" x2="340" y2="100" stroke="#94a3b8" stroke-width="2"/>
+<line x1="480" y1="100" x2="500" y2="100" stroke="#94a3b8" stroke-width="2"/>
+<line x1="640" y1="100" x2="660" y2="100" stroke="#94a3b8" stroke-width="2"/>
+<line x1="60" y1="100" x2="20" y2="100" stroke="#94a3b8" stroke-width="2"/>
+</svg>
+<svg viewBox="0 0 720 300" width="100%" role="img" style="background:#0f1115;border:1px solid #1e222a;border-radius:8px">
+<text x="16" y="24" fill="#e2e8f0" font-size="13" font-weight="bold">generator T [°C] → COP</text>
+<g id="ab-lines"><path d="M56.0,146.6 L102.3,140.5 L148.6,134.4 L194.9,128.4 L241.1,122.4 L287.4,116.6 L333.7,110.9 L380.0,105.2 L426.3,99.6 L472.6,94.1 L518.9,88.7 L565.1,83.3 L611.4,78.0 L657.7,72.8 L704.0,67.7" fill="none" stroke="#f59e0b" stroke-width="2"/><path d="M56.0,159.4 L102.3,154.4 L148.6,149.4 L194.9,144.5 L241.1,139.8 L287.4,135.0 L333.7,130.4 L380.0,125.8 L426.3,121.2 L472.6,116.8 L518.9,112.4 L565.1,108.0 L611.4,103.8 L657.7,99.5 L704.0,95.4" fill="none" stroke="#06b6d4" stroke-width="2"/><path d="M56.0,141.2 L102.3,134.5 L148.6,127.9 L194.9,121.4 L241.1,115.0 L287.4,108.7 L333.7,102.5 L380.0,96.4 L426.3,90.3 L472.6,84.4 L518.9,78.5 L565.1,72.7 L611.4,67.0 L657.7,61.4 L704.0,55.8" fill="none" stroke="#22c55e" stroke-width="2"/></g><g id="ab-x"></g>
+<text x="16" y="290" fill="#94a3b8" font-size="10">generator T [°C]</text>
+</svg>
+<h2>Working pairs</h2>
+<table><tr><th>pair</th><th>effectiveness</th><th>dx_max</th></tr><tr><td>LiBr-H2O</td><td>0.37</td><td>0.12</td></tr>
+<tr><td>NH3-H2O</td><td>0.30</td><td>0.15</td></tr>
+<tr><td>LiCl-H2O</td><td>0.40</td><td>0.10</td></tr></table>
+<p class="dim">Calibration anchor: LiBr-H₂O at 7/30/85 °C gives COP 0.69 (V-ABS gate ≈ 0.70 ±15%). NH₃-H₂O trades peak efficiency for a wider low-grade band.</p>
+<script>
+
+function inferno(f) {
+  f = Math.min(Math.max(f, 0), 1);
+  const stops = [[13,13,31],[59,15,112],[140,29,64],[199,92,20],[249,200,70]];
+  const x = f * (stops.length - 1), i = Math.min(Math.floor(x), stops.length - 2), t = x - i;
+  const c = stops[i].map((v, k) => Math.round(v + t * (stops[i + 1][k] - v)));
+  return "rgb(" + c[0] + "," + c[1] + "," + c[2] + ")";
+}
+
+
+function paintGrid(p, frame, lo, hi) {
+  const F = frame;
+  for (let i = 0; i < F.length; i++) for (let j = 0; j < F[i].length; j++) {
+    const el = document.getElementById(p + "-" + i + "-" + j);
+    if (el) el.setAttribute("fill", inferno((F[i][j] - lo) / Math.max(hi - lo, 1e-9)));
+  }
+}
+function wireScrub(sliderId, btnId, n, draw) {
+  const sl = document.getElementById(sliderId);
+  sl.addEventListener("input", (e) => draw(parseInt(e.target.value, 10)));
+  let playing = false, timer = null;
+  document.getElementById(btnId).addEventListener("click", () => {
+    playing = !playing; document.getElementById(btnId).textContent = playing ? "⏸ pause" : "▶ play";
+    if (playing) timer = setInterval(() => {
+      sl.value = (parseInt(sl.value, 10) + 1) % n; draw(parseInt(sl.value, 10));
+    }, 140);
+    else clearInterval(timer);
+  });
+}
+function wirePresets(runIds, draw) {
+  runIds.forEach((id, k) => document.getElementById(id).addEventListener("click", () => {
+    runIds.forEach((o, q) => document.getElementById(o).style.borderColor = q === k ? "#f59e0b" : "#1e222a");
+    draw(k);
+  }));
+}
+
+const PPR = {"LiBr-H2O": {"eps": 0.37, "a": 0.00145, "b": 0.00085, "dxmax": 0.12}, "NH3-H2O": {"eps": 0.3, "a": 0.002, "b": 0.0006, "dxmax": 0.15}, "LiCl-H2O": {"eps": 0.4, "a": 0.0012, "b": 0.0009, "dxmax": 0.1}};
+const TE_C = 10.0, TC_C = 35.0, CYC = 600.0;
+function hfg(tK) { return 2256400.0 * Math.pow((647.1 - Math.min(tK, 646.1)) / (647.1 - 373.15), 0.321); }
+function abModel(pair, tgen) {
+  const P = PPR[pair], Te = TE_C + 273.15, Tc = TC_C + 273.15, Tg = tgen + 273.15;
+  const ideal = (Tg > Tc && Tc > Te) ? ((Tg - Tc) / Tg) * (Te / Math.max(Tc - Te, 1e-6)) : 0;
+  const dx = Math.min(Math.max(P.a * (tgen - TC_C) - P.b * (TC_C - TE_C), 0), P.dxmax);
+  const qe = dx * hfg(Te);
+  const cop = dx > 0 ? P.eps * ideal : 0;
+  return { cop, scp: qe / CYC, dx, qe, qg: cop > 1e-12 ? qe / cop : 0, ideal };
+}
+function abUpdate() {
+  const pair = document.getElementById("ab-pair").value;
+  const tg = parseFloat(document.getElementById("ab-tgen").value);
+  document.getElementById("ab-tgenval").textContent = tg.toFixed(1) + " °C";
+  const m = abModel(pair, tg);
+  document.getElementById("ab-cop").textContent = m.cop.toFixed(3);
+  document.getElementById("ab-scp").textContent = m.scp.toFixed(1) + " W/kg";
+  document.getElementById("ab-dx").textContent = m.dx.toFixed(4);
+  document.getElementById("ab-flag").textContent = m.dx <= 0 ? "DEGENERATE — no circulation" : "";
+  document.getElementById("ab-gen").textContent = tg.toFixed(0) + " °C in";
+  document.getElementById("ab-gen2").textContent = "Q " + (m.qg / 1000).toFixed(1) + " kJ/kg";
+  document.getElementById("ab-con").textContent = TC_C.toFixed(0) + " °C";
+  document.getElementById("ab-con2").textContent = "rejects heat";
+  document.getElementById("ab-eva").textContent = TE_C.toFixed(0) + " °C";
+  document.getElementById("ab-eva2").textContent = "Q " + (m.qe / 1000).toFixed(1) + " kJ/kg";
+  document.getElementById("ab-abs").textContent = TC_C.toFixed(0) + " °C";
+  document.getElementById("ab-abs2").textContent = m.dx > 0 ? "solution flows" : "no flow";
+  const g = document.getElementById("ab-x");
+  g.innerHTML = "";
+  const X = 56 + (704 - 56) * (tg - 60.0) / (95.0 - 60.0);
+  const Y = 214 - (214 - 40) * m.cop / 0.8122;
+  const mk = (tag, attrs) => { const el = document.createElementNS("http://www.w3.org/2000/svg", tag); for (const k in attrs) el.setAttribute(k, attrs[k]); g.appendChild(el); };
+  mk("line", { x1: X, y1: 40, x2: X, y2: 214, stroke: "#fff", "stroke-width": 1.5 });
+  mk("circle", { cx: X, cy: Y, r: 5, fill: "#fff" });
+}
+function initAB() {
+  document.getElementById("ab-pair").addEventListener("change", abUpdate);
+  document.getElementById("ab-tgen").addEventListener("input", abUpdate);
+  abUpdate();
+}
+document.addEventListener("DOMContentLoaded", initAB);
+</script>
+</body>
+</html>

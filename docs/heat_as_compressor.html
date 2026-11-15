@@ -1,0 +1,902 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Heat as Compressor — a visual tour of Cooling-with-heat</title>
+<style>
+  :root{
+    --bg:#0f1115; --panel:#161a22; --panel2:#1c212c; --line:#2a3040;
+    --text:#e2e8f0; --muted:#94a3b8; --cyan:#06b6d4; --cyan-dim:#0e7490;
+    --red:#ef4444; --orange:#f59e0b; --green:#22c55e; --violet:#a78bfa;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,sans-serif;line-height:1.55}
+  main{max-width:980px;margin:0 auto;padding:24px 20px 80px}
+  h1{font-size:1.9rem;margin:.2em 0 .1em}
+  h2{font-size:1.35rem;margin:2.2em 0 .4em;color:var(--cyan)}
+  h3{font-size:1.02rem;margin:1.4em 0 .3em}
+  p{margin:.5em 0}
+  .muted{color:var(--muted)}
+  .small{font-size:.86rem}
+  code,pre{font-family:ui-monospace,Menlo,Consolas,monospace}
+  code{background:var(--panel2);padding:.1em .35em;border-radius:4px;font-size:.9em}
+  pre{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px 14px;overflow-x:auto;font-size:.84rem}
+  a{color:var(--cyan)}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin:14px 0}
+  .hero{margin-top:8px}
+  .thesis{font-size:1.08rem;color:var(--text)}
+  .thesis b{color:var(--cyan)}
+  nav.toc{display:flex;flex-wrap:wrap;gap:8px;margin:18px 0 6px}
+  nav.toc a{background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:4px 12px;font-size:.85rem;text-decoration:none;color:var(--muted)}
+  nav.toc a:hover{color:var(--cyan);border-color:var(--cyan-dim)}
+  .figure{margin:16px 0}
+  .figure svg{display:block;max-width:100%;height:auto;background:var(--panel);border:1px solid var(--line);border-radius:10px}
+  .controls{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:10px 0}
+  button{background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:8px;padding:6px 14px;font-size:.9rem;cursor:pointer}
+  button:hover{border-color:var(--cyan-dim)}
+  button.active{border-color:var(--cyan);color:var(--cyan)}
+  input[type=range]{accent-color:var(--cyan);flex:1;min-width:200px}
+  .chip{display:inline-block;border-radius:999px;padding:2px 10px;font-size:.78rem;border:1px solid var(--line)}
+  .chip.ok{color:var(--green);border-color:#14532d}
+  .chip.pending{color:var(--orange);border-color:#7c2d12}
+  .readout{font-family:ui-monospace,monospace;font-size:.92rem;background:var(--panel2);border-radius:8px;padding:8px 12px;display:inline-block}
+  table{border-collapse:collapse;width:100%;font-size:.9rem;margin:10px 0}
+  th,td{border:1px solid var(--line);padding:6px 10px;text-align:left}
+  th{color:var(--muted);font-weight:600;background:var(--panel)}
+  td.num{font-family:ui-monospace,monospace;text-align:right}
+  .caption{color:var(--muted);font-size:.84rem;margin-top:6px}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  @media(max-width:820px){.grid2{grid-template-columns:1fr}}
+  .big{font-size:2rem;font-weight:700;color:var(--cyan)}
+  /* animated vapour dots */
+  .dots circle{fill:var(--cyan);opacity:.85}
+  .dots.hot circle{fill:var(--red)}
+  .flow{animation:flow 1.6s linear infinite}
+  @keyframes flow{from{transform:translateY(0)}to{transform:translateY(-26px)}}
+  .flow-h{animation:flowh 1.8s linear infinite}
+  @keyframes flowh{from{transform:translateX(0)}to{transform:translateX(-26px)}}
+  .hidden{display:none}
+  .leg-active{stroke:var(--cyan)!important;filter:drop-shadow(0 0 4px var(--cyan))}
+  .corner-active{fill:var(--cyan)!important;filter:drop-shadow(0 0 5px var(--cyan))}
+  .stepdots{display:flex;gap:6px}
+  .stepdots span{width:10px;height:10px;border-radius:50%;background:var(--line);cursor:pointer}
+  .stepdots span.on{background:var(--cyan)}
+  .narr{min-height:64px}
+  .narr b{color:var(--cyan)}
+  .barwrap{display:flex;align-items:center;gap:10px;margin:6px 0}
+  .barlabel{width:120px;font-size:.85rem;color:var(--muted);text-align:right}
+  .bartrack{flex:1;height:26px;background:var(--panel2);border-radius:6px;display:flex;overflow:hidden;border:1px solid var(--line)}
+  .barseg{height:100%;display:flex;align-items:center;justify-content:center;font-size:.75rem;color:#0b0d12;font-weight:700;min-width:0;white-space:nowrap;overflow:hidden}
+  footer{margin-top:60px;border-top:1px solid var(--line);padding-top:16px}
+  .kx{color:var(--cyan)} .kheat{color:var(--red)} .krej{color:var(--orange)} .kg{color:var(--green)} .ka{color:var(--orange)}
+</style>
+</head>
+<body>
+<main>
+
+<header class="hero">
+  <div class="muted small">Cooling-with-heat · interactive explainer · generated 2026-11-15</div>
+  <h1>Heat as Compressor</h1>
+  <p class="thesis">Cooling is not "making cold" — it is <b>moving heat</b> from where you don't want it
+  to somewhere you can dump it, and moving it uphill costs a power input. In every fridge and air
+  conditioner that input is electricity driving a compressor. This project replaces the compressor
+  with a bucket of adsorbent: <b>heat itself does the pumping</b>. The coldest, most useless grade of
+  energy (60–120&nbsp;°C waste heat) is converted into the most valuable one on a hot day (7–18&nbsp;°C cooling).</p>
+  <nav class="toc">
+    <a href="#water">1 · Water's secret</a>
+    <a href="#fridge">2 · The machine you replace</a>
+    <a href="#squeeze">3 · How heat does the squeezing</a>
+    <a href="#machine">4 · Heat as compressor, live</a>
+    <a href="#map">5 · The cycle map</a>
+    <a href="#ledger">6 · The energy ledger</a>
+    <a href="#material">7 · Why the material decides</a>
+    <a href="#works">8 · What currently works</a>
+    <a href="#offer">9 · What it offers</a>
+  </nav>
+</header>
+
+<!-- ============================ HERO: energy ladder ============================ -->
+<div class="figure">
+<svg viewBox="0 0 940 190" role="img" aria-label="Energy grade ladder">
+  <text x="20" y="24" fill="#e2e8f0" font-size="14" font-weight="700">The energy-grade ladder</text>
+  <g font-size="11" font-family="system-ui">
+    <rect x="20"  y="40" width="150" height="26" rx="4" fill="#6d28d9"/>
+    <text x="30" y="57" fill="#e2e8f0">Electricity</text><text x="180" y="57" fill="#94a3b8">100 % exergy — anything is possible, costs the most</text>
+    <rect x="20"  y="72" width="130" height="26" rx="4" fill="#9a3412"/>
+    <text x="30" y="89" fill="#fde68a">120 °C exhaust</text><text x="160" y="89" fill="#94a3b8">vehicle / industrial waste — usually thrown away</text>
+    <rect x="20"  y="104" width="115" height="26" rx="4" fill="#b45309"/>
+    <text x="30" y="121" fill="#fde68a">80 °C solar</text><text x="145" y="121" fill="#94a3b8">flat-plate collectors, HVAC reject</text>
+    <rect x="20"  y="136" width="100" height="26" rx="4" fill="#d97706"/>
+    <text x="30" y="153" fill="#fde68a">60 °C coolant</text><text x="130" y="153" fill="#94a3b8">datacenter warm-water loop — too cold for turbines</text>
+    <rect x="20"  y="168" width="85" height="14" rx="4" fill="#334155"/>
+    <text x="30" y="179" fill="#94a3b8">ambient</text>
+  </g>
+  <g font-size="12">
+    <path d="M 640 160 C 700 160 700 90 760 90" stroke="#06b6d4" stroke-width="3" fill="none" marker-end="url(#arrC)"/>
+    <text x="630" y="182" fill="#06b6d4" font-weight="700">this project</text>
+    <text x="648" y="130" fill="#06b6d4">60–120 °C heat in</text>
+    <text x="770" y="84" fill="#06b6d4" font-weight="700">7–18 °C cooling out</text>
+    <text x="640" y="52" fill="#94a3b8" font-size="11">the coldest grade of heat becomes</text>
+    <text x="640" y="68" fill="#94a3b8" font-size="11">exactly the service summer demands</text>
+  </g>
+  <defs><marker id="arrC" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#06b6d4"/></marker></defs>
+</svg>
+<div class="caption">You cannot run a turbine or charge a battery from 60&nbsp;°C water. You <i>can</i> run an adsorption chiller — because its only job is to push refrigerant vapour from one pressure to another, and heat can do that directly.</div>
+</div>
+
+<!-- ============================ §1 WATER ============================ -->
+<h2 id="water">1 · Water's secret — the boiling-point dial</h2>
+<p>Everything rests on one fact you have felt but maybe never used: <b>the boiling point is set by
+pressure, not by a stove</b>. Drop the pressure and water boils colder. Drop it far enough and it
+boils <i>below room temperature</i> — water boiling at 16&nbsp;°C absorbs 2.47&nbsp;MJ of heat per
+kilogram while it evaporates. That heat theft <b>is the cooling</b>.</p>
+
+<div class="figure">
+<svg viewBox="0 0 940 240" role="img" aria-label="Boiling point versus pressure, interactive flask">
+  <!-- flask -->
+  <g>
+    <rect x="40" y="60" width="200" height="140" rx="12" fill="#161a22" stroke="#2a3040"/>
+    <rect x="52" y="128" width="176" height="60" rx="8" fill="#0e7490" opacity="0.55" id="w-liquid"/>
+    <g id="w-bubbles" class="dots">
+      <circle cx="90" cy="176" r="3"/><circle cx="120" cy="180" r="2.5"/><circle cx="150" cy="174" r="3.5"/>
+      <circle cx="180" cy="179" r="2.5"/><circle cx="205" cy="175" r="3"/>
+    </g>
+    <!-- thermometer -->
+    <rect x="250" y="70" width="12" height="120" rx="6" fill="#1c212c" stroke="#2a3040"/>
+    <rect x="252" y="150" width="8" height="38" rx="4" fill="#ef4444" id="w-mercury"/>
+    <circle cx="256" cy="190" r="9" fill="#ef4444"/>
+    <text x="272" y="98" fill="#94a3b8" font-size="11">thermometer</text>
+    <text x="272" y="116" fill="#e2e8f0" font-size="15" font-weight="700" id="w-tread">16.0 °C</text>
+    <text x="45" y="52" fill="#e2e8f0" font-size="13" font-weight="700">sealed flask of water</text>
+    <text x="45" y="222" fill="#94a3b8" font-size="11">boils when p = p_sat(T) — pull vacuum, it boils cold</text>
+  </g>
+  <!-- anchor scale -->
+  <g font-size="11" font-family="ui-monospace">
+    <line x1="380" y1="140" x2="900" y2="140" stroke="#2a3040"/>
+    <g id="w-ticks"></g>
+    <text x="380" y="128" fill="#94a3b8">log pressure (kPa) → boiling point</text>
+    <text x="380" y="204" fill="#06b6d4" font-weight="700" id="w-anchor">drag the slider ▸</text>
+  </g>
+</svg>
+<div class="controls">
+  <span class="muted small">pressure</span>
+  <input type="range" id="w-slider" min="0.3" max="101.3" value="1.82" step="0.01">
+  <span class="readout" id="w-pread">1.82 kPa</span>
+</div>
+<div class="caption">Anchors: <span class="kx">1.0 kPa → 7 °C</span> (vehicle evaporator) ·
+<span class="kx">1.8 kPa → 16 °C</span> (datacenter / cpu evaporator) ·
+<span class="krej">5.6 kPa → 35 °C</span> (condenser back-pressure) · atmosphere → 100 °C.
+The refrigerant is plain water; the trick is keeping the machine at 1/56th of atmospheric pressure.</div>
+</div>
+
+<!-- ============================ §2 FRIDGE ============================ -->
+<h2 id="fridge">2 · The machine you replace — electric compression</h2>
+<p>A normal fridge pumps heat with the same four stations, but the pressure step is bought with
+electricity: the <span class="kheat">compressor</span> squeezes vapour from low to high pressure.
+That is the only place money enters the loop.</p>
+
+<div class="figure">
+<svg viewBox="0 0 940 220" role="img" aria-label="Vapour-compression loop">
+  <defs>
+    <marker id="arrG" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#94a3b8"/></marker>
+  </defs>
+  <g font-size="12" font-family="system-ui">
+    <!-- evaporator -->
+    <rect x="60" y="130" width="150" height="60" rx="8" fill="#0e7490" opacity=".35" stroke="#06b6d4"/>
+    <text x="70" y="165" fill="#06b6d4" font-weight="700">EVAPORATOR</text><text x="70" y="181" fill="#94a3b8" font-size="10">boils at 7–18 °C → absorbs heat</text>
+    <!-- compressor -->
+    <rect x="400" y="30" width="140" height="60" rx="8" fill="#7f1d1d" opacity=".5" stroke="#ef4444"/>
+    <text x="425" y="55" fill="#ef4444" font-weight="700">COMPRESSOR</text>
+    <text x="408" y="72" fill="#fca5a5" font-size="10">⚡ electricity does the pumping</text>
+    <!-- condenser -->
+    <rect x="680" y="30" width="150" height="60" rx="8" fill="#b45309" opacity=".35" stroke="#f59e0b"/>
+    <text x="690" y="55" fill="#f59e0b" font-weight="700">CONDENSER</text><text x="690" y="71" fill="#fcd34d" font-size="10">rejects heat at 35–45 °C</text>
+    <!-- valve -->
+    <rect x="400" y="160" width="140" height="44" rx="8" fill="#1c212c" stroke="#2a3040"/>
+    <text x="415" y="186" fill="#94a3b8">expansion valve</text>
+    <!-- pipes -->
+    <line x1="210" y1="160" x2="400" y2="182" stroke="#94a3b8" marker-end="url(#arrG)"/>
+    <line x1="540" y1="182" x2="680" y2="62" stroke="#94a3b8" marker-end="url(#arrG)"/>
+    <line x1="830" y1="62" x2="830" y2="182" stroke="#94a3b8" marker-end="url(#arrG)"/>
+    <line x1="830" y1="182" x2="210" y2="182" stroke="#94a3b8" marker-end="url(#arrG)"/>
+    <text x="255" y="150" fill="#94a3b8" font-size="10">low-p vapour</text>
+    <text x="560" y="110" fill="#94a3b8" font-size="10">high-p vapour</text>
+    <text x="770" y="130" fill="#94a3b8" font-size="10">liquid</text>
+    <text x="480" y="200" fill="#94a3b8" font-size="10">cold liquid flashes</text>
+  </g>
+</svg>
+<div class="caption">One loop, one power input. Replace the red box with something else that raises
+vapour pressure — and the electricity bill disappears.</div>
+</div>
+
+<!-- ============================ §3 SQUEEZE ============================ -->
+<h2 id="squeeze">3 · How heat does the squeezing — piston vs bed</h2>
+<p>Both machines must perform the identical single job: <b>lift refrigerant vapour from the
+evaporator's 1.8 kPa to the condenser's 5.6 kPa</b> — a 3.1× pressure ratio. Everything else
+(evaporator, condenser, load) is the same in both. The only question is <i>what provides the lift</i>.</p>
+
+<div class="figure">
+<svg viewBox="0 0 940 320" role="img" aria-label="Piston compressor versus adsorption bed">
+  <defs>
+    <marker id="arrBlu2" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#06b6d4"/></marker>
+    <marker id="arrRed2" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#ef4444"/></marker>
+  </defs>
+  <g font-family="system-ui">
+    <!-- LEFT: piston -->
+    <rect x="30" y="30" width="420" height="250" rx="10" fill="#161a22" stroke="#2a3040"/>
+    <text x="50" y="56" fill="#ef4444" font-weight="700" font-size="13">PISTON COMPRESSOR</text>
+    <text x="50" y="72" fill="#94a3b8" font-size="10">continuous · electricity → shaft work</text>
+    <rect x="150" y="110" width="180" height="80" rx="6" fill="#1c212c" stroke="#475569" stroke-width="2"/>
+    <rect x="158" y="118" width="80" height="64" rx="4" fill="#312e81" opacity="0.5"/>
+    <rect x="238" y="118" width="84" height="64" rx="4" fill="#7f1d1d" opacity="0.5"/>
+    <rect x="230" y="112" width="16" height="66" rx="3" fill="#64748b"/>
+    <rect x="246" y="140" width="84" height="10" fill="#64748b"/>
+    <circle cx="396" cy="145" r="22" fill="#1c212c" stroke="#ef4444"/>
+    <text x="386" y="151" fill="#ef4444" font-size="15">⚡</text>
+    <path d="M 90 150 L 148 150" stroke="#06b6d4" stroke-width="3" marker-end="url(#arrBlu2)"/>
+    <path d="M 330 118 L 400 62" stroke="#ef4444" stroke-width="3" marker-end="url(#arrRed2)"/>
+    <text x="40" y="140" fill="#06b6d4" font-size="10">in: 1.8 kPa</text>
+    <text x="40" y="154" fill="#94a3b8" font-size="9">cold vapour</text>
+    <text x="404" y="56" fill="#ef4444" font-size="10">out: 5.6 kPa</text>
+    <text x="150" y="210" fill="#94a3b8" font-size="10">the same vapour passes through — squeezed by volume</text>
+    <text x="150" y="226" fill="#64748b" font-size="10">motor inefficiency is the only tax</text>
+    <text x="150" y="250" fill="#e2e8f0" font-size="11" font-weight="700">COP 3–5 — paid in electricity</text>
+
+    <!-- RIGHT: bed -->
+    <rect x="490" y="30" width="420" height="250" rx="10" fill="#161a22" stroke="#2a3040"/>
+    <text x="510" y="56" fill="#06b6d4" font-weight="700" font-size="13">ADSORBENT BED</text>
+    <text x="510" y="72" fill="#94a3b8" font-size="10">batch · heat → temperature swing (no moving parts)</text>
+    <rect x="640" y="100" width="180" height="100" rx="10" fill="#1c212c" stroke="#475569" stroke-width="2"/>
+    <g fill="#06b6d4" opacity="0.9">
+      <circle cx="670" cy="130" r="5"/><circle cx="700" cy="150" r="5"/><circle cx="730" cy="125" r="5"/>
+      <circle cx="760" cy="155" r="5"/><circle cx="690" cy="175" r="5"/><circle cx="745" cy="180" r="5"/>
+      <circle cx="775" cy="128" r="5"/><circle cx="720" cy="158" r="5"/>
+    </g>
+    <path d="M 560 150 L 638 150" stroke="#06b6d4" stroke-width="3" marker-end="url(#arrBlu2)"/>
+    <path d="M 820 150 L 892 150" stroke="#ef4444" stroke-width="3" marker-end="url(#arrRed2)"/>
+    <path d="M 892 84 L 824 84" stroke="#ef4444" stroke-width="3" marker-end="url(#arrRed2)"/>
+    <text x="836" y="74" fill="#ef4444" font-size="11">🔥 60 °C</text>
+    <text x="500" y="140" fill="#06b6d4" font-size="10">cold, 35 °C:</text>
+    <text x="500" y="154" fill="#a5f3fc" font-size="10">p_eq 1.8 kPa — sucks</text>
+    <text x="700" y="140" fill="#94a3b8" font-size="9">pores hold the charge</text>
+    <text x="830" y="168" fill="#ef4444" font-size="10">hot: p_eq 7.0 kPa</text>
+    <text x="830" y="182" fill="#fca5a5" font-size="10">— pushes</text>
+    <text x="510" y="222" fill="#94a3b8" font-size="10">vapour is swallowed, stored in the pores, released hotter —</text>
+    <text x="510" y="238" fill="#64748b" font-size="10">the bed is compressor and storage tank at once</text>
+    <text x="510" y="262" fill="#e2e8f0" font-size="11" font-weight="700">COP 0.4–0.8 — paid in waste heat</text>
+    <text x="510" y="278" fill="#64748b" font-size="10">and it must re-heat its own mass every cycle (§6's amber bar)</text>
+  </g>
+</svg>
+<div class="caption">Same duty, different mechanism. Left: a motor squeezes the vapour's volume —
+the refrigerant passes straight through. Right: the bed's equilibrium vapour pressure is a function
+of temperature, so a temperature swing does the "squeezing" — but the vapour must first
+<i>stick to the solid</i>, which makes the bed batch-wise (hence two beds).</div>
+</div>
+
+<p><b>The thermometer is the piston.</b> A full MIL-100 bed (0.212 kg water per kg adsorbent) has an
+equilibrium pressure of exactly 1.82 kPa at 35 °C — it <i>is</i> the suction line. Heat that same
+full bed and its pressure climbs the isostere: 3.21 kPa at 45 °C, <b>7.04 kPa at 60 °C</b> —
+3.9× from +25 K, comfortably past the 3.1× the condenser demands. Clausius–Clapeyron sets the
+slope of that climb; the D–A isotherm sets where it starts. Both live in
+<code>harness/physics/thermo.py</code>.</p>
+
+<p><b>But a piston only has to squeeze — a bed has to squeeze <i>and let go</i>.</b> Two duties:</p>
+<p>① <b>Reach discharge pressure.</b> Thermodynamics — any bed manages it given enough ΔT. Even
+zeolite 13X, the strongest binder in the table, pushes 7.0 kPa at 60 °C: duty ① passed.</p>
+<p>② <b>Deliver the charge.</b> 13X's empty state (0.243 kg/kg) sits almost on top of its full
+state (0.246) — its two isosteres nearly coincide, so its "stroke" is ~1 % of its displacement:
+it discharges a whisper of vapour and quits. MIL-100's isosteres are far apart
+(0.212 → 0.148): it delivers 30 % of its adsorbed charge every pass. <b>Duty ② is decided by
+the material</b> — which is why the cycle map's rectangle width (§5) and the working-window gap
+(§7) are the real judges, and why a pressure-ratio-only view would have ranked 13X as fine.</p>
+
+<table>
+  <tr><th></th><th>piston compressor</th><th>adsorbent bed — "thermal compressor"</th></tr>
+  <tr><td>energy input</td><td>electricity → shaft work</td><td>waste heat → temperature swing</td></tr>
+  <tr><td>how p rises</td><td>squeezes the vapour's volume</td><td>re-programs the equilibrium p<sub>eq</sub>(T) — Clausius–Clapeyron + D–A</td></tr>
+  <tr><td>fate of the vapour</td><td>passes through, compressed</td><td>swallowed, stored in the solid, released later — compressor <i>and</i> tank</td></tr>
+  <tr><td>flow</td><td>continuous</td><td>batch → two beds run counter-phase (§4)</td></tr>
+  <tr><td>moving parts</td><td>motor, piston, valves</td><td>none — only external valves switch</td></tr>
+  <tr><td>loss mode</td><td>motor/piston inefficiency</td><td>heats its own mass first — §6's amber "sensible" bar</td></tr>
+  <tr><td>COP scale</td><td>3–5, paid in electricity</td><td>0.4–0.8, paid in waste heat</td></tr>
+</table>
+
+<p class="caption">Thermodynamic poverty is fine when the fuel is free: COP 0.57 from heat you were
+throwing away beats COP 4.0 from the grid on every bill that matters except heat-efficiency — and
+zero moving parts is exactly the vehicle-exhaust pitch (no vibration, no wear).</p>
+
+<!-- ============================ §4 MACHINE ============================ -->
+<h2 id="machine">4 · Heat as compressor — the adsorption machine, live</h2>
+<p>The replacement is a <b>porous solid that grips water</b> — a zeolite, a silica gel, a MOF.
+Gripping is easy; the art is making it <i>let go</i>. That is what heat does:</p>
+<p><b>Cold bed + low pressure → water sticks.</b> The bed holds the evaporator at 1.8 kPa, so the
+load's water keeps boiling at 16 °C and stealing heat. Adsorption also releases its own heat
+(the isosteric heat Q<sub>st</sub>), so the bed must be cooled while it works.</p>
+<p><b>Hot bed + high pressure → water leaves.</b> Heat the bed to 60 °C and the grip fails; vapour
+is driven out at the <i>condenser's</i> pressure — 3× the evaporator's. <span class="kheat">The bed
+has just compressed the refrigerant using heat, no moving parts.</span> Two beds run counter-phase,
+so one is always adsorbing while the other regenerates: cooling never stops.</p>
+
+<div class="figure">
+<svg id="machine-svg" viewBox="0 0 940 470" role="img" aria-label="Animated two-bed adsorption chiller">
+  <defs>
+    <marker id="arrCyn" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#06b6d4"/></marker>
+    <marker id="arrRed" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#ef4444"/></marker>
+    <marker id="arrOrn" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#f59e0b"/></marker>
+  </defs>
+  <g font-family="system-ui">
+    <!-- CONDENSER -->
+    <rect x="60" y="40" width="180" height="56" rx="10" fill="#7c2d12" opacity=".4" stroke="#f59e0b"/>
+    <text x="75" y="64" fill="#f59e0b" font-weight="700" font-size="13">CONDENSER</text>
+    <text x="75" y="82" fill="#fcd34d" font-size="10">35 °C · 5.6 kPa · rejects heat</text>
+    <path d="M 240 68 L 300 68" stroke="#f59e0b" marker-end="url(#arrOrn)"/>
+    <text x="306" y="58" fill="#f59e0b" font-size="10">Q_out to ambient</text>
+
+    <!-- EVAPORATOR -->
+    <rect x="60" y="330" width="180" height="80" rx="10" fill="#164e63" opacity=".5" stroke="#06b6d4"/>
+    <text x="75" y="354" fill="#06b6d4" font-weight="700" font-size="13">EVAPORATOR</text>
+    <text x="75" y="372" fill="#a5f3fc" font-size="10">16 °C · 1.8 kPa</text>
+    <text x="75" y="388" fill="#a5f3fc" font-size="10">water boils, steals heat</text>
+    <path d="M 150 330 L 150 296" stroke="#06b6d4" stroke-width="3" marker-end="url(#arrCyn)"/>
+    <text x="40" y="288" fill="#06b6d4" font-size="11" font-weight="700">❄ Q_cool to the load</text>
+    <text x="40" y="428" fill="#94a3b8" font-size="10">condensate drips back here (valve V4)</text>
+
+    <!-- BED A -->
+    <g id="bedA">
+      <rect id="bedA-body" x="560" y="40" width="180" height="110" rx="12" fill="#1c212c" stroke="#2a3040"/>
+      <rect id="bedA-fm" x="560" y="40" width="180" height="110" rx="12" fill="#0e7490" opacity="0"/>
+      <rect id="bedA-fh" x="560" y="40" width="180" height="110" rx="12" fill="#ef4444" opacity="0"/>
+      <text x="574" y="64" fill="#e2e8f0" font-weight="700" font-size="13">BED A</text>
+      <text id="bedA-temp" x="574" y="82" fill="#94a3b8" font-size="11">35 °C</text>
+      <rect x="598" y="92" width="14" height="44" rx="3" fill="#0f1115" stroke="#2a3040"/>
+      <rect id="bedA-uq" x="600" y="94" width="10" height="0" fill="#06b6d4"/>
+      <text id="bedA-state" x="624" y="112" fill="#94a3b8" font-size="10">idle</text>
+      <text x="574" y="142" fill="#64748b" font-size="9">uptake bar = how much water it holds</text>
+    </g>
+
+    <!-- BED B -->
+    <g id="bedB">
+      <rect id="bedB-body" x="560" y="330" width="180" height="110" rx="12" fill="#1c212c" stroke="#2a3040"/>
+      <rect id="bedB-fm" x="560" y="330" width="180" height="110" rx="12" fill="#0e7490" opacity="0"/>
+      <rect id="bedB-fh" x="560" y="330" width="180" height="110" rx="12" fill="#ef4444" opacity="0"/>
+      <text x="574" y="354" fill="#e2e8f0" font-weight="700" font-size="13">BED B</text>
+      <text id="bedB-temp" x="574" y="372" fill="#94a3b8" font-size="11">60 °C</text>
+      <rect x="598" y="382" width="14" height="44" rx="3" fill="#0f1115" stroke="#2a3040"/>
+      <rect id="bedB-uq" x="600" y="384" width="10" height="0" fill="#06b6d4"/>
+      <text id="bedB-state" x="624" y="402" fill="#94a3b8" font-size="10">idle</text>
+    </g>
+
+    <!-- PIPES: evaporator → beds (vertical feeds) -->
+    <rect x="500" y="150" width="8" height="180" fill="#1c212c" stroke="#2a3040"/> <!-- manifold -->
+    <rect x="508" y="95" width="50" height="8" fill="#1c212c" stroke="#2a3040"/>   <!-- evap→A -->
+    <rect x="508" y="385" width="50" height="8" fill="#1c212c" stroke="#2a3040"/>  <!-- evap→B -->
+    <rect x="500" y="40" width="8" height="66" fill="#1c212c" stroke="#2a3040"/>   <!-- cond manifold -->
+    <rect x="508" y="95" width="2" height="8" fill="#1c212c"/>
+    <rect x="508" y="40" width="50" height="8" fill="#1c212c" stroke="#2a3040"/>   <!-- A→cond -->
+    <rect x="508" y="385" width="2" height="8" fill="#1c212c"/>
+    <rect x="508" y="330" width="50" height="8" fill="#1c212c" stroke="#2a3040"/>  <!-- B→cond -->
+    <!-- manifold riser evap->cond level -->
+    <rect x="497" y="96" width="14" height="238" fill="none"/>
+    <line x1="504" y1="150" x2="504" y2="330" stroke="#2a3040" stroke-dasharray="3 4"/>
+
+    <!-- VALVES (drawn on the pipes) -->
+    <rect id="v-eA" x="524" y="91" width="16" height="16" rx="3"/>
+    <rect id="v-eB" x="524" y="381" width="16" height="16" rx="3"/>
+    <rect id="v-cA" x="524" y="36" width="16" height="16" rx="3"/>
+    <rect id="v-cB" x="524" y="326" width="16" height="16" rx="3"/>
+    <text x="522" y="80" fill="#64748b" font-size="9">V1</text><text x="522" y="416" fill="#64748b" font-size="9">V2</text>
+    <text x="522" y="30" fill="#64748b" font-size="9">V3</text><text x="522" y="372" fill="#64748b" font-size="9">V4</text>
+
+    <!-- vapour dots groups -->
+    <g id="d-eA" class="dots flow hidden" transform="translate(508,150)"><circle cx="12" cy="-4" r="2.5"/><circle cx="26" cy="-4" r="2"/><circle cx="40" cy="-4" r="2.5"/></g>
+    <g id="d-eB" class="dots flow hidden" transform="translate(508,345)"><circle cx="12" cy="-4" r="2.5"/><circle cx="26" cy="-4" r="2"/><circle cx="40" cy="-4" r="2.5"/></g>
+    <g id="d-cA" class="dots hot hidden" transform="translate(558,99)"><circle cx="0" cy="-4" r="2.5"/><circle cx="14" cy="-4" r="2"/><circle cx="28" cy="-4" r="2.5"/></g>
+    <g id="d-cB" class="dots hot hidden" transform="translate(558,389)"><circle cx="0" cy="-4" r="2.5"/><circle cx="14" cy="-4" r="2"/><circle cx="28" cy="-4" r="2.5"/></g>
+
+    <!-- heat arrows -->
+    <g id="qinA" class="hidden">
+      <path d="M 830 95 L 745 95" stroke="#ef4444" stroke-width="4" marker-end="url(#arrRed)"/>
+      <text x="838" y="88" fill="#ef4444" font-size="12" font-weight="700">🔥 Q_in</text>
+      <text x="838" y="104" fill="#fca5a5" font-size="10">60 °C source</text>
+    </g>
+    <g id="qinB" class="hidden">
+      <path d="M 830 385 L 745 385" stroke="#ef4444" stroke-width="4" marker-end="url(#arrRed)"/>
+      <text x="838" y="378" fill="#ef4444" font-size="12" font-weight="700">🔥 Q_in</text>
+      <text x="838" y="394" fill="#fca5a5" font-size="10">60 °C source</text>
+    </g>
+    <g id="coolA" class="hidden">
+      <path d="M 830 62 L 745 62" stroke="#06b6d4" stroke-width="3" marker-end="url(#arrCyn)"/>
+      <text x="838" y="58" fill="#06b6d4" font-size="11">coolant 25 °C</text>
+    </g>
+    <g id="coolB" class="hidden">
+      <path d="M 830 352 L 745 352" stroke="#06b6d4" stroke-width="3" marker-end="url(#arrCyn)"/>
+      <text x="838" y="348" fill="#06b6d4" font-size="11">coolant 25 °C</text>
+    </g>
+
+    <text x="620" y="270" fill="#64748b" font-size="10">counter-phase: when one bed adsorbs,</text>
+    <text x="620" y="284" fill="#64748b" font-size="10">the other regenerates — cooling is continuous</text>
+  </g>
+</svg>
+<div class="controls">
+  <button id="m-prev">◀</button>
+  <button id="m-play">⏸ pause</button>
+  <button id="m-next">▶</button>
+  <span class="stepdots" id="m-dots"></span>
+  <span class="muted small" id="m-which">step 1/6</span>
+</div>
+<div class="narr" id="m-narr"></div>
+</div>
+
+<!-- ============================ §4 MAP ============================ -->
+<h2 id="map">5 · The cycle map — how adsorption researchers draw it</h2>
+<p>The same six steps on a pressure–temperature map. The green curve is water's boiling line
+(p<sub>sat</sub>); the dashed lines are <b>isosteres</b> — paths of constant water held in the bed.
+The bed travels the rectangle once per half-cycle. This is the "D–A operating window" panel on
+every application page in <a href="apps/index.html">docs/apps</a> — now you can read it.</p>
+
+<div class="figure">
+<svg id="map-svg" viewBox="0 0 940 420" role="img" aria-label="Dühring cycle diagram, synced with the machine">
+  <g font-family="system-ui" font-size="11">
+    <line x1="90" y1="40" x2="90" y2="360" stroke="#2a3040"/>
+    <line x1="90" y1="360" x2="900" y2="360" stroke="#2a3040"/>
+    <text x="14" y="200" fill="#94a3b8" transform="rotate(-90 14 200)">pressure (log, kPa)</text>
+    <text x="470" y="392" fill="#94a3b8">bed temperature (°C)</text>
+    <g id="map-ticks"></g>
+    <path id="map-psat" fill="none" stroke="#22c55e" stroke-width="2"/>
+    <text x="614" y="104" fill="#22c55e" font-size="11">p_sat(T) — water's boiling line</text>
+    <polyline id="iso1" fill="none" stroke="#a78bfa" stroke-width="1.6" stroke-dasharray="5 4"/>
+    <polyline id="iso2" fill="none" stroke="#a78bfa" stroke-width="1.6" stroke-dasharray="5 4"/>
+    <text id="iso1-l" x="0" y="0" fill="#a78bfa" font-size="10">isostere q = q_ads (full)</text>
+    <text id="iso2-l" x="0" y="0" fill="#a78bfa" font-size="10">isostere q = q_des (empty)</text>
+    <polyline id="leg41" fill="none" stroke="#06b6d4" stroke-width="3"/>
+    <polyline id="leg12" fill="none" stroke="#64748b" stroke-width="3"/>
+    <polyline id="leg23" fill="none" stroke="#ef4444" stroke-width="3"/>
+    <polyline id="leg34" fill="none" stroke="#64748b" stroke-width="3"/>
+    <circle id="c1" cx="0" cy="0" r="6" fill="#06b6d4"/><circle id="c2" cx="0" cy="0" r="6" fill="#64748b"/>
+    <circle id="c3" cx="0" cy="0" r="6" fill="#ef4444"/><circle id="c4" cx="0" cy="0" r="6" fill="#64748b"/>
+    <text id="c1-l" x="0" y="0" fill="#94a3b8" font-size="10"></text>
+    <text id="c3-l" x="0" y="0" fill="#94a3b8" font-size="10"></text>
+    <text x="330" y="150" fill="#ef4444" font-weight="700" font-size="12">desorption = compression</text>
+    <text x="330" y="166" fill="#fca5a5" font-size="10">heat pushes vapour up to p_cond</text>
+    <text x="120" y="320" fill="#06b6d4" font-weight="700" font-size="12">adsorption = the pump sucking</text>
+    <text x="120" y="336" fill="#a5f3fc" font-size="10">keeps p_evap low → evaporator boils → cooling</text>
+    <g id="map-legend"></g>
+  </g>
+</svg>
+<div class="caption">Corners: <b>1</b> end of adsorption (35 °C, full) · <b>2</b> isosteric heat-up
+until the bed's own vapour pressure reaches p_cond · <b>3</b> end of desorption (60 °C, empty) ·
+<b>4</b> isosteric cool-down until the bed can pull from the evaporator again. Steps 1–6 of the
+machine above highlight the corresponding leg. Regenerate the datacenter window yourself:
+<code>python -m harness.viz_apps --out docs/apps</code>.</div>
+</div>
+
+<!-- ============================ §5 LEDGER ============================ -->
+<h2 id="ledger">6 · The energy ledger — where every joule goes</h2>
+<p>Cooling out is Δq·h_fg. Heat in is what you pay: heating the bed's own thermal mass up to the
+regeneration temperature (sensible), plus prising the water off (Δq·Q<sub>st</sub>), plus a 1.35×
+heat-exchanger penalty. These are <b>your harness's exact equations</b>
+(<code>harness/physics/cycle0d.py</code>) and <b>your harness's real numbers</b> — the profile is
+<code>datacenter</code> (16/35/60 °C, 300 s), the hardest case.</p>
+
+<div class="controls">
+  <span class="muted small">adsorbent:</span>
+  <button class="mat active" data-m="MIL-100">MIL-100 (MOF)</button>
+  <button class="mat" data-m="Silica Gel">Silica Gel</button>
+  <button class="mat" data-m="Zeolite 13X">Zeolite 13X</button>
+</div>
+
+<div class="panel" id="ledger-panel">
+  <div style="display:flex;gap:26px;flex-wrap:wrap;align-items:center">
+    <div><div class="muted small">COP</div><div class="big" id="l-cop">–</div><div class="muted small">cooling ÷ heat in</div></div>
+    <div><div class="muted small">SCP</div><div class="big" id="l-scp" style="color:var(--violet)">–</div><div class="muted small">W per kg adsorbent</div></div>
+    <div style="flex:1;min-width:320px">
+      <div class="barwrap"><div class="barlabel">heat in</div><div class="bartrack" id="l-in"></div></div>
+      <div class="barwrap"><div class="barlabel">cooling out</div><div class="bartrack" id="l-out"></div></div>
+      <div class="caption" id="l-note"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ============================ §6 MATERIAL ============================ -->
+<h2 id="material">7 · Why the material decides — the working window</h2>
+<p>The bed holds water along two curves — how much it can hold at the <i>adsorption</i> pressure
+(blue) and how much it is still holding at the <i>regeneration</i> temperature under the condenser
+pressure (red). <b>The cooling comes from the gap between them.</b> Same equations, same profile —
+switch material and watch the gap close.</p>
+
+<div class="figure">
+<svg id="iso-svg" viewBox="0 0 940 360" role="img" aria-label="Working-capacity window">
+  <g font-family="system-ui" font-size="11">
+    <line x1="90" y1="30" x2="90" y2="310" stroke="#2a3040"/>
+    <line x1="90" y1="310" x2="900" y2="310" stroke="#2a3040"/>
+    <text x="20" y="170" fill="#94a3b8" transform="rotate(-90 20 170)">uptake q (kg water / kg adsorbent)</text>
+    <text x="440" y="342" fill="#94a3b8">bed temperature (°C)</text>
+    <g id="iso-ticks"></g>
+    <path id="iso-eads" fill="none" stroke="#06b6d4" stroke-width="2.5"/>
+    <path id="iso-edes" fill="none" stroke="#ef4444" stroke-width="2.5"/>
+    <rect id="iso-gap" fill="#06b6d4" opacity="0.14"/>
+    <line id="iso-ltc" stroke="#64748b" stroke-dasharray="3 4"/>
+    <line id="iso-ltd" stroke="#64748b" stroke-dasharray="3 4"/>
+    <text id="iso-tcl" x="0" y="0" fill="#94a3b8"></text>
+    <text id="iso-tdl" x="0" y="0" fill="#94a3b8"></text>
+    <text x="105" y="52" fill="#06b6d4" font-weight="700" id="iso-e1">q at p_evap (adsorption)</text>
+    <text x="105" y="70" fill="#ef4444" font-weight="700" id="iso-e2">q at p_cond (regeneration)</text>
+    <text id="iso-dq" x="700" y="120" fill="#e2e8f0" font-weight="700" font-size="13">Δq = –</text>
+    <text x="700" y="138" fill="#94a3b8" font-size="10">working capacity = cooling per pass</text>
+  </g>
+</svg>
+<div class="caption" id="iso-cap"></div>
+</div>
+
+<p>The lesson in one parameter: the characteristic energy <b>E</b>. 13X grips water with
+E ≈ 17.9 kJ/mol — magnificent for drying gas, catastrophic here: at 60 °C the bed barely lets go,
+Δq collapses, the cycle dead-ends (COP 0.06). MIL-100 (E ≈ 3.7 kJ/mol) releases on cue —
+that is why a <i>weaker</i> binder wins when your heat is only 60 °C. Your
+<code>vehicle</code> profile (120 °C) sits at the other edge: nothing in the current
+fit library was measured that hot, so every ranking row there carries the honest
+<code>out_of_window</code> flag — a measurement gap, not a winner list.</p>
+
+<!-- ============================ §7 WHAT WORKS ============================ -->
+<h2 id="works">8 · What currently works — the repo map</h2>
+
+<div class="grid2">
+  <div class="panel">
+    <h3>Validation ladder <span class="chip ok">all green</span></h3>
+    <table>
+      <tr><td>V1</td><td>thermo parity vs canonical oracle</td><td class="num">&lt;1e-12</td></tr>
+      <tr><td>V3</td><td>Bed1D degenerates to Cycle0D</td><td class="num">&lt;2 %</td></tr>
+      <tr><td>V4</td><td>calibrated to literature rigs (Uyun 2009, Sztekler 2021)</td><td class="num">✔</td></tr>
+      <tr><td>V5</td><td>bed controls (soft switch, search-on-switch-times)</td><td class="num">✔</td></tr>
+      <tr><td>V6</td><td>TwoBed film-disconnect recovery</td><td class="num">✔</td></tr>
+      <tr><td>H2.2</td><td>schedule gate vs fixed schedule</td><td class="num">COP +17 %</td></tr>
+      <tr><td>H2.3</td><td>T2 reference rankings, 21 honest adsorbents</td><td class="num">✔</td></tr>
+    </table>
+    <p class="small muted">Suite: 1,542 passed · 1 skipped (import-hygiene gate needs a
+    recover-and-run exemption for viz_pde.py).</p>
+  </div>
+  <div class="panel">
+    <h3>Concept → code</h3>
+    <table>
+      <tr><th>what you just read</th><th>lives in</th></tr>
+      <tr><td>§1 boiling dial, §6 ledger equations</td><td><code>harness/physics/thermo.py</code>, <code>cycle0d.py</code></td></tr>
+      <tr><td>§3 piston-vs-bed physics (isostere climb)</td><td><code>harness/physics/thermo.py</code> (D–A + Clausius–Clapeyron)</td></tr>
+      <tr><td>§4 two-bed machine + recovery</td><td><code>harness/envs/two_bed.py</code></td></tr>
+      <tr><td>real dynamics (film, gradients)</td><td><code>harness/physics/bed1d.py</code></td></tr>
+      <tr><td>§6–7 profiles &amp; rankings</td><td><code>harness/profiles.py</code>, <code>harness/rank.py</code></td></tr>
+      <tr><td>material params (median D–A fits)</td><td><code>data_cache/fits/da_params.csv</code></td></tr>
+      <tr><td>every page as HTML</td><td><code>harness/viz_apps.py</code> → <code>docs/apps/</code></td></tr>
+    </table>
+  </div>
+</div>
+
+<div class="grid2">
+  <div class="panel">
+    <h3>Four applications, one machine</h3>
+    <table>
+      <tr><th>profile</th><th>heat source</th><th>regen</th><th>MIL-100 COP</th><th>SCP</th></tr>
+      <tr><td>cpu</td><td>rack waste 60–85 °C</td><td class="num">75 °C</td><td class="num">0.64</td><td class="num">4,663 W/kg</td></tr>
+      <tr><td>human</td><td>solar / HVAC 75–95 °C</td><td class="num">80 °C</td><td class="num">0.76*</td><td class="num">—</td></tr>
+      <tr><td>vehicle</td><td>exhaust ~130 °C</td><td class="num">120 °C</td><td class="num">out-of-window</td><td class="num">—</td></tr>
+      <tr><td>datacenter</td><td>coolant loop 45–70 °C</td><td class="num">60 °C</td><td class="num">0.57</td><td class="num">523 W/kg</td></tr>
+    </table>
+    <p class="small muted">*MIL-160 on <code>human</code>. Equilibrium numbers — the dynamic Bed1D
+    refinement is the next honesty stage. 13X ranks 19/21 on datacenter: the textbook adsorbent
+    fails exactly the case that matters most.</p>
+  </div>
+  <div class="panel">
+    <h3>Still open <span class="chip pending">roadmap</span></h3>
+    <table>
+      <tr><td><span class="chip pending">in progress</span></td><td>PINN hardening — surrogate vs Bed1D under real conditions (rel-L2/residual gates)</td></tr>
+      <tr><td><span class="chip pending">H2.4</span></td><td>RL control on <code>TwoBedSchedule-v0</code>, stochastic source; baseline = H2.2 schedules</td></tr>
+      <tr><td><span class="chip pending">data</span></td><td>matching round on OPTIMADE CIFs — 106/156 materials still unmatched</td></tr>
+    </table>
+    <p class="small muted">Everything above them is validated and runnable — see the hands-on box below.</p>
+  </div>
+</div>
+
+<div class="panel">
+  <h3>See it yourself (all CPU, seconds)</h3>
+  <pre>JAX_PLATFORMS=cpu uv run python -c "import harness; from harness import rank; \
+  df = rank.sweep_materials(rank.load_sweep_materials()); \
+  print(rank.shortlist(df, 'datacenter', k=10))"          # §6–7 tables, ~60 ms
+
+python -m harness.viz_apps --out docs/apps               # the per-profile HTML pages
+uv run harness-gui                                       # launch TwoBed with your own schedule</pre>
+</div>
+
+<!-- ============================ §8 OFFER ============================ -->
+<h2 id="offer">9 · What heat-as-compressor offers</h2>
+<p><b>The pitch in one sentence:</b> a datacenter already pumps 45–70 °C coolant to protect its
+chips; your harness shows a MIL-100 bed converts that same loop into COP 0.57 cooling —
+the building's own waste heat pays the air-conditioning bill.</p>
+<ul>
+  <li><b>Free energy, right season.</b> Waste heat peaks exactly when cooling demand peaks; no grid draw, no compressor electricity.</li>
+  <li><b>Nothing exotic inside.</b> Water refrigerant, solid adsorbent, no moving parts in the vapour loop — the engineering risk concentrates in heat exchangers and in <i>choosing the material</i>, which is precisely what the ranking layer does.</li>
+  <li><b>The knobs are quantified.</b> Source temperature (the profile), material (E, q_sat, Q_st), and schedule (H2.2: +17 % COP) each have a measured effect in the harness — so any real design conversation can start from numbers instead of vibes.</li>
+  <li><b>Honest limits, on the table.</b> All numbers here are equilibrium; transport losses come next (PINN stage), nothing is yet measured at 120 °C (vehicle), and no hardware exists — this is the lab, not the rig.</li>
+</ul>
+
+<footer>
+  <p class="small muted">Provenance — equations are a verbatim JS port of
+  <code>harness/physics/thermo.py</code> (Alduchov–Eskridge Magnus, Watson h_fg, Dubinin–Astakhov with
+  Polanyi potential, V1-pinned &lt;1e-12). Material parameters are the median-aggregated honest fits
+  (<code>rank.load_sweep_materials()</code>: 1,221 fits → 21 adsorbents). Cycle numbers were computed
+  with <code>harness.physics.cycle0d.simulate_cycle</code> on 2026-11-15 (MIL-100 datacenter:
+  q_ads 0.212 / q_des 0.148 / Δq 0.064 kg/kg → COP 0.567, SCP 523 W/kg). This page is hand-authored
+  (not generated); the generated cousins live in <a href="apps/index.html">docs/apps/</a>.</p>
+</footer>
+
+<script>
+"use strict";
+/* ===== physics: verbatim port of harness/physics/thermo.py ===== */
+const R = 8.314;
+function psat(T){ const tc = T - 273.15;
+  return tc < 100 ? 611.2*Math.exp(17.502*tc/(240.97+tc))
+                  : Math.pow(10, 8.10765 - 1750.286/(235.0+tc))*133.322; }
+function hfg(T){ return 2256400*Math.pow((647.1-T)/(647.1-373.15), 0.321); }
+function da(T, p, q0, E, n){ const r = Math.max(psat(T)/p, 1.0);
+  return q0*Math.exp(-Math.pow(R*T*Math.log(r)/E, n)); }
+/* boiling point from pressure [kPa]: bisection on 0..100 °C (psat is Pa) */
+function tboil(pKpa){ const p = pKpa*1000; let lo=0, hi=100;
+  for(let i=0;i<48;i++){ const mid=(lo+hi)/2; (psat(mid+273.15)<p)?lo=mid:hi=mid; }
+  return hi; }
+
+/* ===== data: rank.load_sweep_materials() medians, 2026-11-15 ===== */
+const MATS = {
+  "MIL-100":     { q0:0.355, qst:2472, E:3692,  n:2.71 },
+  "Silica Gel":  { q0:0.347, qst:2592, E:3678,  n:1.08 },
+  "Zeolite 13X": { q0:0.249, qst:3152, E:17891, n:2.34 },
+};
+const PROFS = {
+  cpu:        { te:18, tc:35, td:75,  ct:120, label:"cpu cold-plate" },
+  human:      { te:10, tc:35, td:80,  ct:600, label:"human / solar" },
+  vehicle:    { te:7,  tc:45, td:120, ct:180, label:"vehicle exhaust" },
+  datacenter: { te:16, tc:35, td:60,  ct:300, label:"datacenter 60 °C loop" },
+};
+const HX = 1.35, CP_A = 1000.0, CP_W = 4184.0;
+
+/* exact Cycle0D ledger for one material on one profile */
+function cycle(m, pr){
+  const te=pr.te+273.15, tc=pr.tc+273.15, td=pr.td+273.15;
+  const qads = da(tc, psat(te), m.q0, m.E, m.n);
+  const qdes = da(td, psat(tc), m.q0, m.E, m.n);
+  const dq = Math.max(0, qads-qdes);
+  const cool = dq*hfg(te)/1000;                      // kJ per kg adsorbent
+  const sens = (CP_A + qads*CP_W)*(pr.td-pr.tc)/1000; // kJ per kg
+  const desb = dq*m.qst;                              // kJ per kg (qst already kJ/kg)
+  const qin = HX*(sens+desb);
+  const cop = qin>0 ? cool/qin : 0;
+  const scp = dq*hfg(te)/pr.ct;                       // W/kg
+  return { qads,qdes,dq,cool,sens,desb,qin,cop,scp };
+}
+
+const fmt = (x,d)=>x.toFixed(d);
+const el = id=>document.getElementById(id);
+
+/* ===== §1 boiling dial ===== */
+(function(){
+  const s = el("w-slider");
+  const anchors = [[101.3,"100 °C — the kettle"],[5.63,"35 °C — condenser"],
+                   [1.82,"16 °C — evaporator"],[1.0,"7 °C — vehicle"]];
+  const lo = Math.log10(0.3), hi = Math.log10(101.3);
+  const ticks = el("w-ticks");
+  const x = p => 380 + (Math.log10(p)-lo)/(hi-lo)*520;
+  anchors.forEach(([p,lbl],i)=>{
+    const tx = x(p), ty = i%2 ? 178 : 160;   // stagger to survive the crowded log end
+    ticks.insertAdjacentHTML("beforeend",
+      `<line x1="${tx}" y1="134" x2="${tx}" y2="146" stroke="#475569"/>
+       <text x="${tx}" y="128" fill="#64748b" text-anchor="middle" font-size="10">${p} kPa</text>
+       <text x="${tx}" y="${ty}" fill="#64748b" text-anchor="middle" font-size="10">${lbl}</text>`);
+  });
+  function draw(){
+    const p = parseFloat(s.value);
+    const tb = tboil(p);
+    el("w-pread").textContent = fmt(p,2)+" kPa";
+    el("w-tread").textContent = fmt(tb,1)+" °C";
+    const f = Math.min(1, Math.max(0, (tb-0)/100));
+    el("w-mercury").setAttribute("y", 190-f*118);
+    el("w-mercury").setAttribute("height", f*118+2);
+    el("w-liquid").setAttribute("opacity", tb<95?0.55:0.3);
+    el("w-bubbles").classList.toggle("hidden", tb>=95);
+    el("w-anchor").textContent =
+      p>60 ? "atmospheric — it will not boil until the kettle" :
+      tb<20 ? `boils at ${fmt(tb,0)} °C — colder than your drink → free cooling` :
+              `boils at ${fmt(tb,0)} °C`;
+  }
+  s.addEventListener("input", draw); draw();
+})();
+
+/* ===== §3 machine + §4 map: shared 6-step state ===== */
+const STEPS = [
+  { t:"① <b>Adsorb</b> — Bed A sits at 35 °C under evaporator pressure (1.8 kPa). Vapour rushes in and sticks; the uptake bar climbs. The bed holding the pressure <b>low</b> is what keeps the load's water boiling at 16 °C — <b>that is the cooling</b>. Bed B waits, freshly regenerated.",
+    A:{temp:"35 °C",mode:"ads",uq:0.9,state:"adsorbing ▲"}, B:{temp:"60 °C",mode:"off",uq:0.05,state:"idle"},
+    flow:["d-eA"], leg:"leg41" },
+  { t:"② <b>Swap</b> — Bed A is nearly full (q_ads). The controller flips the valves: A disconnects, B takes over the suction line. Cooling continues without a hiccup — this switch timing is exactly what H2.2 optimizes (+17 % COP).",
+    A:{temp:"35 °C",mode:"off",uq:1.0,state:"full"}, B:{temp:"35 °C",mode:"ads",uq:0.1,state:"adsorbing ▲"},
+    flow:[], leg:"c1" },
+  { t:"③ <b>Heat</b> — Q_in raises Bed A toward 60 °C <i>at constant uptake</i> (the isostere!). Its vapour pressure climbs until it reaches the condenser's 5.6 kPa. Meanwhile B adsorbs — still cooling.",
+    A:{temp:"35→60 °C",mode:"hot",uq:1.0,state:"heating (q const)"}, B:{temp:"35 °C",mode:"ads",uq:0.5,state:"adsorbing ▲"},
+    flow:["d-eB"], leg:"leg12" },
+  { t:"④ <b>Desorb & condense</b> — the money shot. Heat drives water off A; vapour leaves at 5.6 kPa — <b>the bed just compressed refrigerant with heat</b>. It condenses at 35 °C (rejecting Q_out) and drips back to the evaporator. B keeps adsorbing: cooling and compression happen <i>simultaneously</i>.",
+    A:{temp:"60 °C",mode:"hot",uq:0.3,state:"desorbing ▼"}, B:{temp:"35 °C",mode:"ads",uq:0.9,state:"adsorbing ▲"},
+    flow:["d-cA","d-eB"], leg:"leg23" },
+  { t:"⑤ <b>Swap back</b> — A is hot and empty (q_des). Valves flip again: A disconnects and starts cooling; B, now full, takes the heat.",
+    A:{temp:"60 °C",mode:"off",uq:0.05,state:"empty, cooling"}, B:{temp:"60 °C",mode:"off",uq:1.0,state:"full"},
+    flow:[], leg:"c3" },
+  { t:"⑥ <b>Cool</b> — Bed A sheds heat to the coolant, its vapour pressure falls back to 1.8 kPa, and it starts pulling vapour again. The rectangle on the map below closes. <b>Heat went in at 60 °C; cooling came out at 16 °C.</b>",
+    A:{temp:"60→35 °C",mode:"ads",uq:0.05,state:"cooling, then adsorb ▲"}, B:{temp:"60 °C",mode:"hot",uq:0.3,state:"desorbing ▼"},
+    flow:["d-cB"], leg:"leg34" },
+];
+let step = 0, playing = true, timer = null;
+
+function paintBed(id, s){
+  el(id+"-temp").textContent = s.temp;
+  el(id+"-state").textContent = s.state;
+  el(id+"-fm").setAttribute("opacity", s.mode==="ads"?0.30:0.06);
+  el(id+"-fh").setAttribute("opacity", s.mode==="hot"?0.30:0.0);
+  const h = Math.max(2, 44*Math.min(1, s.uq));
+  const bottom = id==="bedA" ? 138 : 428;
+  el(id+"-uq").setAttribute("y", bottom - h);
+  el(id+"-uq").setAttribute("height", h);
+}
+const VALVES = { "d-eA":["v-eA"], "d-eB":["v-eB"], "d-cA":["v-cA"], "d-cB":["v-cB"] };
+function setStep(i){
+  step = (i+STEPS.length)%STEPS.length;
+  const S = STEPS[step];
+  el("m-narr").innerHTML = S.t;
+  el("m-which").textContent = `step ${step+1}/6`;
+  paintBed("bedA", S.A); paintBed("bedB", S.B);
+  ["d-eA","d-eB","d-cA","d-cB"].forEach(k=>el(k).classList.toggle("hidden", !S.flow.includes(k)));
+  el("qinA").classList.toggle("hidden", !(step===2 || step===3));
+  el("qinB").classList.toggle("hidden", !(step===4 || step===5));
+  el("coolA").classList.toggle("hidden", !(step===0 || step===5));
+  el("coolB").classList.toggle("hidden", !(step===1 || step===2 || step===3));
+  Object.values(VALVES).flat().forEach(v=>{
+    el(v).setAttribute("fill", "#1c212c");
+    el(v).setAttribute("stroke", "#2a3040");
+  });
+  S.flow.forEach(k=>VALVES[k].forEach(v=>{
+    el(v).setAttribute("fill", k.startsWith("v-c") ? "#7f1d1d" : "#164e63");
+    el(v).setAttribute("stroke", k.startsWith("v-c") ? "#ef4444" : "#06b6d4");
+  }));
+  highlightLeg(S.leg);
+  [...el("m-dots").children].forEach((d,k)=>d.classList.toggle("on", k===step));
+}
+function highlightLeg(id){
+  ["leg41","leg12","leg23","leg34","c1","c3"].forEach(l=>el(l).classList.remove("leg-active","corner-active"));
+  if(id) el(id).classList.add(id.startsWith("c")?"corner-active":"leg-active");
+}
+function play(on){
+  playing = on;
+  el("m-play").textContent = on ? "⏸ pause" : "▶ play";
+  if(timer) clearInterval(timer);
+  if(on) timer = setInterval(()=>setStep(step+1), 3400);
+}
+(function(){
+  const dots = el("m-dots");
+  STEPS.forEach((_,k)=>{ const sp=document.createElement("span");
+    sp.onclick=()=>{ play(false); setStep(k); }; dots.appendChild(sp); });
+  el("m-prev").onclick=()=>{ play(false); setStep(step-1); };
+  el("m-next").onclick=()=>{ play(false); setStep(step+1); };
+  el("m-play").onclick=()=>play(!playing);
+  setStep(0); play(true);
+})();
+
+/* ===== §4 map geometry (datacenter window; recomputed per selection too) ===== */
+const MAP = { x0:90, x1:900, y0:360, y1:40, tmin:0, tmax:100, pmin:0.3, pmax:101.3 };
+const mx = t => MAP.x0 + (t-MAP.tmin)/(MAP.tmax-MAP.tmin)*(MAP.x1-MAP.x0);
+const my = p => MAP.y0 - (Math.log10(p)-Math.log10(MAP.pmin))/(Math.log10(MAP.pmax)-Math.log10(MAP.pmin))*(MAP.y0-MAP.y1); // high p on top
+/* full-range isostere: p_iso(T) for fixed uptake q, drawn across the map */
+function isostere(q, m){
+  const A = m.E*Math.pow(-Math.log(q/m.q0), 1/m.n);
+  const pts=[];
+  for(let T2=0; T2<=130; T2+=0.5){
+    const p = psat(T2+273.15)*Math.exp(-A/(R*(T2+273.15)));   // Pa
+    if(p < 150 || p > 150000) continue;
+    pts.push([mx(T2), my(p/1000)]);                            // my() takes kPa
+  }
+  return pts;
+}
+function drawMap(sel){
+  const m = MATS[sel.m], pr = PROFS[sel.p];
+  const tc=pr.tc, td=pr.td, pe=psat(pr.te+273.15)/1000, pc=psat(pr.tc+273.15)/1000; // kPa for my()
+  const qads = da(tc+273.15, pe*1000, m.q0, m.E, m.n), qdes = da(td+273.15, pc*1000, m.q0, m.E, m.n); // da() takes Pa
+  // psat curve
+  let d="";
+  for(let t=0;t<=100;t+=1) d += (t?"L":"M")+mx(t)+" "+my(psat(t+273.15))+" ";
+  el("map-psat").setAttribute("d", d);
+  // ticks
+  const tk = el("map-ticks"); tk.innerHTML="";
+  [0,20,40,60,80,100].forEach(t=>tk.insertAdjacentHTML("beforeend",
+    `<line x1="${mx(t)}" y1="360" x2="${mx(t)}" y2="366" stroke="#475569"/>
+     <text x="${mx(t)}" y="380" fill="#64748b" text-anchor="middle">${t}°</text>`));
+  [0.5,1,2,5,10,20,50,100].forEach(p=>tk.insertAdjacentHTML("beforeend",
+    `<line x1="84" y1="${my(p)}" x2="90" y2="${my(p)}" stroke="#475569"/>
+     <text x="80" y="${my(p)+4}" fill="#64748b" text-anchor="end">${p}</text>`));
+  // corners
+  const P1=[mx(tc),my(pe)], P2=[mx(isoT(qads,pc*1000,m)),my(pc)], P3=[mx(td),my(pc)], P4=[mx(isoT(qdes,pe*1000,m)),my(pe)];
+  /* isoT: bed temperature at which an isostere of uptake q reaches pressure pT [Pa] */
+  function isoT(q,pT,m){ const A=m.E*Math.pow(-Math.log(q/m.q0),1/m.n);
+    let lo=0,hi=130; for(let i=0;i<50;i++){ const mid=(lo+hi)/2;
+      const p=psat(mid+273.15)*Math.exp(-A/(R*(mid+273.15)));
+      (p<pT)?lo=mid:hi=mid; } return hi; }
+  const seg=(a,b)=>`${a[0]},${a[1]} ${b[0]},${b[1]}`;
+  el("leg41").setAttribute("points", seg(P4,P1));
+  el("leg12").setAttribute("points", seg(P1,P2));
+  el("leg23").setAttribute("points", seg(P2,P3));
+  el("leg34").setAttribute("points", seg(P3,P4));
+  [["c1",P1,`1 · ${tc} °C, full`,6,14],["c2",P2,null,0,0],["c3",P3,`3 · ${td} °C, empty`,6,14],["c4",P4,null,0,0]]
+    .forEach(([id,p,lbl,dx,dy])=>{ el(id).setAttribute("cx",p[0]); el(id).setAttribute("cy",p[1]);
+      if(lbl && el(id+"-l")){ el(id+"-l").setAttribute("x",p[0]+dx); el(id+"-l").setAttribute("y",p[1]+dy); el(id+"-l").textContent=lbl; }});
+  // isosteres through the cycle
+  const i1=isostere(qads, m), i2=isostere(qdes, m);
+  el("iso1").setAttribute("points", i1.map(p=>p.join(",")).join(" "));
+  el("iso2").setAttribute("points", i2.map(p=>p.join(",")).join(" "));
+  if(i1.length){ const q1=i1[Math.floor(i1.length*0.55)];
+    el("iso1-l").setAttribute("x", q1[0]-160); el("iso1-l").setAttribute("y", q1[1]-6); }
+  if(i2.length){ const q2=i2[Math.floor(i2.length*0.55)];
+    el("iso2-l").setAttribute("x", q2[0]+8); el("iso2-l").setAttribute("y", q2[1]+4); }
+}
+
+/* ===== §5 ledger + §6 window: shared selection ===== */
+const sel = { m:"MIL-100", p:"datacenter" };
+function drawLedger(){
+  const m=MATS[sel.m], pr=PROFS[sel.p], c=cycle(m,pr);
+  el("l-cop").textContent = fmt(c.cop,2);
+  el("l-scp").textContent = c.scp<1? "≈0" : Math.round(c.scp);
+  const max = Math.max(c.qin, c.cool)*1.05;
+  const seg = (v,color,label)=>{
+    const w = Math.max(0, v/max*100);
+    return `<div class="barseg" style="width:${w}%;background:${color}">${w>9?label:""}</div>`;
+  };
+  el("l-in").innerHTML = seg(c.sens,"#f59e0b",`sens ${fmt(c.sens,0)} kJ`)
+                       + seg(c.desb,"#ef4444",`desorption ${fmt(c.desb,0)} kJ`)
+                       + seg(c.qin-c.sens-c.desb,"#7f1d1d",`HX ×1.35 ${fmt(c.qin-c.sens-c.desb,0)} kJ`);
+  el("l-out").innerHTML = seg(c.cool,"#06b6d4",`cooling ${fmt(c.cool,0)} kJ (Δq=${fmt(c.dq,3)} kg/kg)`);
+  el("l-note").textContent =
+    `${m.q0} kg/kg capacity · E = ${m.E/1000} kJ/mol · regenerates at ${pr.td} °C on the ${pr.label} · per kg adsorbent per 300 s half-cycle` ;
+  drawIso();
+}
+function drawIso(){
+  const m=MATS[sel.m], pr=PROFS[sel.p];
+  const X0=90,X1=900,Y0=310,Y1=30, tmax=90;
+  const qmax = m.q0*1.08;
+  const px=t=>X0+(t/tmax)*(X1-X0), py=q=>Y1+(1-q/qmax)*(Y0-Y1);
+  const tk=el("iso-ticks"); tk.innerHTML="";
+  [0,15,30,45,60,75,90].forEach(t=>tk.insertAdjacentHTML("beforeend",
+    `<line x1="${px(t)}" y1="310" x2="${px(t)}" y2="316" stroke="#475569"/>
+     <text x="${px(t)}" y="330" fill="#64748b" text-anchor="middle">${t}°</text>`));
+  [0,0.1,0.2,0.3,0.4].forEach(q=>{ if(q<=qmax) tk.insertAdjacentHTML("beforeend",
+    `<line x1="84" y1="${py(q)}" x2="90" y2="${py(q)}" stroke="#475569"/>
+     <text x="80" y="${py(q)+4}" fill="#64748b" text-anchor="end">${q.toFixed(1)}</text>`); });
+  const pe=psat(pr.te+273.15), pc=psat(pr.tc+273.15);
+  const curve=p=>{ let d="";
+    for(let t=0;t<=tmax;t+=0.5){ const q=da(t+273.15,p,m.q0,m.E,m.n);
+      d+=(t?"L":"M")+px(t)+" "+py(q)+" "; } return d; };
+  el("iso-eads").setAttribute("d", curve(pe));
+  el("iso-edes").setAttribute("d", curve(pc));
+  const qads=da(pr.tc+273.15,pe,m.q0,m.E,m.n), qdes=da(pr.td+273.15,pc,m.q0,m.E,m.n);
+  el("iso-gap").setAttribute("x",px(pr.tc)); el("iso-gap").setAttribute("width",px(pr.td)-px(pr.tc));
+  el("iso-gap").setAttribute("y",py(qads)); el("iso-gap").setAttribute("height",py(qdes)-py(qads));
+  el("iso-ltc").setAttribute("x1",px(pr.tc)); el("iso-ltc").setAttribute("x2",px(pr.tc));
+  el("iso-ltc").setAttribute("y1",Y1); el("iso-ltc").setAttribute("y2",Y0);
+  el("iso-ltd").setAttribute("x1",px(pr.td)); el("iso-ltd").setAttribute("x2",px(pr.td));
+  el("iso-ltd").setAttribute("y1",Y1); el("iso-ltd").setAttribute("y2",Y0);
+  el("iso-tcl").setAttribute("x",px(pr.tc)+4); el("iso-tcl").setAttribute("y",Y1+14);
+  el("iso-tcl").textContent=`${pr.tc} °C — end of adsorption (q=${fmt(qads,3)})`;
+  el("iso-tdl").setAttribute("x",px(pr.td)+4); el("iso-tdl").setAttribute("y",Y1+30);
+  el("iso-tdl").textContent=`${pr.td} °C — end of regeneration (q=${fmt(qdes,3)})`;
+  el("iso-dq").textContent=`Δq = ${fmt(qads-qdes,3)} kg/kg`;
+  el("iso-cap").textContent =
+    `${sel.m} on the ${pr.label}: hold ${fmt(qads,3)} kg water at ${pr.tc} °C, release down to ${fmt(qdes,3)} at ${pr.td} °C — each kg of adsorbent moves ${fmt(qads-qdes,3)} kg of water per half-cycle, whose evaporation removes ${fmt((qads-qdes)*hfg(pr.te+273.15)/1000,0)} kJ of heat.`;
+}
+document.querySelectorAll("button.mat").forEach(b=>{
+  b.onclick=()=>{ document.querySelectorAll("button.mat").forEach(x=>x.classList.remove("active"));
+    b.classList.add("active"); sel.m=b.dataset.m; drawLedger(); };
+});
+drawMap(sel); drawLedger();
+</script>
+</main>
+</body>
+</html>
