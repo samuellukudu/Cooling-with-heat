@@ -96,17 +96,42 @@ CLASS_FORMULAS: tuple[tuple[str, str, str], ...] = (
     ("mil-100", "Cr3C18H10O15F", "low"),
     ("cau-10", "AlC8H5O5", "medium"),
     ("aluminum fumarate", "AlC4H3O5", "medium"),
+    # Round-2 additions (2026-11-15): literature-verified compositions for
+    # named MOFs among the unmatched — DUT-4 Senkovska 2009 (Al(OH)(ndc)),
+    # MOF-801/802/805/806 Furukawa JACS 2014 / Burtch Chem. Rev. 2014
+    # (Zr6O4(OH)4 + linker ×6), CAU-1-NH2 [Al4(OH)2(OCH3)4(H2N-bdc)3],
+    # DMOF-1 Zn2(BDC)2(dabco), CPO-27-Ni ≡ MOF-74-Ni. "cau-1" MUST stay
+    # after "cau-10" (substring precedence — that is why this block sits
+    # at the END of the table).
+    ("mof-801", "Zr6C24H20O32", "medium"),
+    ("mof-802", "Zr6C30H16N12O28", "medium"),
+    ("mof-805", "Zr6C72H40O40", "medium"),
+    ("mof-806", "Zr6C84H52O40", "medium"),
+    ("dut-4", "AlC12H7O5", "high"),
+    ("dmof", "Zn2C22H20N2O8", "medium"),
+    ("cpo-27", "Ni2C8H2O6", "medium"),
+    ("cau-1", "Al4C28H32N3O18", "medium"),
 )
 
 
 def formula_for(name: str, family: str) -> tuple[str | None, str]:
-    """(formula, provenance ∈ {parsed, class, none}). Carbons fall back to C."""
+    """(formula, provenance ∈ {parsed, class, none}). Carbons fall back to C.
+
+    Class keys match against the raw lowercased name, then against a
+    paren-normalized form ("Cr-MIL(101)" → "cr-mil-101" hits the mil-101
+    key — round-2 fix; the raw form never matched).
+    """
     if looks_like_formula(name):
         return name.strip(), "parsed"
     n = name.lower()
     for key, formula, _conf in CLASS_FORMULAS:
         if key in n:
             return formula, "class"
+    nn = n.replace("(", "-").replace(")", "")
+    if nn != n:
+        for key, formula, _conf in CLASS_FORMULAS:
+            if key in nn:
+                return formula, "class"
     if family == "carbon":
         return "C", "class"
     return None, "none"

@@ -145,8 +145,21 @@ Each stage gates the next.
    **50/156 → 63/156 (40.4%)** — the 13 new rows are the formula-named MOFs
    (MOF-74, CAU-10, ZIF-8 compositions) and are composition-compatible, not
    proven identities (pore descriptors stay NaN until CIF geometry lands).
-   The remaining 93 unmatched are carbons/silicas/trade names — they need
-   different corpora (carbon-specific structure sets), not more of this one.
+   *Round 2 (2026-11-15, same day):* the `qmoftab-formula` rung scores the
+   same H-free composition cosine against the cached QMOF table's 15,069
+   metal-bearing DFT formulas; the two composition rungs compete on score
+   (not order — precedence alone handed DUT-4 a 0.985 candidate while QMOF
+   holds a 1.0 exact), and `CLASS_FORMULAS` gained eight literature-verified
+   compositions (DUT-4 Senkovska 2009, MOF-801/802/805/806 Furukawa JACS
+   2014, CAU-1-NH₂, DMOF-1, CPO-27-Ni) plus paren normalization
+   ("Cr-MIL(101)" never contained the raw "mil-101" key). Coverage
+   **63/156 → 80/156 (51.3%) — the majority gate is passed**. Honesty:
+   19/30 composition hits stay `ambiguous` (composition-compatible, not
+   proven identities); the QMOF hits carry real CSD refcodes (DOYBEA=
+   aluminum fumarate, NIRPIQ=CAU-10, ZIGFEC=MIL-100(Cr)) but pore
+   descriptors remain NaN. The remaining 76 unmatched are carbons/silicas/
+   trade names/zeolite synthesis gels — amorphous or unnamed, they need
+   carbon-specific corpora and will never come from MOF providers.
 4. **Crystal-graph GNN (Stage 2)** — multi-head shared-latent surrogate,
    log-space heads; two-stage training (structural props first, adsorption
    heads second). Gate: beats the refreshed tabular floor and improves

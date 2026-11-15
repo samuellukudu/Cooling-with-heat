@@ -40,7 +40,7 @@ python adsorbent-ml/data/match_structures.py                          # writes m
 | `family:silica` | 9 |
 | `family:zeolite` | 21 |
 
-Matching: **63/156** (40%); by kind `{'none': 93, 'iza': 22, 'csd': 19, 'optimade-formula': 13, 'csd-fuzzy': 7, 'core': 2}`.
+Matching: **80/156** (51%); by kind `{'none': 76, 'qmoftab-formula': 30, 'iza': 22, 'csd': 19, 'csd-fuzzy': 7, 'core': 2}`.
 
 Name→structure matching (cheapest first): IZA trade-name rules → verified
 CoRE substrings (≥1 filename hit required; <4-char substrings rejected —

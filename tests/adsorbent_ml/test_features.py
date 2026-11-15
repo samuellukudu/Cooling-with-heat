@@ -34,7 +34,10 @@ def test_formula_for_sources():
     assert formula_for("C24H39N4O60Ni2PW12", "other") == ("C24H39N4O60Ni2PW12", "parsed")
     assert formula_for("Zeolite 13X", "zeolite")[1] == "class"
     assert formula_for("Activated carbon: BPL", "carbon") == ("C", "class")
-    assert formula_for("DMOF-OH", "mof") == (None, "none")
+    # DMOF-OH resolves since the round-2 verified DMOF-1 entry (was: abstain)
+    assert formula_for("DMOF-OH", "mof") == ("Zn2C22H20N2O8", "class")
+    # genuinely unmatchable trade name still abstains
+    assert formula_for("Blucher-101408", "mof") == (None, "none")
 
 
 def test_build_matrix_shapes_and_missingness(tmp_path):

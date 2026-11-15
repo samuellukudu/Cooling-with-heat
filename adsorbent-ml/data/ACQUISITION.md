@@ -70,7 +70,16 @@ first:
    matching of experimental crystal structures and gas adsorption isotherms"
    (J. Chem. Eng. Data 2022) built exactly this mapping; check its SI/Zenodo.
 3. MOFid/MOFkey strings where present.
-4. Remainder → manual curation queue (`unmatched_names.csv`); water-only
+4. Composition rungs (2026-11-15): `optimade-formula` (H-free cosine over
+   the 2,174 cached OPTIMADE candidates) and `qmoftab-formula` (same scoring
+   over the 15,069 metal-bearing QMOF DFT formulas; the two compete on
+   score, not rung order). Targets come from `formula_for` — parsed
+   formula-names plus the literature-verified `CLASS_FORMULAS` table
+   (DUT-4, MOF-801/802/805/806, CAU-1-NH₂, DMOF-1, CPO-27-Ni, MIL-101/100,
+   CAU-10…). Metal-free targets abstain (carbons/silicas have no
+   discriminative composition). Coverage after both rounds: **80/156
+   (51.3%)**; 19/30 composition hits flagged ambiguous.
+5. Remainder → manual curation queue (`unmatched_names.csv`); water-only
    keeps this tractable.
 
 **Outputs:** `data_cache/isodb/water_isotherms.parquet`
