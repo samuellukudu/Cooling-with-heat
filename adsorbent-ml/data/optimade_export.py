@@ -199,6 +199,13 @@ def entry_to_cif(entry: dict) -> str:
     return "\n".join(lines) + "\n"
 
 
+# Transition/post-transition metals — the identity-bearing elements (metals
+# define the MOF; exposed so consumers can apply the same rule).
+METALS = frozenset({"Li", "Na", "Mg", "Al", "K", "Ca", "Cr", "Mn", "Fe", "Co",
+                    "Ni", "Cu", "Zn", "Zr", "Cd", "Eu", "Tb", "Dy", "Ho", "Er",
+                    "Tm", "W", "Ba", "In", "Sc", "V", "Ti", "Hf", "Pb"})
+
+
 def formula_similarity(target_counts: dict[str, float],
                        cand_counts: dict[str, float]) -> float:
     """H-free cosine similarity of count vectors (1.0 = identical metals/C/N/O).
@@ -209,11 +216,8 @@ def formula_similarity(target_counts: dict[str, float],
     """
     import math  # noqa: PLC0415
 
-    metals = {"Li", "Na", "Mg", "Al", "K", "Ca", "Cr", "Mn", "Fe", "Co",
-              "Ni", "Cu", "Zn", "Zr", "Cd", "Eu", "Tb", "Dy", "Ho", "Er",
-              "Tm", "W", "Ba", "Co", "In", "Sc", "V", "Ti", "Hf", "Pb"}
-    tm = {e for e in target_counts if e in metals}
-    cm = {e for e in cand_counts if e in metals}
+    tm = {e for e in target_counts if e in METALS}
+    cm = {e for e in cand_counts if e in METALS}
     if tm != cm:
         return 0.0
     keys = [e for e in set(target_counts) | set(cand_counts) if e != "H"]

@@ -1,24 +1,33 @@
-"""Name→structure matching: ISODB material names to CoRE / IZA / anchors.
+"""Name→structure matching: ISODB material names to CoRE / IZA / OPTIMADE.
 
 The known hard problem (ACQUISITION §1): ISODB names are non-standard
-("Cu-BTC", "MOF-199", "MIL-53(Al)"). v1 strategy, cheapest first:
+("Cu-BTC", "MOF-199", "MIL-53(Al)"). Strategy, strongest evidence first:
 
-1. **IZA rules** (ordered regex → 3-letter code → ``data_cache/iza`` CIF):
-   zeolite trade names have deterministic framework codes.
-2. **CoRE substring hits** (self-verifying): normalized-name synonyms are
-   kept ONLY if they hit ≥ 1 CoRE filename; hit counts and ambiguity are
-   recorded, never hidden. Substrings < 4 chars are rejected (the UKEBOD
-   lesson: "BOD" matches CSD refcodes that are not CuBTC).
-3. **Anchor join** on normalized names (the 13 gold rows).
+1. **CSD refcodes** (Ongari name→refcode map) → **DOI bridge**
+   (ISODB-publication ↔ CoRE/QMOF DOIs, one-to-one) → **CoRE verified
+   substring** (self-verifying: normalized synonyms kept ONLY if they hit
+   ≥ 1 CoRE filename; < 4 chars rejected — the UKEBOD lesson) →
+   **csd-fuzzy** (difflib ≥ 0.85, always ambiguous) → **IZA trade-name
+   rules** (13X→FAU, …).
+2. **OPTIMADE formula rung** (the matching round, ROADMAP item 3): the
+   still-unmatched names whose names/families resolve to a composition are
+   matched against the cached OPTIMADE corpora (``data_cache/optimade/*/``
+   — pyrene-MOFs, curated COFs) by H-free composition cosine with exact
+   metal sets (``optimade_export.formula_similarity``). Composition identity
+   is *weaker* evidence than a refcode (same stoichiometry ≠ same
+   framework), so hits record their score, and are flagged ambiguous unless
+   the best composition is unique AND near-exact. Pore descriptors for
+   these rows stay NaN (no CoRE exemplar) — the CIFs are the future
+   descriptor source.
 
-Writes ``matched.parquet`` + ``unmatched_names.csv`` (the filenames
-ACQUISITION §1 promises). The Coudert-lab SI mapping + MOFid/MOFkey joins
-are the Stage-2 upgrade, explicitly out of v1.
+Writes ``matched.parquet`` + ``unmatched_names.csv`` + ``match_report.json``
+(ACQUISITION §1 names). Run all rungs: ``python adsorbent-ml/data/match_structures.py``.
 """
 
 from __future__ import annotations
 
 import re
+import sys
 import time
 from pathlib import Path
 
@@ -28,7 +37,9 @@ import pandas as pd
 REPO_ROOT = Path(__file__).resolve().parents[2]
 CORE_PROPS = REPO_ROOT / "data_cache" / "core_mof" / "properties.parquet"
 IZA_DIR = REPO_ROOT / "data_cache" / "iza" / "frameworks"
+OPTIMADE_ROOT = REPO_ROOT / "data_cache" / "optimade"
 OUT_DIR = REPO_ROOT / "data_cache" / "n2"
+OPTIMADE_SCORE_MIN = 0.90  # composition-cosine acceptance (metals must match exactly)
 
 # Ordered (regex, IZA code, confidence). Trade names → framework codes.
 IZA_RULES: tuple[tuple[str, str, str], ...] = (
@@ -98,23 +109,114 @@ def match_core(name: str, filenames: pd.Series) -> tuple[str, int, str] | None:
     return None
 
 
+def load_optimade_index(root: Path = OPTIMADE_ROOT) -> list[dict]:
+    """Element-count index over the cached OPTIMADE corpora.
+
+    One entry per structure line: ``{db, id, formula, counts, cif}`` — the
+    candidate pool for the composition rung. Pure local read of the cached
+    ``structures.jsonl`` files; no HTTP.
+    """
+    import json  # noqa: PLC0415
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "features"))
+    from composition import parse_formula  # noqa: PLC0415
+
+    out: list[dict] = []
+    for jf in sorted(root.glob("*/structures.jsonl")):
+        db = jf.parent.name
+        cifs = jf.parent / "cifs"
+        with open(jf, encoding="utf-8") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    e = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                attrs = e.get("attributes") or {}
+                formula = attrs.get("chemical_formula_descriptive") or ""
+                if not formula:
+                    continue
+                try:
+                    counts = parse_formula(formula)
+                except Exception:
+                    continue  # solvent adducts etc. fail loud upstream; skip here
+                if not counts:
+                    continue
+                eid = str(e.get("id", ""))
+                out.append({"db": db, "id": eid, "formula": formula,
+                            "counts": counts, "cif": cifs / f"{eid}.cif"})
+    return out
+
+
+def match_optimade_formula(name: str, family: str, index: list[dict]) -> dict | None:
+    """Composition-exact candidate from the OPTIMADE corpora, or None.
+
+    ``formula_for(name, family)`` resolves the target composition (parsed
+    formula-names like ``C9H11ClN2O4Cd`` or the class table for standard
+    materials); ``formula_similarity`` scores H-free cosine with exact
+    metal sets. Score and provenance always travel with the hit.
+    """
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "features"))
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from composition import formula_for, parse_formula  # noqa: PLC0415
+    from optimade_export import METALS, formula_similarity  # noqa: PLC0415
+
+    formula, _src = formula_for(name, family)
+    if formula is None:
+        return None
+    try:
+        target = parse_formula(formula)
+    except Exception:
+        return None
+    if not target:
+        return None
+    # Metal-free compositions (carbons, SiO2) have no discriminative power
+    # here: {C:1} scores ~0.98 against ANY carbon-rich COF. The metals
+    # define the framework — without one, the rung abstains honestly. The
+    # carbons/silicas among the unmatched need different corpora entirely.
+    if not any(e in METALS for e in target):
+        return None
+    scored = []
+    for cand in index:
+        s = formula_similarity(target, cand["counts"])
+        if s >= OPTIMADE_SCORE_MIN:
+            scored.append((s, cand))
+    if not scored:
+        return None
+    scored.sort(key=lambda t: -t[0])
+    best_s, best = scored[0]
+    n_ties = sum(1 for s, _ in scored if abs(s - best_s) < 1e-6)
+    return {"optimade_db": best["db"], "optimade_id": best["id"],
+            "optimade_formula": best["formula"],
+            "optimade_score": round(float(best_s), 4),
+            "optimade_cif": str(best["cif"]),
+            "ambiguous": bool(n_ties > 1 or best_s < 0.999)}
+
+
 def match_materials(names: pd.DataFrame, *,
                     core_props: Path = CORE_PROPS,
                     anchor_names: list[str] | None = None,
                     ongari_map: pd.DataFrame | None = None,
                     qmof_table: pd.DataFrame | None = None,
                     material_dois: dict[str, set[str]] | None = None,
+                    optimade_index: "list[dict] | None" = None,
                     ) -> tuple[pd.DataFrame, dict]:
-    """Match a table with ``name`` (+ optional ``material_id``) columns.
+    """Match a table with ``name`` (+ optional ``material_id``/``family``) columns.
 
     Precedence (first hit wins): ``csd`` (Ongari name→refcode) → ``doi``
     (shared-publication bridge, Ongari one-to-one protocol) → ``core``
-    (legacy verified substring) → ``iza`` (trade-name rules). Optional
-    inputs enable the upper rungs; without them the v1 behavior is kept.
+    (legacy verified substring) → ``csd-fuzzy`` → ``iza`` (trade-name
+    rules) → ``optimade-formula`` (composition cosine over the cached
+    OPTIMADE corpora; weakest evidence, scored + flagged). Optional inputs
+    enable the rungs; without them the v1 behavior is kept.
 
     New columns: ``refcode`` (+``refcode_source``), ``doi_evidence``,
     ``qmof_formula``/``qmof_topology``/``qmof_density``/``qmof_pld``/
-    ``qmof_lcd`` (refcode-joined), ``core_exemplar`` (refcode-joined first).
+    ``qmof_lcd`` (refcode-joined), ``core_exemplar`` (refcode-joined first),
+    ``optimade_db``/``optimade_id``/``optimade_formula``/``optimade_score``/
+    ``optimade_cif`` (composition rung).
     """
     core = pd.read_parquet(core_props)
     keep = ["filename"] + (["DOI_public"] if "DOI_public" in core.columns else [])
@@ -146,6 +248,8 @@ def match_materials(names: pd.DataFrame, *,
     has_ids = "material_id" in names.columns
     id_of = dict(zip(names["name"].astype(str),
                      names["material_id"].astype(str))) if has_ids else {}
+    fam_of = (dict(zip(names["name"].astype(str), names["family"].astype(str)))
+              if "family" in names.columns else {})
 
     def _qmof_cols(ref: str) -> dict:
         q = qmof_by_ref.get(ref, {})
@@ -161,6 +265,9 @@ def match_materials(names: pd.DataFrame, *,
                      "iza_conf": "", "core_substr": "", "core_hits": 0,
                      "core_exemplar": "", "refcode": "", "refcode_source": "",
                      "csd_name": "", "fuzzy_score": 0.0, "doi_evidence": "",
+                     "optimade_db": "", "optimade_id": "",
+                     "optimade_formula": "", "optimade_score": float("nan"),
+                     "optimade_cif": "",
                      "ambiguous": False,
                      "anchor_hit": normalize(name) in anchors,
                      **{k: ("" if "formula" in k or "topology" in k else float("nan"))
@@ -214,6 +321,12 @@ def match_materials(names: pd.DataFrame, *,
             if iza:
                 rec.update(match_kind="iza", iza_code=iza[0], iza_conf=iza[1])
                 done = True
+        if not done and optimade_index:
+            hit = match_optimade_formula(name, fam_of.get(name, "other"),
+                                         optimade_index)
+            if hit:
+                rec.update(match_kind="optimade-formula", **hit)
+                done = True
         if rec["match_kind"] == "core" and not rec["refcode"]:
             derived = refcode_of_filename(rec["core_exemplar"])
             if derived:
@@ -231,7 +344,11 @@ def match_materials(names: pd.DataFrame, *,
               "n_ambiguous": int(matched["ambiguous"].sum()),
               "n_with_refcode": int((matched["refcode"] != "").sum()),
               "n_with_qmof": int((matched["qmof_formula"] != "").sum()),
-              "provenance": f"ongari/csd-refcode + doi-bridge + substring + IZA vs {core_props}",
+              "n_with_optimade": int(
+                  (matched["match_kind"] == "optimade-formula").sum()),
+              "provenance": ("ongari/csd-refcode + doi-bridge + substring + "
+                             "fuzzy + IZA + optimade-formula vs "
+                             f"{core_props}"),
               "created_unix": time.time()}
     return matched, report
 
@@ -284,5 +401,60 @@ def pore_consistency(matched: pd.DataFrame, labels: pd.DataFrame, *,
 
 
 __all__ = ["AMBIGUOUS_ABOVE", "CORE_SYNONYMS", "FUZZY_CUTOFF", "IZA_RULES",
-           "match_core", "match_iza", "match_materials", "normalize",
-           "pore_consistency", "refcode_of_filename", "write_match"]
+           "OPTIMADE_SCORE_MIN", "load_optimade_index", "match_core",
+           "match_materials", "match_optimade_formula", "match_iza",
+           "normalize", "pore_consistency", "refcode_of_filename",
+           "write_match"]
+
+
+def main() -> None:
+    """CLI runner — makes validate.py's "run match_structures.py" hint real.
+
+    Replicates the train_baseline call (all rungs incl. the OPTIMADE formula
+    round) and writes the audit artifacts without touching training.
+    """
+    import argparse  # noqa: PLC0415
+
+    ap = argparse.ArgumentParser(
+        description="Match material names to structures (all rungs).")
+    ap.add_argument("--out", type=Path, default=OUT_DIR)
+    ap.add_argument("--no-optimade", action="store_true",
+                    help="skip the OPTIMADE composition rung")
+    args = ap.parse_args()
+
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "features"))
+    from labels import build_labels  # noqa: PLC0415
+    from ongari import load_ongari_map  # noqa: PLC0415
+    from qmof import load_qmof_table  # noqa: PLC0415
+
+    labels, _manifest = build_labels()
+    try:
+        om = load_ongari_map()
+    except FileNotFoundError:
+        print("[warn] data_cache/ongari tables absent — csd rung skipped "
+              "(run ongari.py --fetch)")
+        om = None
+    qt = load_qmof_table()
+    w = pd.read_parquet(REPO_ROOT / "data_cache" / "isodb" / "water_isotherms.parquet",
+                        columns=["adsorbent_hashkey", "doi"])
+    dois = {hk: set(g["doi"].dropna().astype(str))
+            for hk, g in w.groupby("adsorbent_hashkey")}
+    idx = None if args.no_optimade else load_optimade_index()
+    n_opt = f"{len(idx)} OPTIMADE candidates" if idx else "no optimade index"
+    matched, rep = match_materials(
+        labels[["name", "material_id", "family"]],
+        anchor_names=labels[labels["anchor"]]["name"].tolist(),
+        ongari_map=om, qmof_table=qt, material_dois=dois,
+        optimade_index=idx)
+    matched = pore_consistency(matched, labels)
+    write_match(matched, rep, args.out)
+    n_hit = len(matched) - int((matched["match_kind"] == "none").sum())
+    print(f"matched {n_hit}/{len(matched)} ({n_hit / len(matched):.0%})  "
+          f"by_kind={rep['by_kind']}  [{n_opt}]")
+    print(f"artifacts → {args.out}/ (matched.parquet, unmatched_names.csv, "
+          "match_report.json)")
+
+
+if __name__ == "__main__":
+    main()
