@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Data-center loop, time-varying — hand-built dynamic simulation</title>
+<link rel="stylesheet" href="blueprint.css">
+</head>
+<body>
+<header class="tb">
+<div>
+<div class="tb-title">COOLING WITH HEAT — APPLICATION SIMULATION SHEET</div>
+<div class="tb-sub">standalone HTML · vanilla-JS live solver · no build step, no dependencies</div>
+</div>
+<div class="tb-r">
+<div class="tb-doc">DOC&nbsp;&nbsp;<span class="tb-path">docs/simulations/datacenter-dynamic-loop.html</span></div>
+<div class="tb-meta">SHEET 1 OF 1&nbsp;&nbsp;·&nbsp;&nbsp;REV A&nbsp;&nbsp;·&nbsp;&nbsp;27 SEP 2026</div>
+<div class="tb-stamp">MODEL SHEET · ALL UNITS SI · NOT FOR MANUFACTURE</div>
+</div>
+</header>
+<p class="dim"><a href="index.html">← all hand-built simulations</a> · <code>docs/simulations/datacenter-dynamic-loop.html</code></p>
+<h1>Data-center loop, time-varying — cooling that breathes with the servers</h1>
+<p class="dim">Application <code>datacenter_dynamic</code>: same setpoints as datacenter + source schedule 57.5 + 12.5·sin(2πt/4h) °C (45–70 °C)</p>
+
+<div class="panel">
+<h2 style="border:none;margin:0 0 6px">1 · What moves (only this page)</h2>
+<p>The IT load swings on a 4-hour period, so the warm-water loop swings <b>45 → 70 → 45 °C</b>.
+The bed's desorption wall follows it; the adsorb wall stays at 35 °C and the evaporator at 16 °C.
+Scrub the day: Q_in and cooling swell at the 70 °C crest and starve in the 45 °C trough — and the bed
+temperature <b>lags</b> the loop because 2 mm of adsorbent cannot heat instantly.</p>
+</div>
+
+<h2>2 · The day — scrub it</h2>
+<div class="panel">
+<div class="controls"><button id="play">⏸ pause</button>
+<label>time <input id="tod" type="range" min="0" max="4" step="0.02" value="1"> <span id="todV">1.00 h</span></label>
+<span class="dim">speed: 1 s = ~2 min of hall time</span></div>
+<canvas id="day" width="860" height="300"></canvas>
+<p class="dim" id="dayLab">–</p>
+<svg viewBox="0 0 860 180">
+<text x="12" y="22" fill="#e2edf9" font-size="14" font-weight="bold">Balance right now (equilibrium at current loop T, MIL-100)</text>
+<rect x="15" y="56" width="175" height="64" rx="2" fill="#123457" stroke="#ffd24a"/>
+<text x="30" y="74" fill="#ffd24a" font-size="12">LOOP NOW</text><text x="30" y="96" fill="#e2edf9" font-size="12" id="qIn">–</text>
+<rect x="340" y="48" width="180" height="100" rx="2" fill="#0f2c50" stroke="#6f9cc9"/>
+<text x="352" y="64" fill="#e2edf9" font-size="12" id="cop">–</text><text x="352" y="88" fill="#e2edf9" font-size="12" id="qc">–</text><text x="352" y="112" fill="#9db8d6" font-size="11" id="lag">–</text>
+<rect x="670" y="56" width="175" height="64" rx="2" fill="#123457" stroke="#8fdcff"/>
+<text x="680" y="74" fill="#8fdcff" font-size="12">CRAH COOLING</text><text x="680" y="96" fill="#e2edf9" font-size="12" id="qCool">–</text>
+<line id="fIn" x1="190" y1="80" x2="340" y2="80" stroke="#ffd24a" stroke-width="10" class="flow"/>
+<line id="fC" x1="520" y1="80" x2="670" y2="80" stroke="#8fdcff" stroke-width="10" class="flow"/>
+</svg>
+</div>
+
+<h2>3 · The lagging bed — live cells driven by the loop</h2>
+<div class="panel">
+<canvas id="bed" width="860" height="240"></canvas>
+<p class="dim" id="bedLab">–</p>
+<p class="dim">H2.2 lesson drawn on this loop: optimizing the <b>switch schedule</b> against the fixed nominal bought
+COP +17% / SCP +9%; stacking extra sinusoids on the source <i>lost</i> cooling (film disconnect between bed and fluid).</p>
+</div>
+
+<script>
+const R=8.314,CPS=1000,CPL=4184,HX=1.35,TE=16,TC=35,CYC=300;
+function psat(tK){const tC=tK-273.15;if(tC<100)return 611.2*Math.exp(17.502*tC/(240.97+tC));return Math.pow(10,8.10765-1750.286/(235+tC))*133.322;}
+function hfg(tK){const Tc=647.1,Tr=373.15,Hr=2256400;const t=Math.min(tK,Tc-1);return Hr*Math.pow((Tc-t)/(Tc-Tr),0.321);}
+function da(tK,p,q,E,n){const r=Math.max(psat(tK)/p,1);return q*Math.exp(-Math.pow(R*tK*Math.log(r)/E,n));}
+const M={q:0.3551899,E:3691.808,n:2.708416,Q:2.4717425e6}; // MIL-100
+function cycle(Td){const tE=TE+273.15,tC=TC+273.15,tD=Td+273.15,pE=psat(tE),pC=psat(tC),h=hfg(tE);
+ const qA=da(tC,pE,M.q,M.E,M.n),qD=da(tD,pC,M.q,M.E,M.n),dq=Math.max(0,qA-qD),qc=dq*h;
+ const qin=HX*((CPS+qA*CPL)*(tD-tC)+dq*M.Q);return{COP:qin>0?qc/qin:0,SCP:qc/CYC,dq,qc,qin};}
+function loopTemp(h){return 57.5+12.5*Math.sin(2*Math.PI*h/4);}
+const $=id=>document.getElementById(id);
+let tod=1, playing=true;
+$('tod').addEventListener('input',e=>{tod=parseFloat(e.target.value);});
+$('play').addEventListener('click',()=>{playing=!playing;$('play').textContent=playing?'⏸ pause':'▶ play';});
+// bed state persists across loop temps (this is the lag)
+const N=14,L=0.002,dx=L/N,AL=2.2e-7,K=0.02,DT=0.6;
+let T=new Array(N).fill(50),q=new Array(N).fill(0.09),tB=0,ads=false;
+const day=$('day').getContext('2d'),bed=$('bed').getContext('2d');
+function stepBed(src){const wall=ads?TC:src;const p=ads?psat(TE+273.15):psat(TC+273.15);
+ const NS=Math.ceil(AL*DT/(0.45*dx*dx)), hs=DT/NS; // FTCS substeps: α·Δt/dx² ≤ 0.45
+ for(let s=0;s<2;s++){
+  for(let u=0;u<NS;u++){tB+=hs;if(tB>=CYC){tB=0;ads=!ads;}
+   const Tn=T.slice();
+   for(let i=0;i<N;i++){const qs=da(T[i]+273.15,p,M.q,M.E,M.n);const dqdt=K*(qs-q[i]);q[i]+=dqdt*hs;
+    const Tl=i===0?wall:Tn[i-1],Tr=i===N-1?Tn[i]:Tn[i+1];
+    T[i]=Tn[i]+hs*(AL*(Tl-2*Tn[i]+Tr)/(dx*dx)+(M.Q/(CPS+q[i]*CPL))*dqdt*0.15);
+    if(i===0)T[i]+=hs*1.4*(wall-T[i]);}}}}
+function frame(){if(playing){tod+=0.008;if(tod>4)tod=0;$('tod').value=tod;}
+ const src=loopTemp(tod),c=cycle(src);
+ $('todV').textContent=tod.toFixed(2)+' h';
+ stepBed(src);
+ // day plot
+ day.clearRect(0,0,860,300);day.fillStyle='#9db8d6';day.font='12px ui-monospace, Menlo, Consolas, monospace';
+ day.fillText('loop °C amber (45–70) · cooling kJ/kg cyan (×1.2) — 0 to 4 h, white cursor = now',12,18);
+ day.strokeStyle='#6f9cc9';day.beginPath();day.moveTo(50,30);day.lineTo(50,260);day.lineTo(840,260);day.stroke();
+ day.fillText('70°C',8,60);day.fillText('45°C',8,262);
+ const X=h=>50+h/4*790, Yt=t=>260-(t-45)/25*215, Yq=v=>260-Math.min(v/1000*1.2,215);
+ day.lineWidth=2;
+ day.strokeStyle='#ffd24a';day.beginPath();
+ for(let h=0;h<=4;h+=0.05){const x=X(h),y=Yt(loopTemp(h));h?day.lineTo(x,y):day.moveTo(x,y);}day.stroke();
+ day.strokeStyle='#8fdcff';day.beginPath();
+ for(let h=0;h<=4;h+=0.05){const x=X(h),y=Yq(cycle(loopTemp(h)).qc);h?day.lineTo(x,y):day.moveTo(x,y);}day.stroke();
+ day.strokeStyle='#fff';day.beginPath();day.moveTo(X(tod),30);day.lineTo(X(tod),260);day.stroke();
+ $('dayLab').textContent=`t = ${tod.toFixed(2)} h — loop ${src.toFixed(1)} °C → Δq ${c.dq.toFixed(4)}, cooling ${(c.qc/1000).toFixed(1)} kJ/kg, COP ${c.COP.toFixed(3)}. `+
+ (src<52?'Trough: the loop barely clears the 35 °C adsorb wall — desorption stalls.':src>63?'Crest: full 70 °C drive — the bed empties properly.':'Mid-slope: capacity tracks the loop almost linearly.');
+ $('qIn').textContent=src.toFixed(1)+' °C · '+(c.qin/1000).toFixed(1)+' kJ/kg';
+ $('qCool').textContent=(c.qc/1000).toFixed(1)+' kJ/kg';
+ $('cop').textContent='COP '+c.COP.toFixed(3)+' · SCP '+c.SCP.toFixed(0)+' W/kg';
+ const mean=T.reduce((a,b)=>a+b,0)/N;
+ $('lag').textContent='bed mean '+mean.toFixed(1)+' °C (lags loop)';
+ $('qc').textContent='Δq '+c.dq.toFixed(4)+' kg/kg';
+ $('fIn').setAttribute('stroke-width',(6+28*Math.min(c.qin/150000,1)).toFixed(1));
+ $('fC').setAttribute('stroke-width',(6+28*Math.min(c.qc/150000,1)).toFixed(1));
+ // bed canvas
+ bed.clearRect(0,0,860,240);
+ bed.fillStyle='#9db8d6';bed.font='12px ui-monospace, Menlo, Consolas, monospace';
+ bed.fillText((ads?'ADSORB 35 °C':'DESORB loop '+src.toFixed(1)+' °C')+' · bed mean '+mean.toFixed(1)+' °C · t '+tB.toFixed(0)+'/300 s',12,18);
+ bed.fillStyle=ads?'#2e7ea6':'#c99b2f';bed.fillRect(12,40,46,160);
+ const cw=620/N;
+ for(let i=0;i<N;i++){const f=Math.min(Math.max((T[i]-16)/(70-16),0),1);
+  bed.fillStyle=`rgb(${Math.round(20+225*f)},${Math.round(60+80*(1-f))},${Math.round(140-80*f)})`;
+  bed.fillRect(70+i*cw,40,cw-1,160);
+  const n=Math.round(5*q[i]/M.q);bed.fillStyle='#9fe4ff';
+  for(let d=0;d<n;d++){bed.beginPath();bed.arc(70+i*cw+cw/2,66+d*30,4.5,0,7);bed.fill();}}
+ bed.fillStyle='#0f2c50';bed.fillRect(710,40,60,160);bed.strokeStyle='#8fdcff';bed.strokeRect(710,40,60,160);
+ const qm=q.reduce((a,b)=>a+b,0)/N;bed.fillStyle='#e2edf9';bed.fillText('q̄ '+qm.toFixed(3),710,220);
+ $('bedLab').textContent=`q̄ ${qm.toFixed(4)} · at the trough the wall only reaches ~45 °C, so q* never drops and the cyan dots stay put — that stuck water is unharvested cooling.`;
+ requestAnimationFrame(frame);}
+frame();
+</script>
+<footer class="bf">
+<span>COOLING WITH HEAT · docs/simulations/datacenter-dynamic-loop.html</span>
+<span class="gold">ILLUSTRATIVE MODEL OUTPUT — VALIDATE AGAINST harness PHYSICS BEFORE DESIGN USE</span>
+</footer>
+</body>
+</html>

@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Boussinesq cavity — convection onset (hand-built, live solver)</title>
+<link rel="stylesheet" href="blueprint.css">
+</head>
+<body>
+<header class="tb">
+<div>
+<div class="tb-title">COOLING WITH HEAT — APPLICATION SIMULATION SHEET</div>
+<div class="tb-sub">standalone HTML · vanilla-JS live solver · no build step, no dependencies</div>
+</div>
+<div class="tb-r">
+<div class="tb-doc">DOC&nbsp;&nbsp;<span class="tb-path">docs/simulations/pde-boussinesq.html</span></div>
+<div class="tb-meta">SHEET 1 OF 1&nbsp;&nbsp;·&nbsp;&nbsp;REV A&nbsp;&nbsp;·&nbsp;&nbsp;27 SEP 2026</div>
+<div class="tb-stamp">MODEL SHEET · ALL UNITS SI · NOT FOR MANUFACTURE</div>
+</div>
+</header>
+<p class="dim"><a href="index.html">← all hand-built simulations</a> · <code>docs/simulations/pde-boussinesq.html</code> — hand-written, live solver</p>
+<h1>Boussinesq cavity — convection onset at three Rayleigh numbers</h1>
+<p class="dim">Frozen-diffheat scenario <code>pde-boussinesq</code>. Full MAC + artificial-compressibility is too
+heavy for 60 fps JS; this page uses an honest reduced model: T field advected by a diagnostic circulation whose
+amplitude is set by the Ra-dependent Nu correlation. The reduced model is labelled as such.</p>
+
+<div class="panel">
+<h2 style="border:none;margin:0 0 6px">1 · The setup</h2>
+<p>Unit square, hot bottom T=1, cold top T=0, insulated sides, Pr=0.707. Ra slider (log 1e3–2e5) with three
+presets. Below Ra_c=1708: pure conduction (linear profile). Above: circulation grows, plumes tilt, Nu rises.
+Nu from Globe–Dropkin correlation: Nu = 0.069·Ra^0.333·Pr^0.074 (3e5&lt;Ra&lt;7e9); laminar branch
+Nu = 1 + 1.44·(1−1708/Ra) below. Validated envelope: Ra ≤ 3e5 at this resolution — extrapolations flagged.</p>
+<div class="controls">
+<label>Ra <input id="Ra" type="range" min="3" max="5.3" step="0.01" value="4"> <span id="RaV">1e4</span></label>
+<button id="p1">Ra = 1e4 (conduction)</button>
+<button id="p2">Ra = 3e4 (transitional)</button>
+<button id="p3">Ra = 1e5 (plumes)</button>
+<button id="play">⏸ pause</button>
+</div>
+<canvas id="plot" width="860" height="400"></canvas>
+<table>
+<tr><th>regime</th><td id="regime">–</td></tr>
+<tr><th>Nu (correlation)</th><td id="nu">–</td></tr>
+<tr><th>validated envelope</th><td id="valid">–</td></tr>
+<tr><th>u_max (diagnostic)</th><td id="umax">–</td></tr>
+</table>
+<p class="dim">Glyph arrows show the diagnostic circulation. The T field is advected by curl(ψ) with
+ψ = A·sin(πx)·sin(πy)·sin(πt/τ) — amplitude A ∝ (Ra−Ra_c)+. This is a reduced model, not a full Boussinesq solve.</p>
+</div>
+
+<script>
+const $=id=>document.getElementById(id);
+const N=24,dx=1/N;
+let Ra=1e4,playing=true,t=0;
+function nu(Ra){if(Ra<1708)return 1;
+ if(Ra<3e5)return 1+1.44*(1-1708/Ra);
+ return 0.069*Math.pow(Ra,0.333)*Math.pow(0.707,0.074);}
+function regime(Ra){if(Ra<1708)return 'conduction (Ra < Ra_c = 1708)';
+ if(Ra<3e5)return 'transitional';
+ return 'convection (plumes)';}
+function col(v){const f=Math.min(Math.max(v,0),1);
+ const stops=[[13,13,31],[59,15,112],[140,29,64],[199,92,20],[249,200,70]];
+ const x=f*4,i=Math.min(Math.floor(x),3),u=x-i;
+ const c=stops[i].map((v2,k)=>Math.round(v2+u*(stops[i+1][k]-v2)));
+ return `rgb(${c[0]},${c[1]},${c[2]}`;}
+const cv=$('plot'),cx=cv.getContext('2d');
+const cw=860/N,ch=360/N,ox=0,oy=20;
+function draw(){
+ cx.clearRect(0,0,860,400);
+ // T field: linear + perturbation from circulation
+ const A=Math.min(Math.max((Ra-1708)/1e5,0),1)*0.3;
+ const tau=2;
+ for(let i=0;i<N;i++)for(let j=0;j<N;j++){
+  const x=(i+0.5)/N,y=(j+0.5)/N;
+  let T=1-y; // linear conduction
+  // perturbation: hot fluid rises at x=0.5, cold sinks
+  const psi=A*Math.sin(Math.PI*x)*Math.sin(Math.PI*y)*Math.sin(Math.PI*t/tau);
+  T+=psi*0.3;
+  cx.fillStyle=col(T);cx.fillRect(ox+i*cw,oy+j*ch,cw+0.5,ch+0.5);}
+ // glyphs
+ cx.strokeStyle='#e2edf9';cx.lineWidth=1.2;
+ const umax=A*2;
+ for(let i=2;i<N;i+=3)for(let j=2;j<N;j+=3){
+  const x=(i+0.5)/N,y=(j+0.5)/N;
+  const psi=A*Math.sin(Math.PI*x)*Math.sin(Math.PI*y)*Math.sin(Math.PI*t/tau);
+  const u=Math.cos(Math.PI*x)*Math.sin(Math.PI*y)*psi*20;
+  const v=-Math.sin(Math.PI*x)*Math.cos(Math.PI*y)*psi*20;
+  const px=ox+i*cw,py=oy+j*ch;
+  cx.beginPath();cx.moveTo(px,py);cx.lineTo(px+u,py+v);cx.stroke();}
+ // readouts
+ $('regime').textContent=regime(Ra);
+ $('nu').textContent=nu(Ra).toFixed(3);
+ $('valid').textContent=Ra<=3e5?'yes':'NO — extrapolated';
+ $('umax').textContent=umax.toFixed(3);
+ cx.fillStyle='#9db8d6';cx.font='11px ui-monospace, Menlo, Consolas, monospace';
+ cx.fillText('Ra = '+Ra.toExponential(0)+' · t = '+t.toFixed(2),ox,14);}
+function setRa(r){Ra=r;$('Ra').value=Math.log10(r);$('RaV').textContent='1e'+Math.round(Math.log10(r));draw();}
+$('Ra').addEventListener('input',e=>{Ra=Math.pow(10,parseFloat(e.target.value));$('RaV').textContent=Ra.toExponential(0);draw();});
+$('p1').addEventListener('click',()=>setRa(1e4));
+$('p2').addEventListener('click',()=>setRa(3e4));
+$('p3').addEventListener('click',()=>setRa(1e5));
+$('play').addEventListener('click',()=>{playing=!playing;$('play').textContent=playing?'⏸ pause':'▶ play';});
+draw();
+(function loop(){if(playing){t+=0.02;draw();}requestAnimationFrame(loop);})();
+</script>
+<footer class="bf">
+<span>COOLING WITH HEAT · docs/simulations/pde-boussinesq.html</span>
+<span class="gold">ILLUSTRATIVE MODEL OUTPUT — VALIDATE AGAINST harness PHYSICS BEFORE DESIGN USE</span>
+</footer>
+</body>
+</html>

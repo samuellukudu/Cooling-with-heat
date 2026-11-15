@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Heat on a disc — analytic Bessel series (hand-built)</title>
+<link rel="stylesheet" href="blueprint.css">
+</head>
+<body>
+<header class="tb">
+<div>
+<div class="tb-title">COOLING WITH HEAT — APPLICATION SIMULATION SHEET</div>
+<div class="tb-sub">standalone HTML · vanilla-JS live solver · no build step, no dependencies</div>
+</div>
+<div class="tb-r">
+<div class="tb-doc">DOC&nbsp;&nbsp;<span class="tb-path">docs/simulations/pde-disc.html</span></div>
+<div class="tb-meta">SHEET 1 OF 1&nbsp;&nbsp;·&nbsp;&nbsp;REV A&nbsp;&nbsp;·&nbsp;&nbsp;27 SEP 2026</div>
+<div class="tb-stamp">MODEL SHEET · ALL UNITS SI · NOT FOR MANUFACTURE</div>
+</div>
+</header>
+<p class="dim"><a href="index.html">← all hand-built simulations</a> · <code>docs/simulations/pde-disc.html</code> — hand-written, exact series evaluated live</p>
+<h1>Heat on a disc — exact Bessel eigenfunction series</h1>
+<p class="dim">Frozen-diffheat scenario <code>pde-disc</code>. The polar basis fits the circular domain exactly —
+no grid, no CFL, no numerical diffusion. The series below is evaluated live in JS.</p>
+
+<div class="panel">
+<h2 style="border:none;margin:0 0 6px">1 · The series</h2>
+<p>u(r,θ,t) = Σ<sub>m,n</sub> v<sub>m,n</sub>(r,θ)·c<sub>m,n</sub>·exp(−λ<sub>m,n</sub>t)
+on R=1 with u=0 on the rim. Initial condition: off-centre Gaussian bump at r=0.45, amplitude 1+0.3·cos θ.
+First three axisymmetric modes (J₀ zeros 2.4048, 5.5201, 8.6537) plus the cos θ mode (J₁ zero 3.8317).
+Coefficients c = [0.62, −0.21, 0.08] (axisymmetric) and 0.15 (cos θ term) — approximate projections of the bump.</p>
+<div class="controls">
+<button id="play">⏸ pause</button>
+<label>time <input id="t" type="range" min="0" max="0.5" step="0.002" value="0"> <span id="tV">0.000</span></label>
+<label>mode <select id="mode"><option value="both">axisymmetric + cos θ</option><option value="axis">axisymmetric only</option></select></label>
+</div>
+<canvas id="disc" width="860" height="340"></canvas>
+<table>
+<tr><th>peak now</th><td id="peak">–</td><td>dominant λ = 2.4048² = 5.783</td><td>decay rate = λ₁ (slowest mode)</td></tr>
+</table>
+<p class="dim">The peak decays at rate λ₁ = 5.783 — the slowest Bessel eigenvalue. Asymmetry (cos θ) decays
+faster (λ = 3.8317² = 14.68), so the field becomes axisymmetric as t grows.</p>
+</div>
+
+<script>
+const $=id=>document.getElementById(id);
+const NR=20,NS=48; // radial rings × angular sectors
+// Bessel zeros and coefficients
+const Z=[2.4048,5.5201,8.6537],C=[0.62,-0.21,0.08],CZ=3.8317,CC=0.15;
+// J0 approximations (series, x<10 enough for zeros)
+function J0(x){let s=1,xx=x*x/4;for(let k=1;k<=12;k++){s+=Math.pow(-1,k)*Math.pow(xx,k)/(Math.pow(2,2*k)*Math.pow(fac(k),2));}return s;}
+function J1(x){let s=0,xx=x*x/4;for(let k=0;k<=12;k++){s+=Math.pow(-1,k)*Math.pow(x/2,2*k+1)/(fac(k)*fac(k+1));}return s;}
+function fac(n){let s=1;for(let k=2;k<=n;k++)s*=k;return s;}
+function u(r,th,t,mode){
+ let v=0;
+ for(let m=0;m<3;m++)v+=C[m]*J0(Z[m]*r)*Math.exp(-Z[m]*Z[m]*t);
+ if(mode==='both')v+=CC*J1(CZ*r)*Math.cos(th)*Math.exp(-CZ*CZ*t);
+ return v;}
+function col(v){const f=Math.min(Math.max(v,0),1);
+ const stops=[[13,13,31],[59,15,112],[140,29,64],[199,92,20],[249,200,70]];
+ const x=f*4,i=Math.min(Math.floor(x),3),uu=x-i;
+ const c=stops[i].map((v2,k)=>Math.round(v2+uu*(stops[i+1][k]-v2)));
+ return `rgb(${c[0]},${c[1]},${c[2]})`;}
+const cv=$('disc'),cx=cv.getContext('2d');
+const cx0=430,cy0=170,Rpx=150;
+let playing=true;
+function draw(){
+ const t=parseFloat($('t').value),mode=$('mode').value;
+ cx.clearRect(0,0,860,340);
+ let peak=0;
+ for(let r=0;r<NR;r++)for(let s=0;s<NS;s++){
+  const r0=rpx*r/NR,r1=Rpx*(r+1)/NR;
+  const a0=2*Math.PI*s/NS,a1=2*Math.PI*(s+1)/NS;
+  const x0=cx0+r0*Math.cos(a0),y0=cy0+r0*Math.sin(a0);
+  const x1=cx0+r1*Math.cos(a0),y1=cy0+r1*Math.sin(a0);
+  const x2=cx0+r1*Math.cos(a1),y2=cy0+r1*Math.sin(a1);
+  const x3=cx0+r0*Math.cos(a1),y3=cy0+r0*Math.sin(a1);
+  const v=u((r0+r1)/2,(a0+a1)/2,t,mode);
+  peak=Math.max(peak,v);
+  cx.fillStyle=col(v);
+  cx.beginPath();cx.moveTo(x0,y0);cx.lineTo(x1,y1);
+  cx.arc(cx0,cy0,r1,a0,a1,false);
+  cx.lineTo(x3,y3);cx.arc(cx0,cy0,r0,a1,a0,true);
+  cx.closePath();cx.fill();}
+ // rim
+ cx.strokeStyle='#6f9cc9';cx.beginPath();cx.arc(cx0,cy0,Rpx,0,7);cx.stroke();
+ cx.fillStyle='#9db8d6';cx.font='11px ui-monospace, Menlo, Consolas, monospace';
+ cx.fillText('t = '+t.toFixed(3),10,20);
+ cx.fillText('peak = '+peak.toFixed(4),10,36);
+ cx.fillText('R = 1 (u=0 rim)',10,52);
+ $('peak').textContent=peak.toFixed(4);
+ $('tV').textContent=t.toFixed(3);}
+$('t').addEventListener('input',draw);
+$('mode').addEventListener('change',draw);
+$('play').addEventListener('click',()=>{
+ playing=!playing;$('play').textContent=playing?'⏸ pause':'▶ play';});
+(function loop(){
+ if(playing){let t=parseFloat($('t').value)+0.004;if(t>0.5)t=0;$('t').value=t;draw();}
+ requestAnimationFrame(loop);})();
+draw();
+</script>
+<footer class="bf">
+<span>COOLING WITH HEAT · docs/simulations/pde-disc.html</span>
+<span class="gold">ILLUSTRATIVE MODEL OUTPUT — VALIDATE AGAINST harness PHYSICS BEFORE DESIGN USE</span>
+</footer>
+</body>
+</html>

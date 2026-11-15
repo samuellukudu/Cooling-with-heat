@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Human comfort / HVAC on solar heat — hand-built simulation</title>
+<link rel="stylesheet" href="blueprint.css">
+</head>
+<body>
+<header class="tb">
+<div>
+<div class="tb-title">COOLING WITH HEAT — APPLICATION SIMULATION SHEET</div>
+<div class="tb-sub">standalone HTML · vanilla-JS live solver · no build step, no dependencies</div>
+</div>
+<div class="tb-r">
+<div class="tb-doc">DOC&nbsp;&nbsp;<span class="tb-path">docs/simulations/human-hvac-solar.html</span></div>
+<div class="tb-meta">SHEET 1 OF 1&nbsp;&nbsp;·&nbsp;&nbsp;REV A&nbsp;&nbsp;·&nbsp;&nbsp;27 SEP 2026</div>
+<div class="tb-stamp">MODEL SHEET · ALL UNITS SI · NOT FOR MANUFACTURE</div>
+</div>
+</header>
+<p class="dim"><a href="index.html">← all hand-built simulations</a> · <code>docs/simulations/human-hvac-solar.html</code></p>
+<h1>Human comfort / HVAC — solar heat in, 10 °C chilled water out</h1>
+<p class="dim">Application <code>human</code>: T_evap 10 °C · T_cond 35 °C · T_des 80 °C · half-cycle 600 s · fluid 75–95 °C · COP weight 0.40 (efficiency case)</p>
+
+<div class="panel">
+<h2 style="border:none;margin:0 0 6px">1 · The plumbing (this building only)</h2>
+<p><b>Heat in:</b> flat-plate solar collectors (75–95 °C, hour slider below) heat water that regenerates the bed at 80 °C.
+<b>Cooling out:</b> the evaporator at 10 °C chills a fan-coil water loop that holds rooms near 24 °C / 55% RH.
+<b>Rejected:</b> adsorption + condensation heat at 35 °C to a rooftop dry cooler.</p>
+<p>Long 600 s halves: the bed is <b>thick (3.0 mm)</b> and slow — fine here, because buildings reward COP over power
+density. The day trace shows the point: cooling follows the sun with a thermal lag.</p>
+</div>
+
+<h2>2 · The day — sun in, cooling out, lag in between</h2>
+<div class="panel">
+<div class="controls"><button id="play">⏸ pause</button>
+<label>hour <input id="hour" type="range" min="6" max="20" step="0.1" value="10"> <span id="hourV">10.0 h</span></label>
+<label>material <select id="mat"><option value="CuBTC">CuBTC (COP 0.60)</option><option value="MIL-160">MIL-160 (COP 0.76 ⚠)</option><option value="silica">Silica gel RD</option></select></label></div>
+<canvas id="day" width="860" height="280"></canvas>
+<p class="dim" id="dayLab">–</p>
+<svg viewBox="0 0 860 190" id="sankey">
+<text x="12" y="22" fill="#e2edf9" font-size="14" font-weight="bold">Instantaneous heat balance at the selected hour</text>
+<rect x="15" y="56" width="185" height="64" rx="2" fill="#123457" stroke="#ffd24a"/>
+<text x="30" y="74" fill="#ffd24a" font-size="12">SOLAR IN</text><text x="30" y="96" fill="#e2edf9" font-size="12" id="qIn">–</text>
+<rect x="340" y="48" width="180" height="100" rx="2" fill="#0f2c50" stroke="#6f9cc9"/>
+<text x="352" y="64" fill="#e2edf9" font-size="12">BED (3 mm, slow)</text><text x="352" y="86" fill="#e2edf9" font-size="12" id="cop">–</text><text x="352" y="108" fill="#9db8d6" font-size="11" id="st">–</text><text x="352" y="130" fill="#9db8d6" font-size="11">600 s halves</text>
+<rect x="660" y="56" width="185" height="64" rx="2" fill="#123457" stroke="#8fdcff"/>
+<text x="670" y="74" fill="#8fdcff" font-size="12">CHILLED WATER</text><text x="670" y="96" fill="#e2edf9" font-size="12" id="qCool">–</text>
+<line id="fIn" x1="200" y1="80" x2="340" y2="80" stroke="#ffd24a" stroke-width="10" class="flow"/>
+<line id="fC" x1="520" y1="80" x2="660" y2="80" stroke="#8fdcff" stroke-width="10" class="flow"/>
+</svg>
+</div>
+
+<h2>3 · The thick bed — slow but efficient (live cells)</h2>
+<div class="panel">
+<p>12 cells across <b>3.0 mm</b>, α = 1.8e-7 m²/s, LDF k = 0.012 s⁻¹ (slow — matches the 600 s rhythm).
+Drag the hour: the collector temperature moves the desorption wall between 60 and 95 °C and the wave crawls.</p>
+<canvas id="bed" width="860" height="240"></canvas>
+<p class="dim" id="bedLab">–</p>
+</div>
+
+<h2>4 · Reference numbers</h2>
+<div class="panel"><table>
+<tr><th>rank (human)</th><th>material</th><th>COP</th><th>SCP W/kg</th><th>note</th></tr>
+<tr><td>1</td><td>MIL-160</td><td>0.76</td><td>694</td><td>⚠ fit only to 40 °C — extrapolated</td></tr>
+<tr><td>2</td><td>CuBTC</td><td>0.60</td><td>623</td><td>best honest row</td></tr>
+<tr><td>5</td><td>Silica gel</td><td>0.44</td><td>216</td><td>solar workhorse</td></tr>
+</table></div>
+
+<script>
+const R=8.314,CPS=1000,CPL=4184,HX=1.35,TE=10,TC=35,CYC=600;
+function psat(tK){const tC=tK-273.15;if(tC<100)return 611.2*Math.exp(17.502*tC/(240.97+tC));return Math.pow(10,8.10765-1750.286/(235+tC))*133.322;}
+function hfg(tK){const Tc=647.1,Tr=373.15,Hr=2256400;const t=Math.min(tK,Tc-1);return Hr*Math.pow((Tc-t)/(Tc-Tr),0.321);}
+function da(tK,p,q,E,n){const r=Math.max(psat(tK)/p,1);return q*Math.exp(-Math.pow(R*tK*Math.log(r)/E,n));}
+const MATS={CuBTC:{q:0.4910407,E:6299.312,n:1.961696,Q:2.3329079e6},"MIL-160":{q:0.37803,E:6744.2,n:5.333,Q:1.744511e6},silica:{q:0.35,E:4500,n:1.8,Q:2.5e6}};
+function cycle(Td,m){const tE=TE+273.15,tC=TC+273.15,tD=Td+273.15,pE=psat(tE),pC=psat(tC),h=hfg(tE);
+ const qA=da(tC,pE,m.q,m.E,m.n),qD=da(tD,pC,m.q,m.E,m.n),dq=Math.max(0,qA-qD),qc=dq*h;
+ const qin=HX*((CPS+qA*CPL)*(tD-tC)+dq*m.Q);return{COP:qin>0?qc/qin:0,SCP:qc/CYC,dq,qc,qin,qA,qD};}
+const $=id=>document.getElementById(id);
+// solar collector curve: peaks 92C at 13h, 62C at 6/20h
+function collector(h){return 62+30*Math.max(0,Math.sin(Math.PI*(h-6)/14));}
+let hour=10, playing=true;
+$('hour').addEventListener('input',e=>{hour=parseFloat(e.target.value);$('hourV').textContent=hour.toFixed(1)+' h';});
+$('play').addEventListener('click',()=>{playing=!playing;$('play').textContent=playing?'⏸ pause':'▶ play';});
+$('mat').addEventListener('change',()=>{});
+const day=$('day').getContext('2d');
+function drawDay(){const m=MATS[$('mat').value];
+ day.clearRect(0,0,860,280);day.fillStyle='#9db8d6';day.font='12px ui-monospace, Menlo, Consolas, monospace';
+ day.fillText('collector °C (amber) vs cooling kJ/kg per half-cycle (cyan) vs COP×100 (green) — 6h to 20h',12,18);
+ const H=h=>60+ (1-(collector(h)-60)/40)*180;
+ // axes
+ day.strokeStyle='#6f9cc9';day.beginPath();day.moveTo(50,30);day.lineTo(50,240);day.lineTo(840,240);day.stroke();
+ day.fillText('95°C',8,66);day.fillText('60°C',8,242);
+ const pts=[];
+ for(let h=6;h<=20;h+=0.25){const Tc_=Math.min(collector(h),95);const c=cycle(Tc_,m);pts.push([h,Tc_,c.qc/1000,c.COP]);}
+ function line(k,col,sc,off){day.strokeStyle=col;day.lineWidth=2;day.beginPath();
+  pts.forEach(([h,a,b,c],i)=>{const v=k===0?a:(k===1?b*sc:sc);const x=50+(h-6)/14*790;const y=k===0?H(a):240-Math.min(v,180);
+   i?day.lineTo(x,y):day.moveTo(x,y);});day.stroke();}
+ line(0,'#ffd24a');line(1,'#8fdcff',1.2);line(2,'#7fdfae',130);
+ // cursor
+ const x=50+(hour-6)/14*790;day.strokeStyle='#fff';day.beginPath();day.moveTo(x,30);day.lineTo(x,240);day.stroke();
+ const Tc_=Math.min(collector(hour),95),c=cycle(Tc_,m);
+ $('dayLab').textContent=`${hour.toFixed(1)} h — collector ${Tc_.toFixed(0)} °C → bed desorbs at ${Tc_.toFixed(0)} °C: Δq ${c.dq.toFixed(4)} kg/kg, cooling ${(c.qc/1000).toFixed(1)} kJ/kg per half-cycle, COP ${c.COP.toFixed(3)}. Morning/evening starvation is visible left and right.`;
+ $('qIn').textContent=(c.qin/1000).toFixed(1)+' kJ/kg in';
+ $('qCool').textContent=(c.qc/1000).toFixed(1)+' kJ/kg out';
+ $('cop').textContent='COP '+c.COP.toFixed(3)+' · SCP '+c.SCP.toFixed(0)+' W/kg';
+ $('st').textContent='Δq '+c.dq.toFixed(4)+' · desorb '+Tc_.toFixed(0)+' °C';
+ $('fIn').setAttribute('stroke-width',(6+30*Math.min(c.qin/150000,1)).toFixed(1));
+ $('fC').setAttribute('stroke-width',(6+30*Math.min(c.qc/150000,1)).toFixed(1));
+ return Tc_;}
+// bed cells
+const N=12,L=0.003,dx=L/N,AL=1.8e-7,K=0.012,DT=0.5;
+let T=new Array(N).fill(35),q=new Array(N).fill(0.06),tBed=0,ads=false,srcT=80;
+const bed=$('bed').getContext('2d');
+function stepBed(){const m=MATS[$('mat').value];const wall=ads?TC:srcT;
+ const p=ads?psat(TE+273.15):psat(TC+273.15);
+ const NS=Math.ceil(AL*DT/(0.45*dx*dx)), hs=DT/NS; // FTCS substeps: α·Δt/dx² ≤ 0.45
+ for(let s=0;s<3;s++){
+  for(let u=0;u<NS;u++){tBed+=hs;if(tBed>=CYC){tBed=0;ads=!ads;}
+   const Tn=T.slice();
+   for(let i=0;i<N;i++){const qs=da(T[i]+273.15,p,m.q,m.E,m.n);const dqdt=K*(qs-q[i]);q[i]+=dqdt*hs;
+    const Tl=i===0?wall:Tn[i-1],Tr=i===N-1?Tn[i]:Tn[i+1];
+    T[i]=Tn[i]+hs*(AL*(Tl-2*Tn[i]+Tr)/(dx*dx)+(m.Q/(CPS+q[i]*CPL))*dqdt*0.15);
+    if(i===0)T[i]+=hs*1.2*(wall-T[i]);}}}}
+function drawBed(){bed.clearRect(0,0,860,240);const m=MATS[$('mat').value];
+ bed.fillStyle='#9db8d6';bed.font='12px ui-monospace, Menlo, Consolas, monospace';
+ bed.fillText((ads?'ADSORB wall 35 °C ← evaporator 10 °C':'DESORB wall '+srcT.toFixed(0)+' °C → condenser 35 °C')+' · t '+tBed.toFixed(0)+'/600 s',12,18);
+ bed.fillStyle=ads?'#2e7ea6':'#c99b2f';bed.fillRect(12,40,46,160);
+ const cw=620/N;
+ for(let i=0;i<N;i++){const f=Math.min(Math.max((T[i]-10)/(95-10),0),1);
+  bed.fillStyle=`rgb(${Math.round(20+225*f)},${Math.round(60+80*(1-f))},${Math.round(140-80*f)})`;
+  bed.fillRect(70+i*cw,40,cw-1,160);
+  const n=Math.round(5*q[i]/m.q);bed.fillStyle='#9fe4ff';
+  for(let d=0;d<n;d++){bed.beginPath();bed.arc(70+i*cw+cw/2,66+d*30,4.5,0,7);bed.fill();}}
+ bed.fillStyle='#0f2c50';bed.fillRect(710,40,60,160);bed.strokeStyle='#8fdcff';bed.strokeRect(710,40,60,160);
+ const qm=q.reduce((a,b)=>a+b,0)/N;
+ bed.fillStyle='#e2edf9';bed.fillText('q̄ '+qm.toFixed(3),710,220);
+ $('bedLab').textContent=`mean bed ${(T.reduce((a,b)=>a+b,0)/N).toFixed(1)} °C · q̄ ${qm.toFixed(4)} kg/kg · 3 mm + slow kinetics: the wave needs minutes, which is exactly why the 600 s cycle fits buildings.`;}
+function loop(){if(playing){hour+=0.02;if(hour>20)hour=6;$('hour').value=hour;$('hourV').textContent=hour.toFixed(1)+' h';}
+ srcT=Math.min(collector(hour),95);stepBed();drawBed();drawDay();requestAnimationFrame(loop);}
+loop();
+</script>
+<footer class="bf">
+<span>COOLING WITH HEAT · docs/simulations/human-hvac-solar.html</span>
+<span class="gold">ILLUSTRATIVE MODEL OUTPUT — VALIDATE AGAINST harness PHYSICS BEFORE DESIGN USE</span>
+</footer>
+</body>
+</html>

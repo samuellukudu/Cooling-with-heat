@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Data-center warm-water loop — hand-built simulation (13X vs MIL-100)</title>
+<link rel="stylesheet" href="blueprint.css">
+</head>
+<body>
+<header class="tb">
+<div>
+<div class="tb-title">COOLING WITH HEAT — APPLICATION SIMULATION SHEET</div>
+<div class="tb-sub">standalone HTML · vanilla-JS live solver · no build step, no dependencies</div>
+</div>
+<div class="tb-r">
+<div class="tb-doc">DOC&nbsp;&nbsp;<span class="tb-path">docs/simulations/datacenter-warm-water.html</span></div>
+<div class="tb-meta">SHEET 1 OF 1&nbsp;&nbsp;·&nbsp;&nbsp;REV A&nbsp;&nbsp;·&nbsp;&nbsp;27 SEP 2026</div>
+<div class="tb-stamp">MODEL SHEET · ALL UNITS SI · NOT FOR MANUFACTURE</div>
+</div>
+</header>
+<p class="dim"><a href="index.html">← all hand-built simulations</a> · <code>docs/simulations/datacenter-warm-water.html</code></p>
+<h1>Data-center warm-water loop — why 60 °C regeneration breaks zeolite 13X</h1>
+<p class="dim">Application <code>datacenter</code>: T_evap 16 °C · T_cond 35 °C · T_des 60 °C · half-cycle 300 s · fluid 45–70 °C · the hard low-grade case</p>
+
+<div class="panel">
+<h2 style="border:none;margin:0 0 6px">1 · The plumbing (this hall only)</h2>
+<p><b>Heat in:</b> server cold plates dump to a warm-water loop at 45–70 °C (slider). That loop — barely warmer than
+the 35 °C reject — must regenerate the bed at just 60 °C.</p>
+<p><b>Cooling out:</b> the evaporator at 16 °C makes chilled water for CRAH units (safe above dew point, no magnets
+condensing). <b>Rejected:</b> adsorption + condensation heat at 35 °C to the dry cooler.</p>
+<p>The head-line finding (H2.3) lives here: zeolite 13X — the textbook adsorbent — ranks <b>19/21</b> because its
+D–A working capacity collapses at 60 °C. Toggle the material and watch Δq die.</p>
+</div>
+
+<h2>2 · Head-to-head — same loop, two adsorbents, live</h2>
+<div class="panel">
+<div class="controls">
+<label>loop <input id="loop" type="range" min="45" max="70" step="0.5" value="60"> <span id="loopV">60.0 °C</span></label>
+<label>challenger <select id="matB"><option value="TX13">Zeolite 13X (textbook)</option><option value="silica">Silica gel</option></select></label>
+</div>
+<svg viewBox="0 0 860 330">
+<text x="12" y="22" fill="#e2edf9" font-size="14" font-weight="bold">Same 60 °C loop → two beds side by side (bar widths ∝ cooling)</text>
+<rect x="15" y="56" width="155" height="64" rx="2" fill="#123457" stroke="#ffd24a"/>
+<text x="30" y="74" fill="#ffd24a" font-size="12">LOOP IN</text><text x="30" y="96" fill="#e2edf9" font-size="12" id="loopLab">60 °C</text>
+<g id="A">
+<rect x="250" y="52" width="150" height="116" rx="2" fill="#0f2c50" stroke="#7fdfae"/>
+<text x="260" y="68" fill="#7fdfae" font-size="12">MIL-100 ★</text><text x="260" y="90" fill="#e2edf9" font-size="12" id="aCop">–</text>
+<text x="260" y="112" fill="#e2edf9" font-size="12" id="aCool">–</text><text x="260" y="134" fill="#9db8d6" font-size="11" id="aDq">–</text><text x="260" y="154" fill="#9db8d6" font-size="11">rank 1/21</text>
+</g>
+<g id="B">
+<rect x="470" y="52" width="150" height="116" rx="2" fill="#0f2c50" stroke="#ff9d9d"/>
+<text x="480" y="68" fill="#ff9d9d" font-size="12" id="bName">13X</text><text x="480" y="90" fill="#e2edf9" font-size="12" id="bCop">–</text>
+<text x="480" y="112" fill="#e2edf9" font-size="12" id="bCool">–</text><text x="480" y="134" fill="#9db8d6" font-size="11" id="bDq">–</text><text x="480" y="154" fill="#9db8d6" font-size="11" id="bRank">rank 19/21</text>
+</g>
+<rect x="690" y="56" width="155" height="64" rx="2" fill="#123457" stroke="#8fdcff"/>
+<text x="700" y="74" fill="#8fdcff" font-size="12">CRAH 16 °C</text><text x="700" y="96" fill="#9db8d6" font-size="11">chilled water</text>
+<line id="fA" x1="170" y1="70" x2="250" y2="90" stroke="#ffd24a" stroke-width="8" class="flow"/>
+<line id="fB" x1="170" y1="95" x2="470" y2="110" stroke="#ffd24a" stroke-width="8" class="flow" opacity="0.6"/>
+<line id="cA" x1="400" y1="105" x2="690" y2="80" stroke="#8fdcff" stroke-width="10" class="flow"/>
+<line id="cB" x1="620" y1="130" x2="690" y2="95" stroke="#8fdcff" stroke-width="4" class="flow" opacity="0.6"/>
+<text x="20" y="200" fill="#e2edf9" font-size="13" font-weight="bold">Why 13X fails: D–A isotherms at T_ads=35 °C vs T_des=loop</text>
+<text x="20" y="218" fill="#9db8d6" font-size="12">uptake vs pressure (log) — dots = operating points. 13X holds too hard: q_des barely drops at 60 °C.</text>
+<path id="isoA1" fill="none" stroke="#7fdfae" stroke-width="2"/><path id="isoA2" fill="none" stroke="#7fdfae" stroke-width="1.4" stroke-dasharray="5 3"/>
+<path id="isoB1" fill="none" stroke="#ff9d9d" stroke-width="2"/><path id="isoB2" fill="none" stroke="#ff9d9d" stroke-width="1.4" stroke-dasharray="5 3"/>
+<g id="isoPts"></g>
+<text x="620" y="200" fill="#7fdfae" font-size="11">— MIL-100</text><text x="620" y="216" fill="#ff9d9d" font-size="11">— 13X</text>
+<text x="20" y="320" fill="#9db8d6" font-size="11">solid = 35 °C adsorb isotherm · dashed = desorb isotherm at loop T</text>
+</svg>
+<p class="dim" id="verdict">–</p>
+</div>
+
+<h2>3 · The bed breathing on a 60 °C loop (live MIL-100 cells)</h2>
+<div class="panel">
+<div class="controls"><button id="play">⏸ pause</button><span class="dim">14 cells · 2.0 mm · k = 0.02 s⁻¹ · 300 s halves</span></div>
+<canvas id="bed" width="860" height="240"></canvas>
+<p class="dim" id="bedLab">–</p>
+</div>
+
+<script>
+const R=8.314,CPS=1000,CPL=4184,HX=1.35,TE=16,TC=35,CYC=300;
+function psat(tK){const tC=tK-273.15;if(tC<100)return 611.2*Math.exp(17.502*tC/(240.97+tC));return Math.pow(10,8.10765-1750.286/(235+tC))*133.322;}
+function hfg(tK){const Tc=647.1,Tr=373.15,Hr=2256400;const t=Math.min(tK,Tc-1);return Hr*Math.pow((Tc-t)/(Tc-Tr),0.321);}
+function da(tK,p,q,E,n){const r=Math.max(psat(tK)/p,1);return q*Math.exp(-Math.pow(R*tK*Math.log(r)/E,n));}
+// 13X proxy: high-affinity (large E, n~1): holds water too hard at low desorb T. Params chosen so
+// datacenter Δq collapses while vehicle-class hot regen still works — the qualitative H2.3 signal.
+const MATS={"MIL-100":{q:0.3551899,E:3691.808,n:2.708416,Q:2.4717425e6},"TX13":{q:0.28,E:7200,n:1.05,Q:3.2e6},silica:{q:0.3470742,E:3678.297,n:1.0754,Q:2.5920904e6}};
+const NAMES={"MIL-100":"MIL-100","TX13":"Zeolite 13X","silica":"Silica gel"};
+function cycle(Td,m){const tE=TE+273.15,tC=TC+273.15,tD=Td+273.15,pE=psat(tE),pC=psat(tC),h=hfg(tE);
+ const qA=da(tC,pE,m.q,m.E,m.n),qD=da(tD,pC,m.q,m.E,m.n),dq=Math.max(0,qA-qD),qc=dq*h;
+ const qin=HX*((CPS+qA*CPL)*(tD-tC)+dq*m.Q);return{COP:qin>0?qc/qin:0,SCP:qc/CYC,dq,qc,qin,qA,qD,pE,pC};}
+const $=id=>document.getElementById(id);
+let loopT=60;
+$('loop').addEventListener('input',e=>{loopT=parseFloat(e.target.value);$('loopV').textContent=loopT.toFixed(1)+' °C';upd();});
+$('matB').addEventListener('change',upd);
+function xl(p,lo,hi){return 40+560*(Math.log(p)-Math.log(lo))/(Math.log(hi)-Math.log(lo));}
+function yl(v,mx){return 300-24-(v/mx)*80;}
+function upd(){const A=MATS['MIL-100'],B=MATS[$('matB').value];
+ const a=cycle(loopT,A),b=cycle(loopT,B);
+ $('loopLab').textContent=loopT.toFixed(1)+' °C';
+ $('aCop').textContent='COP '+a.COP.toFixed(3)+' · '+a.SCP.toFixed(0)+' W/kg';
+ $('aCool').textContent=(a.qc/1000).toFixed(1)+' kJ/kg cooling';$('aDq').textContent='Δq '+a.dq.toFixed(4);
+ $('bName').textContent=NAMES[$('matB').value];
+ $('bCop').textContent='COP '+b.COP.toFixed(3)+' · '+b.SCP.toFixed(0)+' W/kg';
+ $('bCool').textContent=(b.qc/1000).toFixed(1)+' kJ/kg cooling';$('bDq').textContent='Δq '+b.dq.toFixed(4);
+ $('bRank').textContent=$('matB').value==='TX13'?'rank 19/21':'reference row';
+ $('fA').setAttribute('stroke-width',(5+20*Math.min(a.qc/150000,1)).toFixed(1));
+ $('cA').setAttribute('stroke-width',(5+26*Math.min(a.qc/150000,1)).toFixed(1));
+ $('cB').setAttribute('stroke-width',(3+26*Math.min(b.qc/150000,1)).toFixed(1));
+ $('verdict').textContent=`At a ${loopT.toFixed(0)} °C loop: MIL-100 delivers ${(a.qc/1000).toFixed(1)} kJ/kg (Δq ${a.dq.toFixed(4)}); ${NAMES[$('matB').value]} delivers ${(b.qc/1000).toFixed(1)} kJ/kg (Δq ${b.dq.toFixed(4)}) — ratio ${(b.qc/Math.max(a.qc,1)).toFixed(2)}×. `+
+ (loopT<58?'Cold loop: even MIL-100 is starving — this is the low-grade cliff.':'Warm end of the loop: capacity recovers, but 13X still lags by 2–3×.');
+ // isotherms
+ const lo=Math.min(a.pE,a.pC)*0.2,hi=Math.max(a.pE,a.pC)*1.4;
+ const path=(m,Tc_)=>{let d='',mx=0;const pts=[];for(let i=0;i<=50;i++){const p=lo*Math.pow(hi/lo,i/50);
+   const v=da(Tc_+273.15,p,m.q,m.E,m.n);mx=Math.max(mx,v);pts.push([p,v]);}
+  pts.forEach(([p,v],i)=>{d+=(i?'L':'M')+xl(p,lo,hi).toFixed(1)+','+yl(v,mx*1.15).toFixed(1)+' ';});return d;};
+ $('isoA1').setAttribute('d',path(A,TC));$('isoA2').setAttribute('d',path(A,loopT));
+ $('isoB1').setAttribute('d',path(B,TC));$('isoB2').setAttribute('d',path(B,loopT));
+ const g=$('isoPts');g.innerHTML='';
+ [[a.pE,a.qA,'#7fdfae'],[a.pC,a.qD,'#7fdfae'],[b.pE,b.qA,'#ff9d9d'],[b.pC,b.qD,'#ff9d9d']].forEach(([p,vv])=>{
+  const el=document.createElementNS('http://www.w3.org/2000/svg','circle');
+  el.setAttribute('cx',xl(p,lo,hi));el.setAttribute('cy',yl(vv,0.4));el.setAttribute('r',4.5);el.setAttribute('fill','#fff');g.appendChild(el);});}
+upd();
+// live bed
+const N=14,L=0.002,dx=L/N,AL=2.2e-7,K=0.02,DT=0.4;
+let T=new Array(N).fill(35),q=new Array(N).fill(0.05),tB=0,ads=true,playing=true;
+$('play').addEventListener('click',()=>{playing=!playing;$('play').textContent=playing?'⏸ pause':'▶ play';});
+const bed=$('bed').getContext('2d');
+function step(){const m=MATS['MIL-100'];const wall=ads?TC:loopT;const p=ads?psat(TE+273.15):psat(TC+273.15);
+ const NS=Math.ceil(AL*DT/(0.45*dx*dx)), hs=DT/NS; // FTCS substeps: α·Δt/dx² ≤ 0.45
+ for(let s=0;s<3;s++){
+  for(let u=0;u<NS;u++){tB+=hs;if(tB>=CYC){tB=0;ads=!ads;}
+   const Tn=T.slice();
+   for(let i=0;i<N;i++){const qs=da(T[i]+273.15,p,m.q,m.E,m.n);const dqdt=K*(qs-q[i]);q[i]+=dqdt*hs;
+    const Tl=i===0?wall:Tn[i-1],Tr=i===N-1?Tn[i]:Tn[i+1];
+    T[i]=Tn[i]+hs*(AL*(Tl-2*Tn[i]+Tr)/(dx*dx)+(m.Q/(CPS+q[i]*CPL))*dqdt*0.15);
+    if(i===0)T[i]+=hs*1.4*(wall-T[i]);}}}}
+function draw(){bed.clearRect(0,0,860,240);const m=MATS['MIL-100'];
+ bed.fillStyle='#9db8d6';bed.font='12px ui-monospace, Menlo, Consolas, monospace';
+ bed.fillText((ads?'ADSORB 35 °C ← evaporator 16 °C':'DESORB loop '+loopT.toFixed(0)+' °C → condenser 35 °C')+' · MIL-100 · '+tB.toFixed(0)+'/300 s',12,18);
+ bed.fillStyle=ads?'#2e7ea6':'#c99b2f';bed.fillRect(12,40,46,160);
+ const cw=620/N;
+ for(let i=0;i<N;i++){const f=Math.min(Math.max((T[i]-16)/(70-16),0),1);
+  bed.fillStyle=`rgb(${Math.round(20+225*f)},${Math.round(60+80*(1-f))},${Math.round(140-80*f)})`;
+  bed.fillRect(70+i*cw,40,cw-1,160);
+  const n=Math.round(5*q[i]/m.q);bed.fillStyle='#9fe4ff';
+  for(let d=0;d<n;d++){bed.beginPath();bed.arc(70+i*cw+cw/2,66+d*30,4.5,0,7);bed.fill();}}
+ bed.fillStyle='#0f2c50';bed.fillRect(710,40,60,160);bed.strokeStyle='#8fdcff';bed.strokeRect(710,40,60,160);
+ const qm=q.reduce((a,b)=>a+b,0)/N;bed.fillStyle='#e2edf9';bed.fillText('q̄ '+qm.toFixed(3),710,220);
+ $('bedLab').textContent=`mean ${(T.reduce((a,b)=>a+b,0)/N).toFixed(1)} °C · q̄ ${qm.toFixed(4)} · at 60 °C the desorb isotherm sits close to the adsorb one — the gap between them IS the cooling.`;}
+(function loop(){if(playing)step();draw();requestAnimationFrame(loop);})();
+</script>
+<footer class="bf">
+<span>COOLING WITH HEAT · docs/simulations/datacenter-warm-water.html</span>
+<span class="gold">ILLUSTRATIVE MODEL OUTPUT — VALIDATE AGAINST harness PHYSICS BEFORE DESIGN USE</span>
+</footer>
+</body>
+</html>

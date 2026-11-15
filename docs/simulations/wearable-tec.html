@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TEC wearable cooling — Peltier garment (hand-built)</title>
+<link rel="stylesheet" href="blueprint.css">
+</head>
+<body>
+<header class="tb">
+<div>
+<div class="tb-title">COOLING WITH HEAT — APPLICATION SIMULATION SHEET</div>
+<div class="tb-sub">standalone HTML · vanilla-JS live solver · no build step, no dependencies</div>
+</div>
+<div class="tb-r">
+<div class="tb-doc">DOC&nbsp;&nbsp;<span class="tb-path">docs/simulations/wearable-tec.html</span></div>
+<div class="tb-meta">SHEET 1 OF 1&nbsp;&nbsp;·&nbsp;&nbsp;REV A&nbsp;&nbsp;·&nbsp;&nbsp;27 SEP 2026</div>
+<div class="tb-stamp">MODEL SHEET · ALL UNITS SI · NOT FOR MANUFACTURE</div>
+</div>
+</header>
+<p class="dim"><a href="index.html">← all hand-built simulations</a> · <code>docs/simulations/wearable-tec.html</code> — hand-written</p>
+<h1>TEC wearable cooling — Peltier module in a garment</h1>
+<p class="dim">From intro-research: active cooling textiles incorporate TEC modules or miniature fans directly.
+The TEC is the Peltier side: electricity → cooling. Distinct from the frozen pde-thermoelectric (module physics);
+this is the garment integration.</p>
+
+<div class="panel">
+<h2 style="border:none;margin:0 0 6px">1 · The module</h2>
+<p>A flexible Peltier module laminated into a cooling vest. Cold side against skin (T_c), hot side to ambient
+(T_h). Q_c = S·T_c·I − ½I²R − K·ΔT. COP = Q_c/W. The vest must reject Q_h = Q_c + W on the hot side — heat sink
+or fabric spreader. Power comes from a battery or a TEG/TGC harvester (see wearable-teg / wearable-tgc).</p>
+<div class="controls">
+<label>T_ambient <input id="Tair" type="range" min="20" max="45" step="0.5" value="30"> <span id="TairV">30 °C</span></label>
+<label>I <input id="I" type="range" min="0" max="3" step="0.05" value="1"> <span id="IV">1.00 A</span></label>
+<label>module <select id="mod"><option value="flex">Flexible TEC (S=100 μV/K, R=0.5, K=0.01)</option><option value="rigid">Rigid module (S=200 μV/K, R=0.1, K=0.005)</option></select></label>
+</div>
+<canvas id="plot" width="860" height="280"></canvas>
+<table>
+<tr><th>Q_c</th><td id="qc">–</th><th>COP</th><td id="cop">–</th><th>Q_h (reject)</th><td id="qh">–</td></tr>
+<tr><th>ΔT</th><td id="dT">–</th><th>W_in</th><td id="w">–</th><th>battery life (10 Wh)</th><td id="life">–</td></tr>
+</table>
+</div>
+
+<div class="panel">
+<h2 style="border:none;margin:0 0 6px">2 · The vest cross-section</h2>
+<p>Canvas: skin → cold plate → Peltier → hot plate → heat spreader → ambient. Heat pumped from skin to ambient.
+Arrow widths ∝ live powers.</p>
+<canvas id="xsec" width="860" height="200"></canvas>
+<p class="dim" id="xsecLab">–</p>
+</div>
+
+<script>
+const $=id=>document.getElementById(id);
+const MODS={"flex":{S:100e-6,R:0.5,K:0.01},"rigid":{S:200e-6,R:0.1,K:0.005}};
+const Tc=28; // skin target
+function sim(Tair,I,mod){const M=MODS[mod];
+ const dT=Tair-Tc;
+ const qc=M.S*(Tc+273.15)*I-0.5*I*I*M.R-M.K*dT;
+ const w=M.S*I*dT+I*I*M.R;
+ const cop=qc>0&&w>0?qc/w:0;
+ const qh=qc+w;
+ return{qc,cop,qh,w,dT};}
+function draw(){
+ const Tair=parseFloat($('Tair').value),I=parseFloat($('I').value),mod=$('mod').value;
+ $('TairV').textContent=Tair.toFixed(1)+' °C';$('IV').textContent=I.toFixed(2)+' A';
+ const r=sim(Tair,I,mod);
+ $('qc').textContent=r.qc.toFixed(2)+' W';
+ $('cop').textContent=r.cop.toFixed(3);
+ $('qh').textContent=r.qh.toFixed(2)+' W';
+ $('dT').textContent=r.dT.toFixed(1)+' K';
+ $('w').textContent=r.w.toFixed(2)+' W';
+ $('life').textContent=r.w>0?(10/r.w).toFixed(1)+' h':'–';
+ const cv=$('plot'),cx=cv.getContext('2d');
+ cx.clearRect(0,0,860,280);
+ cx.strokeStyle='#6f9cc9';cx.beginPath();cx.moveTo(50,20);cx.lineTo(50,250);cx.lineTo(840,250);cx.stroke();
+ cx.fillStyle='#9db8d6';cx.font='11px ui-monospace, Menlo, Consolas, monospace';
+ cx.fillText('Q_c (W)',8,30);cx.fillText('I (A)',800,268);
+ cx.strokeStyle='#8fdcff';cx.lineWidth=2;cx.beginPath();
+ for(let i=0;i<=60;i++){const I2=i/20;const q=sim(Tair,I2,mod).qc;
+  const x=50+I2/3*790,y=250-Math.max(q,0)/5*200;
+  i?cx.lineTo(x,y):cx.moveTo(x,y);}
+ cx.stroke();
+ const ox=50+I/3*790,oy=250-Math.max(r.qc,0)/5*200;
+ cx.fillStyle='#fff';cx.beginPath();cx.arc(ox,oy,5,0,7);cx.fill();
+ // cross-section
+ const xc=$('xsec').getContext('2d');
+ xc.clearRect(0,0,860,200);
+ xc.fillStyle='#9db8d6';xc.font='12px ui-monospace, Menlo, Consolas, monospace';
+ xc.fillText('skin '+Tc+'°C',20,20);xc.fillText('ambient '+Tair.toFixed(0)+'°C',700,20);
+ xc.fillStyle='#8fdcff';xc.fillRect(100,40,50,120);
+ xc.fillStyle='#0f2c50';xc.fillRect(150,40,80,120);xc.strokeStyle='#6f9cc9';xc.strokeRect(150,40,80,120);
+ xc.fillStyle='#ffd24a';xc.fillRect(230,40,50,120);
+ xc.fillStyle='#2a517d';xc.fillRect(280,40,50,120);
+ xc.fillStyle='#e2edf9';xc.font='10px ui-monospace, Menlo, Consolas, monospace';
+ xc.fillText('cold',110,105);xc.fillText('Peltier',165,105);xc.fillText('hot',240,105);xc.fillText('spread',290,105);
+ xc.strokeStyle='#8fdcff';xc.lineWidth=2+r.qc*10;
+ xc.beginPath();xc.moveTo(340,100);xc.lineTo(400,100);xc.stroke();
+ xc.strokeStyle='#ffd24a';xc.lineWidth=2+r.qh*5;
+ xc.beginPath();xc.moveTo(410,100);xc.lineTo(470,100);xc.stroke();
+ xc.fillStyle='#e2edf9';xc.font='11px ui-monospace, Menlo, Consolas, monospace';
+ xc.fillText('Q_c = '+r.qc.toFixed(2)+' W',340,130);
+ xc.fillText('Q_h = '+r.qh.toFixed(2)+' W',500,130);
+ $('xsecLab').textContent=`Peltier pumps ${r.qc.toFixed(2)} W from skin · rejects ${r.qh.toFixed(2)} W to ambient · COP = ${r.cop.toFixed(3)} · battery life ${(10/r.w).toFixed(1)} h at ${r.w.toFixed(2)} W.`;}
+$('Tair').addEventListener('input',draw);
+$('I').addEventListener('input',draw);
+$('mod').addEventListener('change',draw);
+draw();
+</script>
+<footer class="bf">
+<span>COOLING WITH HEAT · docs/simulations/wearable-tec.html</span>
+<span class="gold">ILLUSTRATIVE MODEL OUTPUT — VALIDATE AGAINST harness PHYSICS BEFORE DESIGN USE</span>
+</footer>
+</body>
+</html>

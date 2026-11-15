@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Wearable TEG — body heat harvesting (hand-built)</title>
+<link rel="stylesheet" href="blueprint.css">
+</head>
+<body>
+<header class="tb">
+<div>
+<div class="tb-title">COOLING WITH HEAT — APPLICATION SIMULATION SHEET</div>
+<div class="tb-sub">standalone HTML · vanilla-JS live solver · no build step, no dependencies</div>
+</div>
+<div class="tb-r">
+<div class="tb-doc">DOC&nbsp;&nbsp;<span class="tb-path">docs/simulations/wearable-teg.html</span></div>
+<div class="tb-meta">SHEET 1 OF 1&nbsp;&nbsp;·&nbsp;&nbsp;REV A&nbsp;&nbsp;·&nbsp;&nbsp;27 SEP 2026</div>
+<div class="tb-stamp">MODEL SHEET · ALL UNITS SI · NOT FOR MANUFACTURE</div>
+</div>
+</header>
+<p class="dim"><a href="index.html">← all hand-built simulations</a> · <code>docs/simulations/wearable-teg.html</code> — hand-written</p>
+<h1>Wearable TEG — body heat → electricity via Seebeck effect</h1>
+<p class="dim">From intro-research: flexible TEGs integrated into fabrics convert body heat (warm side) and ambient air
+(cool side) into power. Microwatts per cm² — manage cooling-element power carefully.</p>
+
+<div class="panel">
+<h2 style="border:none;margin:0 0 6px">1 · The device</h2>
+<p>A flexible thermoelectric generator laminated into a garment. Body side at T_hot (skin ~33 °C), ambient side at
+T_cold (air, slider). The Seebeck voltage V = S·ΔT drives current through a load. Power P = V²/(R_int + R_load).
+Maximum power transfer when R_load = R_int. ZT = S²T_avg/(R·K) sets the efficiency ceiling.</p>
+<div class="controls">
+<label>T_ambient <input id="Tair" type="range" min="15" max="40" step="0.5" value="25"> <span id="TairV">25 °C</span></label>
+<label>material <select id="mat"><option value="Bi2Te3">Bi₂Te₃ (S=200 μV/K, flexible thread)</option><option value="CNT">CNT fiber (S=50 μV/K, textile)</option><option value="Te-nanowire">Te nanowire (S=300 μV/K, lab)</option></select></label>
+<label>R_load <input id="Rload" type="range" min="0.1" max="10" step="0.1" value="1"> <span id="RloadV">1.0 Ω</span></label>
+</div>
+<canvas id="plot" width="860" height="280"></canvas>
+<table>
+<tr><th>ΔT</th><td id="dT">–</td><th>V_oc</th><td id="voc">–</td><th>P_max</th><td id="pmax">–</td></tr>
+<tr><th>P at R_load</th><td id="pload">–</td><th>efficiency</th><td id="eff">–</td><th>ZT</th><td id="zt">–</td></tr>
+</table>
+<p class="dim">Power density is µW/cm² — enough for sensors and LEDs, not for a TEC. The load-match point is marked.</p>
+</div>
+
+<div class="panel">
+<h2 style="border:none;margin:0 0 6px">2 · The garment cross-section</h2>
+<p>Canvas: skin → fabric → TEG → ambient. Heat flows from body to air through the TEG; the TEG extracts a fraction
+as electricity. Arrow widths ∝ live powers.</p>
+<canvas id="xsec" width="860" height="200"></canvas>
+<p class="dim" id="xsecLab">–</p>
+</div>
+
+<script>
+const $=id=>document.getElementById(id);
+const MATS={"Bi2Te3":{S:200e-6,R:0.5,K:0.002,ZT:0.8},"CNT":{S:50e-6,R:2.0,K:0.005,ZT:0.3},"Te-nanowire":{S:300e-6,R:0.3,K:0.0015,ZT:1.2}};
+const Th=33; // skin
+function sim(Tair,Rload,mat){const M=MATS[mat];
+ const dT=Th-Tair;
+ const voc=M.S*dT;
+ const pmax=voc*voc/(4*M.R);
+ const pload=voc*voc*Rload/((M.R+Rload)**2);
+ const eff=pload>0?(dT/Th)*(Math.sqrt(1+M.ZT)-1)/(Math.sqrt(1+M.ZT)+Tair/Th):0;
+ return{dT,voc,pmax,pload,eff,zt:M.ZT};}
+function draw(){
+ const Tair=parseFloat($('Tair').value),Rload=parseFloat($('Rload').value),mat=$('mat').value;
+ $('TairV').textContent=Tair.toFixed(1)+' °C';$('RloadV').textContent=Rload.toFixed(1)+' Ω';
+ const r=sim(Tair,Rload,mat);
+ $('dT').textContent=r.dT.toFixed(1)+' K';
+ $('voc').textContent=(r.voc*1000).toFixed(1)+' mV';
+ $('pmax').textContent=(r.pmax*1e6).toFixed(1)+' µW';
+ $('pload').textContent=(r.pload*1e6).toFixed(1)+' µW';
+ $('eff').textContent=(r.eff*100).toFixed(2)+' %';
+ $('zt').textContent=r.zt.toFixed(2);
+ // P vs R_load curve
+ const cv=$('plot'),cx=cv.getContext('2d');
+ cx.clearRect(0,0,860,280);
+ cx.strokeStyle='#6f9cc9';cx.beginPath();cx.moveTo(50,20);cx.lineTo(50,250);cx.lineTo(840,250);cx.stroke();
+ cx.fillStyle='#9db8d6';cx.font='11px ui-monospace, Menlo, Consolas, monospace';
+ cx.fillText('P (µW)',8,30);cx.fillText('R_load (Ω)',800,268);
+ cx.strokeStyle='#8fdcff';cx.lineWidth=2;cx.beginPath();
+ for(let i=0;i<=100;i++){const Rl=0.1+i/100*9.9;const p=sim(Tair,Rl,mat).pload*1e6;
+  const x=50+Rl/10*790,y=250-Math.min(p,50)/50*200;
+  i?cx.lineTo(x,y):cx.moveTo(x,y);}
+ cx.stroke();
+ // operating point
+ const ox=50+Rload/10*790,oy=250-Math.min(r.pload*1e6,50)/50*200;
+ cx.fillStyle='#fff';cx.beginPath();cx.arc(ox,oy,5,0,7);cx.fill();
+ // R_int marker
+ const M=MATS[mat];
+ cx.setLineDash([4,4]);cx.strokeStyle='#9db8d6';cx.beginPath();cx.moveTo(50+M.R/10*790,20);cx.lineTo(50+M.R/10*790,250);cx.stroke();cx.setLineDash([]);
+ cx.fillStyle='#9db8d6';cx.fillText('R_int',50+M.R/10*790-12,14);
+ // cross-section
+ const xc=$('xsec').getContext('2d');
+ xc.clearRect(0,0,860,200);
+ xc.fillStyle='#9db8d6';xc.font='12px ui-monospace, Menlo, Consolas, monospace';
+ xc.fillText('skin '+Th+'°C',20,20);xc.fillText('ambient '+Tair.toFixed(0)+'°C',700,20);
+ // layers
+ xc.fillStyle='#ffd24a';xc.fillRect(100,40,60,120);
+ xc.fillStyle='#0f2c50';xc.fillRect(160,40,80,120);xc.strokeStyle='#6f9cc9';xc.strokeRect(160,40,80,120);
+ xc.fillStyle='#8fdcff';xc.fillRect(240,40,60,120);
+ xc.fillStyle='#2a517d';xc.fillRect(300,40,60,120);
+ xc.fillStyle='#e2edf9';xc.font='10px ui-monospace, Menlo, Consolas, monospace';
+ xc.fillText('fabric',110,105);xc.fillText('TEG',185,105);xc.fillText('heat',255,105);xc.fillText('spread',315,105);
+ // heat flow arrows
+ const qTotal=M.K*r.dT;
+ const qElec=r.pload;
+ const qHeat=qTotal-qElec;
+ xc.strokeStyle='#ffd24a';xc.lineWidth=2+qTotal*50;
+ xc.beginPath();xc.moveTo(370,100);xc.lineTo(430,100);xc.stroke();
+ xc.strokeStyle='#8fdcff';xc.lineWidth=2+qHeat*50;
+ xc.beginPath();xc.moveTo(440,100);xc.lineTo(500,100);xc.stroke();
+ xc.fillStyle='#e2edf9';xc.font='11px ui-monospace, Menlo, Consolas, monospace';
+ xc.fillText('Q_total = '+(qTotal*1e6).toFixed(0)+' µW',370,130);
+ xc.fillText('Q_heat = '+(qHeat*1e6).toFixed(0)+' µW',545,130);
+ xc.fillText('P_elec = '+(qElec*1e6).toFixed(1)+' µW',520,130);
+ $('xsecLab').textContent=`Seebeck voltage ${(r.voc*1000).toFixed(1)} mV across ${r.dT.toFixed(1)} K · ZT = ${r.zt.toFixed(2)} caps efficiency at ${(r.eff*100).toFixed(2)}% of Carnot · enough for sensors, not for a TEC.`;}
+$('Tair').addEventListener('input',draw);
+$('Rload').addEventListener('input',draw);
+$('mat').addEventListener('change',draw);
+draw();
+</script>
+<footer class="bf">
+<span>COOLING WITH HEAT · docs/simulations/wearable-teg.html</span>
+<span class="gold">ILLUSTRATIVE MODEL OUTPUT — VALIDATE AGAINST harness PHYSICS BEFORE DESIGN USE</span>
+</footer>
+</body>
+</html>

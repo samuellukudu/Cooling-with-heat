@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Thermal cloak — ring design (hand-built, live solver)</title>
+<link rel="stylesheet" href="blueprint.css">
+</head>
+<body>
+<header class="tb">
+<div>
+<div class="tb-title">COOLING WITH HEAT — APPLICATION SIMULATION SHEET</div>
+<div class="tb-sub">standalone HTML · vanilla-JS live solver · no build step, no dependencies</div>
+</div>
+<div class="tb-r">
+<div class="tb-doc">DOC&nbsp;&nbsp;<span class="tb-path">docs/simulations/pde-cloak.html</span></div>
+<div class="tb-meta">SHEET 1 OF 1&nbsp;&nbsp;·&nbsp;&nbsp;REV A&nbsp;&nbsp;·&nbsp;&nbsp;27 SEP 2026</div>
+<div class="tb-stamp">MODEL SHEET · ALL UNITS SI · NOT FOR MANUFACTURE</div>
+</div>
+</header>
+<p class="dim"><a href="index.html">← all hand-built simulations</a> · <code>docs/simulations/pde-cloak.html</code> — hand-written, live solver</p>
+<h1>Thermal cloak — ring diffusivity design</h1>
+<p class="dim">Frozen-diffheat scenario <code>pde-cloak</code>. Field-multiply form dT/dt = κ(x,y)·∇²T
+(documented gap: not full ∇·(κ∇T)). Live JS solver.</p>
+
+<div class="panel">
+<h2 style="border:none;margin:0 0 6px">1 · The setup</h2>
+<p>Plate 1×1, hot left T=1, cold right T=0. κ field: background 0.01, ring (0.2&lt;r&lt;0.4) slider, core (r&lt;0.2)
+slider. Objectives: shield the interior (r&lt;0.2) while the exterior matches the linear gradient.
+Bare-plate baseline run alongside for like-for-like far-field comparison.</p>
+<div class="controls">
+<label>κ_core <input id="kcore" type="range" min="-4" max="-0.3" step="0.05" value="-4"> <span id="kcoreV">1e-4</span></label>
+<label>κ_ring <input id="kring" type="range" min="-2" max="0.7" step="0.05" value="0"> <span id="kringV">1.0</span></label>
+<button id="p1">bare plate</button>
+<button id="p2">naive ring (0.1/1.0)</button>
+<button id="p3">insulating-core (1e-4/1.0)</button>
+<button id="play">⏸ pause</button>
+</div>
+<canvas id="T" width="420" height="420"></canvas><canvas id="K" width="420" height="420"></canvas>
+<table>
+<tr><th>interior |∇T|</th><td id="grad">–</td><td>want ~0</td></tr>
+<tr><th>far-field mismatch</th><td id="mismatch">–</td><td>want ~0</td></tr>
+<tr><th>far-field Δ vs bare</th><td id="ffdelta">–</td><td>like-for-like</td></tr>
+</table>
+</div>
+
+<script>
+const $=id=>document.getElementById(id);
+const N=32,dx=1/N;
+let kcore=1e-4,kring=1.0,T=new Float64Array(N*N),Tbare=new Float64Array(N*N),playing=true,t=0;
+function dt(){return 0.9*dx*dx/(4*Math.max(kcore,kring,0.01));}
+function kappa(i,j){const x=(i+0.5)/N,y=(j+0.5)/N;
+ const r=Math.hypot(x-0.5,y-0.5);
+ if(r<0.2)return kcore;
+ if(r<0.4)return kring;
+ return 0.01;}
+function step(){const h=dt();
+ for(let s=0;s<2;s++){t+=h;
+  for(let i=0;i<N;i++)for(let j=0;j<N;j++){
+   const k=i*N+j;
+   const l=j===0?1:T[k-1],r=j===N-1?0:T[k+1];
+   const u=i===0?T[k]:T[k-N],d=i===N-1?T[k]:T[k+N];
+   const kap=kappa(i,j);
+   T[k]+=h*kap*(l+r+u+d-4*T[k])/(dx*dx);
+   // bare
+   const lb=j===0?1:Tbare[k-1],rb=j===N-1?0:Tbare[k+1];
+   const ub=i===0?Tbare[k]:Tbare[k-N],db=i===N-1?Tbare[k]:Tbare[k+N];
+   Tbare[k]+=h*0.01*(lb+rb+ub+db-4*Tbare[k])/(dx*dx);}}
+ return h;}
+function col(v){const f=Math.min(Math.max(v,0),1);
+ const stops=[[13,13,31],[59,15,112],[140,29,64],[199,92,20],[249,200,70]];
+ const x=f*4,i=Math.min(Math.floor(x),3),u=x-i;
+ const c=stops[i].map((v2,k2)=>Math.round(v2+u*(stops[i+1][k2]-v2)));
+ return `rgb(${c[0]},${c[1]},${c[2]}`;}
+const cT=$('T').getContext('2d'),cK=$('K').getContext('2d');
+const cw=420/N;
+function draw(){
+ cT.clearRect(0,0,420,420);cK.clearRect(0,0,420,420);
+ for(let i=0;i<N;i++)for(let j=0;j<N;j++){
+  cT.fillStyle=col(T[i*N+j]);cT.fillRect(i*cw,j*cw,cw+0.5,cw+0.5);
+  const kap=kappa(i,j);
+  const f=Math.min(Math.max((Math.log10(kap)+4)/5,0),1);
+  cK.fillStyle=`rgb(${Math.round(20+200*f)},${Math.round(20+80*(1-f))},${Math.round(40+60*(1-f))})`;
+  cK.fillRect(i*cw,j*cw,cw+0.5,cw+0.5);}
+ // ring outline
+ cT.strokeStyle='#9db8d6';cT.setLineDash([4,4]);
+ cT.beginPath();cT.arc(210,210,0.2*420,0,7);cT.stroke();
+ cT.beginPath();cT.arc(210,210,0.4*420,0,7);cT.stroke();cT.setLineDash([]);
+ // objectives
+ let grad=0,cnt=0;
+ for(let i=0;i<N;i++)for(let j=0;j<N;j++){
+  const x=(i+0.5)/N,y=(j+0.5)/N;
+  if(Math.hypot(x-0.5,y-0.5)<0.2){
+   const gx=(T[i*N+j+1]-T[i*N+j-1])/(2*dx),gy=(T[(i+1)*N+j]-T[(i-1)*N+j])/(2*dx);
+   grad+=Math.hypot(gx,gy);cnt++;}}
+ grad/=Math.max(cnt,1);
+ let mm=0,fc=0;
+ for(let i=0;i<N;i++)for(let j=0;j<N;j++){
+  const x=(i+0.5)/N,y=(j+0.5)/N;
+  if(Math.hypot(x-0.5,y-0.5)>=0.4){mm+=(T[i*N+j]-Tbare[i*N+j])**2;fc++;}}
+ mm=Math.sqrt(mm/Math.max(fc,1));
+ let fd=0;
+ for(let i=0;i<N;i++)for(let j=0;j<N;j++){
+  const x=(i+0.5)/N,y=(j+0.5)/N;
+  if(Math.hypot(x-0.5,y-0.5)>=0.4)fd+=(T[i*N+j]-Tbare[i*N+j])**2;}
+ fd=Math.sqrt(fd/Math.max(fc,1));
+ $('grad').textContent=grad.toFixed(4);
+ $('mismatch').textContent=mm.toExponential(2);
+ $('ffdelta').textContent=fd.toExponential(2);}
+function setK(kc,kr){kcore=kc;kring=kr;
+ $('kcore').value=Math.log10(kc);$('kring').value=Math.log10(kr);
+ $('kcoreV').textContent=kc.toExponential(0);$('kringV').textContent=kr.toFixed(1);
+ T.fill(0);Tbare.fill(0);t=0;draw();}
+$('kcore').addEventListener('input',e=>{kcore=Math.pow(10,parseFloat(e.target.value));$('kcoreV').textContent=kcore.toExponential(0);T.fill(0);Tbare.fill(0);t=0;draw();});
+$('kring').addEventListener('input',e=>{kring=Math.pow(10,parseFloat(e.target.value));$('kringV').textContent=kring.toFixed(1);T.fill(0);Tbare.fill(0);t=0;draw();});
+$('p1').addEventListener('click',()=>setK(0.01,0.01));
+$('p2').addEventListener('click',()=>setK(0.1,1.0));
+$('p3').addEventListener('click',()=>setK(1e-4,1.0));
+$('play').addEventListener('click',()=>{playing=!playing;$('play').textContent=playing?'⏸ pause':'▶ play';});
+setK(1e-4,1.0);
+(function loop(){if(playing)step();draw();requestAnimationFrame(loop);})();
+</script>
+<footer class="bf">
+<span>COOLING WITH HEAT · docs/simulations/pde-cloak.html</span>
+<span class="gold">ILLUSTRATIVE MODEL OUTPUT — VALIDATE AGAINST harness PHYSICS BEFORE DESIGN USE</span>
+</footer>
+</body>
+</html>

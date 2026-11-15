@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Heat 1D — transient slab (hand-built, live solver)</title>
+<link rel="stylesheet" href="blueprint.css">
+</head>
+<body>
+<header class="tb">
+<div>
+<div class="tb-title">COOLING WITH HEAT — APPLICATION SIMULATION SHEET</div>
+<div class="tb-sub">standalone HTML · vanilla-JS live solver · no build step, no dependencies</div>
+</div>
+<div class="tb-r">
+<div class="tb-doc">DOC&nbsp;&nbsp;<span class="tb-path">docs/simulations/pde-heat1d.html</span></div>
+<div class="tb-meta">SHEET 1 OF 1&nbsp;&nbsp;·&nbsp;&nbsp;REV A&nbsp;&nbsp;·&nbsp;&nbsp;27 SEP 2026</div>
+<div class="tb-stamp">MODEL SHEET · ALL UNITS SI · NOT FOR MANUFACTURE</div>
+</div>
+</header>
+<p class="dim"><a href="index.html">← all hand-built simulations</a> · <code>docs/simulations/pde-heat1d.html</code> — hand-written, live solver</p>
+<h1>Heat 1D — transient slab: Dirichlet ends, approach to linear steady</h1>
+<p class="dim">Frozen-diffheat scenario <code>pde-heat1d</code>, reimplemented as a live JS finite-difference solver — no embedded replay.</p>
+
+<div class="panel">
+<h2 style="border:none;margin:0 0 6px">1 · The setup</h2>
+<p>Slab L=1, both ends held at fixed temperature: T(0)=1, T(1)=0. Interior starts at 0.
+Explicit FTCS: T[i] += dt·α·(T[i−1]−2T[i]+T[i+1])/dx² with N=64 and dt from the CFL limit
+(dt = 0.9·dx²/(2α)). The field relaxes to the analytic linear steady state 1−x at rate λ₁ = π²α —
+the slowest eigenmode of the 1-D Laplacian. Heat enters through the hot end and leaves through the cold end;
+flux arrows below are ∝ the live boundary fluxes −α·∂T/∂x.</p>
+<div class="controls">
+<label>α <input id="alpha" type="range" min="0.002" max="0.05" step="0.001" value="0.01"> <span id="alphaV">0.01</span></label>
+<button id="play">⏸ pause</button><button id="reset">↺ reset</button>
+<span class="dim" id="state">–</span>
+</div>
+<canvas id="plot" width="860" height="300"></canvas>
+<svg viewBox="0 0 860 90">
+<rect x="10" y="20" width="840" height="18" rx="2" fill="#0f2c50" stroke="#6f9cc9"/>
+<rect id="fluxL" x="10" y="20" width="0" height="18" fill="#ffd24a"/>
+<text x="10" y="58" fill="#ffd24a" font-size="11" id="fluxLlab">heat in –</text>
+<rect x="10" y="70" width="840" height="4" fill="#0f2c50" stroke="#6f9cc9"/>
+<rect id="fluxR" x="10" y="70" width="0" height="4" fill="#8fdcff"/>
+<text x="10" y="88" fill="#8fdcff" font-size="11" id="fluxRlab">heat out –</text>
+</svg>
+</div>
+
+<div class="panel">
+<h2 style="border:none;margin:0 0 6px">2 · Eigenvalue check</h2>
+<table>
+<tr><th>quantity</th><th>numeric</th><th>exact / target</th></tr>
+<tr><td>λ₁ (first Laplacian eigenvalue)</td><td id="lam">–</td><td>π² = 9.8696</td></tr>
+<tr><td>rel. error</td><td id="lamErr">–</td><td>–</td></tr>
+<tr><td>L2 distance to steady 1−x</td><td id="l2">–</td><td>0</td></tr>
+<tr><td>dt (CFL)</td><td id="dtV">–</td><td>0.9·dx²/(2α)</td></tr>
+</table>
+<p class="dim">The λ₁ column is measured live from the observed decay rate of the slowest mode; compare to π².</p>
+</div>
+
+<script>
+const $=id=>document.getElementById(id);
+const N=64,L=1,dx=L/N;
+let alpha=0.01,T=new Float64Array(N),Tnew=new Float64Array(N),playing=true,t=0;
+function dt(){return 0.9*dx*dx/(2*alpha);}
+function step(){const h=dt();
+ for(let s=0;s<4;s++){t+=h;
+  for(let i=0;i<N;i++){const l=i===0?1:T[i-1],r=i===N-1?0:T[i+1];
+   Tnew[i]=T[i]+h*alpha*(l-2*T[i]+r)/(dx*dx);}
+  T.set(Tnew);}
+ return h;}
+function col(v){const f=Math.min(Math.max(v,0),1);
+ const stops=[[13,13,31],[59,15,112],[140,29,64],[199,92,20],[249,200,70]];
+ const x=f*4,i=Math.min(Math.floor(x),3),u=x-i;
+ const c=stops[i].map((v2,k)=>Math.round(v2+u*(stops[i+1][k]-v2)));
+ return `rgb(${c[0]},${c[1]},${c[2]})`;}
+const cv=$('plot'),cx=cv.getContext('2d');
+function draw(){
+ const W=860,H=300,pad=50;
+ cx.clearRect(0,0,W,H);
+ // axes
+ cx.strokeStyle='#6f9cc9';cx.beginPath();cx.moveTo(pad,20);cx.lineTo(pad,H-30);cx.lineTo(W-10,H-30);cx.stroke();
+ cx.fillStyle='#9db8d6';cx.font='11px ui-monospace, Menlo, Consolas, monospace';
+ cx.fillText('1.0',pad-24,26);cx.fillText('0.0',pad-24,H-32);cx.fillText('x',W-20,H-14);
+ // steady dashed
+ cx.setLineDash([6,5]);cx.strokeStyle='#9db8d6';cx.lineWidth=1;cx.beginPath();
+ for(let i=0;i<=64;i++){const x=i/64,y=1-x;const px=pad+x*(W-pad-10),py=H-30-y*(H-50);i?cx.lineTo(px,py):cx.moveTo(px,py);}
+ cx.stroke();cx.setLineDash([]);
+ // profile
+ cx.lineWidth=2.5;cx.beginPath();
+ for(let i=0;i<N;i++){const x=i/(N-1),px=pad+x*(W-pad-10),py=H-30-T[i]*(H-50);i?cx.lineTo(px,py):cx.moveTo(px,py);}
+ cx.strokeStyle='#ffd24a';cx.stroke();
+ // cell colour strip
+ for(let i=0;i<N;i++){cx.fillStyle=col(T[i]);cx.fillRect(pad+i/N*(W-pad-10),H-24,(W-pad-10)/N,6);}
+ cx.fillStyle='#9db8d6';cx.fillText('t = '+t.toFixed(2),pad,14);
+ // L2
+ let l2=0;for(let i=0;i<N;i++){const d=T[i]-(1-i/(N-1));l2+=d*d;}l2=Math.sqrt(l2/N);
+ $('l2').textContent=l2.toExponential(2);
+ $('state').textContent='t = '+t.toFixed(2)+' · dt = '+dt().toExponential(2);
+ $('dtV').textContent=dt().toExponential(2);
+ // flux: -alpha dT/dx at each end (one-sided diff)
+ const fL=alpha*(1-T[0])/dx, fR=alpha*(T[N-1])/dx;
+ const fmax=Math.max(fL,fR,1e-9);
+ $('fluxL').setAttribute('width',(fL/fmax*840).toFixed(1));
+ $('fluxR').setAttribute('width',(fR/fmax*840).toFixed(1));
+ $('fluxLlab').textContent='heat in  α·(1−T₀)/dx = '+fL.toFixed(3)+' (left boundary)';
+ $('fluxRlab').textContent='heat out  α·T_{N−1}/dx = '+fR.toFixed(3)+' (right boundary)';
+ // measured lambda1 from decay: (T_mean_end - T_start_mean) ~ A exp(-lambda1 t)
+ // estimate via ratio of L2 at consecutive draws is noisy; instead measure projected mode amplitude
+ let num=0,den=0;
+ for(let i=0;i<N;i++){const phi=Math.sin(Math.PI*(i+0.5)/N);
+  const a=T[i]-(1-i/(N-1));num+=a*phi;den+=phi*phi;}
+ const amp=Math.abs(num/Math.max(den,1e-12));
+ // lambda1 from amp(t) = amp0 exp(-lambda1 t): store previous
+ if(window._ampPrev&&t>0&&amp>1e-6&&window._ampPrev>1e-6){
+  const lam=-Math.log(amp/window._ampPrev)/t;window._lamAcc=lam;}
+ window._ampPrev=amp;
+ if(window._lamAcc){$('lam').textContent=window._lamAcc.toFixed(4);
+  $('lamErr').textContent=(Math.abs(window._lamAcc-Math.PI**2)/Math.PI**2).toExponential(2)+' (measured from mode decay)';}
+ else{$('lam').textContent='measuring…';$('lamErr').textContent='–';}}
+function reset(){T.fill(0);T[0]=1;T[N-1]=0;t=0;window._ampPrev=null;window._lamAcc=null;draw();}
+$('alpha').addEventListener('input',e=>{alpha=parseFloat(e.target.value);$('alphaV').textContent=alpha.toFixed(3);window._lamAcc=null;});
+$('play').addEventListener('click',()=>{playing=!playing;$('play').textContent=playing?'⏸ pause':'▶ play';});
+$('reset').addEventListener('click',reset);
+reset();
+(function loop(){if(playing)step();draw();requestAnimationFrame(loop);})();
+</script>
+<footer class="bf">
+<span>COOLING WITH HEAT · docs/simulations/pde-heat1d.html</span>
+<span class="gold">ILLUSTRATIVE MODEL OUTPUT — VALIDATE AGAINST harness PHYSICS BEFORE DESIGN USE</span>
+</footer>
+</body>
+</html>

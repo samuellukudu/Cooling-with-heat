@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Thermoelectric — pair + leg (hand-built, live solver)</title>
+<link rel="stylesheet" href="blueprint.css">
+</head>
+<body>
+<header class="tb">
+<div>
+<div class="tb-title">COOLING WITH HEAT — APPLICATION SIMULATION SHEET</div>
+<div class="tb-sub">standalone HTML · vanilla-JS live solver · no build step, no dependencies</div>
+</div>
+<div class="tb-r">
+<div class="tb-doc">DOC&nbsp;&nbsp;<span class="tb-path">docs/simulations/pde-thermoelectric.html</span></div>
+<div class="tb-meta">SHEET 1 OF 1&nbsp;&nbsp;·&nbsp;&nbsp;REV A&nbsp;&nbsp;·&nbsp;&nbsp;27 SEP 2026</div>
+<div class="tb-stamp">MODEL SHEET · ALL UNITS SI · NOT FOR MANUFACTURE</div>
+</div>
+</header>
+<p class="dim"><a href="index.html">← all hand-built simulations</a> · <code>docs/simulations/pde-thermoelectric.html</code> — hand-written, live solver</p>
+<h1>Thermoelectric — lumped pair curves + segmented leg profile</h1>
+<p class="dim">Frozen-diffheat scenario <code>pde-thermoelectric</code>. Lumped pair model (contacts baked in —
+module values, not materials ZT). Same form as <code>harness.physics.thermoelectric</code>.</p>
+
+<div class="panel">
+<h2 style="border:none;margin:0 0 6px">1 · The lumped pair</h2>
+<p>Qc = S·Tc·I − ½I²R − K·ΔT · W = S·I·ΔT + I²R · COP = Qc/W (0 if Qc≤0) · ZT = S²Tavg/(R·K).
+At Tc=18 °C, Th=35 °C. Pairs (per-pair module values with contacts):</p>
+<table>
+<tr><th>pair</th><th>S (μV/K)</th><th>R (mΩ)</th><th>K (mW/K)</th><th>Th_max (°C)</th></tr>
+<tr><td>Bi2Te3</td><td>400</td><td>30</td><td>3.5</td><td>40</td></tr>
+<tr><td>PbTe</td><td>480</td><td>45</td><td>4.0</td><td>300</td></tr>
+<tr><td>SiGe</td><td>600</td><td>80</td><td>3.0</td><td>600</td></tr>
+</table>
+<div class="controls">
+<label>pair <select id="pair"><option>Bi2Te3</option><option>PbTe</option><option>SiGe</option></select></label>
+<label>I <input id="I" type="range" min="0" max="8" step="0.1" value="3"> <span id="IV">3.0 A</span></label>
+<label>Th <input id="Th" type="range" min="20" max="120" step="1" value="35"> <span id="ThV">35 °C</span></label>
+</div>
+<canvas id="curves" width="860" height="280"></canvas>
+<table>
+<tr><th>Qc</th><td id="qc">–</td><th>COP</th><td id="cop">–</td><th>ZT</th><td id="zt">–</td></tr>
+<tr><th>I_opt = S·Tc/R</th><td id="iopt">–</td><th>ΔTmax</th><td id="dtmax">–</td><th>out-of-window</th><td id="oow">–</td></tr>
+</table>
+</div>
+
+<div class="panel">
+<h2 style="border:none;margin:0 0 6px">2 · Segmented leg profile</h2>
+<p>16-cell leg with Peltier + Joule terms at the chosen current. T(x) solved live by relaxation.</p>
+<canvas id="leg" width="860" height="200"></canvas>
+<p class="dim" id="legLab">–</p>
+</div>
+
+<script>
+const $=id=>document.getElementById(id);
+const PAIRS={"Bi2Te3":{S:400e-6,R:0.03,K:0.0035,Thmax:40},"PbTe":{S:480e-6,R:0.045,K:0.004,Thmax:300},"SiGe":{S:600e-6,R:0.08,K:0.003,Thmax:600}};
+const TC=18;
+function sim(I,Th,pair){const P=PAIRS[pair];
+ const dT=Th-TC;
+ const qc=P.S*(TC+273.15)*I-0.5*I*I*P.R-P.K*dT;
+ const w=P.S*I*dT+I*I*P.R;
+ const cop=qc>0&&w>0?qc/w:0;
+ const zt=P.S*P.S*((TC+Th)/2+273.15)/(P.R*P.K);
+ const iopt=P.S*(TC+273.15)/P.R;
+ const dtmax=P.S*P.S*(TC+273.15)**2/(2*P.K*P.R);
+ return{qc,cop,zt,iopt,dtmax,oow:Th>P.Thmax};}
+function draw(){
+ const pair=$('pair').value,I=parseFloat($('I').value),Th=parseFloat($('Th').value);
+ $('IV').textContent=I.toFixed(1)+' A';$('ThV').textContent=Th+' °C';
+ const r=sim(I,Th,pair);
+ $('qc').textContent=r.qc.toFixed(2)+' W';
+ $('cop').textContent=r.cop.toFixed(3);
+ $('zt').textContent=r.zt.toFixed(3);
+ $('iopt').textContent=r.iopt.toFixed(2)+' A';
+ $('dtmax').textContent=r.dtmax.toFixed(1)+' K';
+ $('oow').textContent=r.oow?'⚠ Th > Th_max':'ok';
+ $('oow').className=r.oow?'warn':'';
+ // curves
+ const cv=$('curves'),cx=cv.getContext('2d');
+ cx.clearRect(0,0,860,280);
+ cx.strokeStyle='#6f9cc9';cx.beginPath();cx.moveTo(50,20);cx.lineTo(50,250);cx.lineTo(840,250);cx.stroke();
+ cx.fillStyle='#9db8d6';cx.font='11px ui-monospace, Menlo, Consolas, monospace';
+ cx.fillText('Qc (W)',8,30);cx.fillText('COP',8,50);cx.fillText('I (A)',820,268);
+ const P=PAIRS[pair];
+ // Qc curve
+ cx.strokeStyle='#8fdcff';cx.lineWidth=2;cx.beginPath();
+ for(let i=0;i<=80;i++){const I2=i/10;const r2=sim(I2,Th,pair);
+  const x=50+I2/8*790,y=250-Math.max(r2.qc,0)/8*200;
+  i?cx.lineTo(x,y):cx.moveTo(x,y);}
+ cx.stroke();
+ // COP curve
+ cx.strokeStyle='#ffd24a';cx.beginPath();
+ for(let i=0;i<=80;i++){const I2=i/10;const r2=sim(I2,Th,pair);
+  const x=50+I2/8*790,y=250-Math.min(r2.cop,1.5)/1.5*200;
+  i?cx.lineTo(x,y):cx.moveTo(x,y);}
+ cx.stroke();
+ // operating point
+ const ox=50+I/8*790;
+ cx.fillStyle='#fff';cx.beginPath();cx.arc(ox,250-Math.max(r.qc,0)/8*200,5,0,7);cx.fill();
+ cx.beginPath();cx.arc(ox,250-Math.min(r.cop,1.5)/1.5*200,5,0,7);cx.fill();
+ // I_opt marker
+ const ix=50+r.iopt/8*790;
+ cx.setLineDash([4,4]);cx.strokeStyle='#9db8d6';cx.beginPath();cx.moveTo(ix,20);cx.lineTo(ix,250);cx.stroke();cx.setLineDash([]);
+ cx.fillStyle='#9db8d6';cx.fillText('I_opt',ix-12,14);
+ // leg
+ drawLeg(I,Th,pair);}
+function drawLeg(I,Th,pair){
+ const P=PAIRS[pair],N=16,T=new Float64Array(N).fill((TC+Th)/2);
+ for(let iter=0;iter<200;iter++){
+  const Tn=T.slice();
+  for(let i=0;i<N;i++){
+   const Tc_=i===0?TC:Tn[i-1],Th_=i===N-1?Th:Tn[i+1];
+   const dT=Th_-Tc_;
+   const qc=P.S*(Tc_+273.15)*I-0.5*I*I*P.R-P.K*dT;
+   const joule=0.5*I*I*P.R;
+   T[i]=Tn[i]+0.1*(qc-joule);}
+  T[0]=TC;T[N-1]=Th;}
+ const cv=$('leg'),cx=cv.getContext('2d');
+ cx.clearRect(0,0,860,200);
+ cx.strokeStyle='#6f9cc9';cx.beginPath();cx.moveTo(50,20);cx.lineTo(50,170);cx.lineTo(840,170);cx.stroke();
+ cx.strokeStyle='#ffd24a';cx.lineWidth=2;cx.beginPath();
+ for(let i=0;i<N;i++){const x=50+i/(N-1)*790,y=170-(T[i]-TC)/(Th-TC)*140;
+  i?cx.lineTo(x,y):cx.moveTo(x,y);}
+ cx.stroke();
+ cx.fillStyle='#9db8d6';cx.font='11px ui-monospace, Menlo, Consolas, monospace';
+ cx.fillText('Tc='+TC+'°C',50,185);cx.fillText('Th='+Th+'°C',780,185);
+ $('legLab').textContent=`leg mean T = ${(T.reduce((a,b)=>a+b,0)/N).toFixed(1)} °C · Peltier cooling at cold end, Joule heating distributed · I = ${I.toFixed(1)} A`;}
+$('pair').addEventListener('change',draw);
+$('I').addEventListener('input',draw);
+$('Th').addEventListener('input',draw);
+draw();
+</script>
+<footer class="bf">
+<span>COOLING WITH HEAT · docs/simulations/pde-thermoelectric.html</span>
+<span class="gold">ILLUSTRATIVE MODEL OUTPUT — VALIDATE AGAINST harness PHYSICS BEFORE DESIGN USE</span>
+</footer>
+</body>
+</html>

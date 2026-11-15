@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Wearable TGC — thermogalvanic cell (hand-built)</title>
+<link rel="stylesheet" href="blueprint.css">
+</head>
+<body>
+<header class="tb">
+<div>
+<div class="tb-title">COOLING WITH HEAT — APPLICATION SIMULATION SHEET</div>
+<div class="tb-sub">standalone HTML · vanilla-JS live solver · no build step, no dependencies</div>
+</div>
+<div class="tb-r">
+<div class="tb-doc">DOC&nbsp;&nbsp;<span class="tb-path">docs/simulations/wearable-tgc.html</span></div>
+<div class="tb-meta">SHEET 1 OF 1&nbsp;&nbsp;·&nbsp;&nbsp;REV A&nbsp;&nbsp;·&nbsp;&nbsp;27 SEP 2026</div>
+<div class="tb-stamp">MODEL SHEET · ALL UNITS SI · NOT FOR MANUFACTURE</div>
+</div>
+</header>
+<p class="dim"><a href="index.html">← all hand-built simulations</a> · <code>docs/simulations/wearable-tgc.html</code> — hand-written</p>
+<h1>Wearable TGC — body heat → electricity via thermogalvanic redox</h1>
+<p class="dim">From intro-research: thermogalvanic cells generate electricity through thermoelectrochemical
+reactions of redox couples. Flexible, textile-compatible, Carnot-relative efficiency up to 8%.</p>
+
+<div class="panel">
+<h2 style="border:none;margin:0 0 6px">1 · The cell</h2>
+<p>A gel-electrolyte thermogalvanic cell laminated into fabric. Two electrodes at different temperatures drive
+a redox reaction: the temperature difference shifts the equilibrium potential (Seebeck coefficient of the redox
+couple, S_redox). Current flows through an external load. Key design: prevent electrolyte leakage (gel matrix),
+maximise electrode surface area (textile electrodes).</p>
+<div class="controls">
+<label>T_ambient <input id="Tair" type="range" min="15" max="40" step="0.5" value="25"> <span id="TairV">25 °C</span></label>
+<label>redox couple <select id="couple"><option value="Fe">Fe²⁺/Fe³⁺ (S=1.0 mV/K, aqueous gel)</option><option value="ferri">Ferri/ferrocyanide (S=1.4 mV/K, stable)</option><option value="org">Organic radical (S=2.5 mV/K, lab)</option></select></label>
+<label>R_load <input id="Rload" type="range" min="0.1" max="10" step="0.1" value="1"> <span id="RloadV">1.0 Ω</span></label>
+</div>
+<canvas id="plot" width="860" height="280"></canvas>
+<table>
+<tr><th>ΔT</th><td id="dT">–</th><th>S_redox</th><td id="sred">–</th><th>V_oc</th><td id="voc">–</td></tr>
+<tr><th>P_max</th><td id="pmax">–</th><th>P at R_load</th><td id="pload">–</th><th>Carnot-rel. eff</th><td id="eff">–</td></tr>
+</table>
+<p class="dim">Carnot-relative efficiency up to 8% (ultraflexible quasi-solid TGCs). Power density lower than
+solid TEGs but flexible, stretchable, and washable.</p>
+</div>
+
+<div class="panel">
+<h2 style="border:none;margin:0 0 6px">2 · The textile cell</h2>
+<p>Canvas: skin → textile electrode → gel electrolyte → textile electrode → ambient. Redox reaction at each
+electrode; temperature difference drives the potential.</p>
+<canvas id="xsec" width="860" height="200"></canvas>
+<p class="dim" id="xsecLab">–</p>
+</div>
+
+<script>
+const $=id=>document.getElementById(id);
+const COUPLES={"Fe":{S:1.0e-3,R:1.5,eff:0.05},"ferri":{S:1.4e-3,R:1.0,eff:0.06},"org":{S:2.5e-3,R:0.8,eff:0.08}};
+const Th=33;
+function sim(Tair,Rload,couple){const M=COUPLES[couple];
+ const dT=Th-Tair;
+ const voc=M.S*dT;
+ const pmax=voc*voc/(4*M.R);
+ const pload=voc*voc*Rload/((M.R+Rload)**2);
+ const eff=pload>0?M.eff*(dT/Th):0;
+ return{dT,voc,pmax,pload,eff,s:M.S};}
+function draw(){
+ const Tair=parseFloat($('Tair').value),Rload=parseFloat($('Rload').value),couple=$('couple').value;
+ $('TairV').textContent=Tair.toFixed(1)+' °C';$('RloadV').textContent=Rload.toFixed(1)+' Ω';
+ const r=sim(Tair,Rload,couple);
+ $('dT').textContent=r.dT.toFixed(1)+' K';
+ $('sred').textContent=(r.s*1000).toFixed(1)+' mV/K';
+ $('voc').textContent=(r.voc*1000).toFixed(1)+' mV';
+ $('pmax').textContent=(r.pmax*1e6).toFixed(1)+' µW';
+ $('pload').textContent=(r.pload*1e6).toFixed(1)+' µW';
+ $('eff').textContent=(r.eff*100).toFixed(2)+' %';
+ const cv=$('plot'),cx=cv.getContext('2d');
+ cx.clearRect(0,0,860,280);
+ cx.strokeStyle='#6f9cc9';cx.beginPath();cx.moveTo(50,20);cx.lineTo(50,250);cx.lineTo(840,250);cx.stroke();
+ cx.fillStyle='#9db8d6';cx.font='11px ui-monospace, Menlo, Consolas, monospace';
+ cx.fillText('P (µW)',8,30);cx.fillText('R_load (Ω)',800,268);
+ cx.strokeStyle='#c9b4ff';cx.lineWidth=2;cx.beginPath();
+ for(let i=0;i<=100;i++){const Rl=0.1+i/100*9.9;const p=sim(Tair,Rl,couple).pload*1e6;
+  const x=50+Rl/10*790,y=250-Math.min(p,50)/50*200;
+  i?cx.lineTo(x,y):cx.moveTo(x,y);}
+ cx.stroke();
+ const ox=50+Rload/10*790,oy=250-Math.min(r.pload*1e6,50)/50*200;
+ cx.fillStyle='#fff';cx.beginPath();cx.arc(ox,oy,5,0,7);cx.fill();
+ const M=COUPLES[couple];
+ cx.setLineDash([4,4]);cx.strokeStyle='#9db8d6';cx.beginPath();cx.moveTo(50+M.R/10*790,20);cx.lineTo(50+M.R/10*790,250);cx.stroke();cx.setLineDash([]);
+ cx.fillStyle='#9db8d6';cx.fillText('R_int',50+M.R/10*790-12,14);
+ // cross-section
+ const xc=$('xsec').getContext('2d');
+ xc.clearRect(0,0,860,200);
+ xc.fillStyle='#9db8d6';xc.font='12px ui-monospace, Menlo, Consolas, monospace';
+ xc.fillText('skin '+Th+'°C',20,20);xc.fillText('ambient '+Tair.toFixed(0)+'°C',700,20);
+ xc.fillStyle='#ffd24a';xc.fillRect(100,40,50,120);
+ xc.fillStyle='#0f2c50';xc.fillRect(150,40,100,120);xc.strokeStyle='#c9b4ff';xc.strokeRect(150,40,100,120);
+ xc.fillStyle='#8fdcff';xc.fillRect(250,40,50,120);
+ xc.fillStyle='#2a517d';xc.fillRect(300,40,50,120);
+ xc.fillStyle='#e2edf9';xc.font='10px ui-monospace, Menlo, Consolas, monospace';
+ xc.fillText('textile',110,105);xc.fillText('gel electrolyte',165,105);xc.fillText('textile',260,105);xc.fillText('spread',310,105);
+ xc.strokeStyle='#c9b4ff';xc.lineWidth=2;
+ xc.beginPath();xc.moveTo(360,100);xc.lineTo(420,100);xc.stroke();
+ xc.fillStyle='#e2edf9';xc.font='11px ui-monospace, Menlo, Consolas, monospace';
+ xc.fillText('redox current',360,130);
+ xc.fillText('V = '+(r.voc*1000).toFixed(1)+' mV',505,130);
+ $('xsecLab').textContent=`S_redox = ${(r.s*1000).toFixed(1)} mV/K · V_oc = ${(r.voc*1000).toFixed(1)} mV · Carnot-rel. eff = ${(r.eff*100).toFixed(2)}% · gel matrix prevents leakage.`;}
+$('Tair').addEventListener('input',draw);
+$('Rload').addEventListener('input',draw);
+$('couple').addEventListener('change',draw);
+draw();
+</script>
+<footer class="bf">
+<span>COOLING WITH HEAT · docs/simulations/wearable-tgc.html</span>
+<span class="gold">ILLUSTRATIVE MODEL OUTPUT — VALIDATE AGAINST harness PHYSICS BEFORE DESIGN USE</span>
+</footer>
+</body>
+</html>

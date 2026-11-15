@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Metamaterial — ring inverse design (hand-built, live solver)</title>
+<link rel="stylesheet" href="blueprint.css">
+</head>
+<body>
+<header class="tb">
+<div>
+<div class="tb-title">COOLING WITH HEAT — APPLICATION SIMULATION SHEET</div>
+<div class="tb-sub">standalone HTML · vanilla-JS live solver · no build step, no dependencies</div>
+</div>
+<div class="tb-r">
+<div class="tb-doc">DOC&nbsp;&nbsp;<span class="tb-path">docs/simulations/pde-metamaterial.html</span></div>
+<div class="tb-meta">SHEET 1 OF 1&nbsp;&nbsp;·&nbsp;&nbsp;REV A&nbsp;&nbsp;·&nbsp;&nbsp;27 SEP 2026</div>
+<div class="tb-stamp">MODEL SHEET · ALL UNITS SI · NOT FOR MANUFACTURE</div>
+</div>
+</header>
+<p class="dim"><a href="index.html">← all hand-built simulations</a> · <code>docs/simulations/pde-metamaterial.html</code> — hand-written, live solver</p>
+<h1>Metamaterial — ring inverse design via live grid search</h1>
+<p class="dim">Tracked avenue §10.7. Grid search through the live rollout; gradient descent deferred (stated honestly).</p>
+
+<div class="panel">
+<h2 style="border:none;margin:0 0 6px">1 · The search</h2>
+<p>Same cloak field-multiply solver at 20×20, short t_end for speed. 3 inner values [1e-4, 0.01, 0.1] ×
+4 ring values [0.05, 0.5, 1.0, 5.0] = 12 combos, each run live. Objective = interior |∇T| + 0.1·far-field
+mismatch. Results table sorted live with best highlighted; click a row to load its κ minimap + T field.</p>
+<div class="controls">
+<button id="run">▶ run search (12 live rollouts)</button>
+<span class="dim" id="status">–</span>
+</div>
+<canvas id="T" width="420" height="420"></canvas><canvas id="K" width="420" height="420"></canvas>
+<table id="table"><tr><th>inner</th><th>ring</th><th>objective</th><th>interior |∇T|</th><th>far-field mismatch</th></tr></table>
+</div>
+
+<script>
+const $=id=>document.getElementById(id);
+const N=20,dx=1/N;
+const INNERS=[1e-4,0.01,0.1],RINGS=[0.05,0.5,1.0,5.0];
+function kappa(i,j,ki,kr){const x=(i+0.5)/N,y=(j+0.5)/N;
+ const r=Math.hypot(x-0.5,y-0.5);
+ if(r<0.2)return ki;
+ if(r<0.4)return kr;
+ return 0.01;}
+function run(ki,kr){
+ const T=new Float64Array(N*N),Tbare=new Float64Array(N*N);
+ const dt=0.9*dx*dx/(4*Math.max(ki,kr,0.01));
+ const steps=Math.round(4/dt);
+ for(let s=0;s<steps;s++){
+  for(let i=0;i<N;i++)for(let j=0;j<N;j++){
+   const k=i*N+j;
+   const l=j===0?1:T[k-1],r=j===N-1?0:T[k+1];
+   const u=i===0?T[k]:T[k-N],d=i===N-1?T[k]:T[k+N];
+   T[k]+=dt*kappa(i,j,ki,kr)*(l+r+u+d-4*T[k])/(dx*dx);
+   const lb=j===0?1:Tbare[k-1],rb=j===N-1?0:Tbare[k+1];
+   const ub=i===0?Tbare[k]:Tbare[k-N],db=i===N-1?Tbare[k]:Tbare[k+N];
+   Tbare[k]+=dt*0.01*(lb+rb+ub+db-4*Tbare[k])/(dx*dx);}}
+ // objectives
+ let grad=0,cnt=0;
+ for(let i=0;i<N;i++)for(let j=0;j<N;j++){
+  const x=(i+0.5)/N,y=(j+0.5)/N;
+  if(Math.hypot(x-0.5,y-0.5)<0.2){
+   const gx=(T[i*N+j+1]-T[i*N+j-1])/(2*dx),gy=(T[(i+1)*N+j]-T[(i-1)*N+j])/(2*dx);
+   grad+=Math.hypot(gx,gy);cnt++;}}
+ grad/=Math.max(cnt,1);
+ let mm=0,fc=0;
+ for(let i=0;i<N;i++)for(let j=0;j<N;j++){
+  const x=(i+0.5)/N,y=(j+0.5)/N;
+  if(Math.hypot(x-0.5,y-0.5)>=0.4){mm+=(T[i*N+j]-Tbare[i*N+j])**2;fc++;}}
+ mm=Math.sqrt(mm/Math.max(fc,1));
+ return{ki,kr,obj:grad+0.1*mm,grad,mm,T,Tbare};}
+function col(v){const f=Math.min(Math.max(v,0),1);
+ const stops=[[13,13,31],[59,15,112],[140,29,64],[199,92,20],[249,200,70]];
+ const x=f*4,i=Math.min(Math.floor(x),3),u=x-i;
+ const c=stops[i].map((v2,k2)=>Math.round(v2+u*(stops[i+1][k2]-v2)));
+ return `rgb(${c[0]},${c[1]},${c[2]}`;}
+const cT=$('T').getContext('2d'),cK=$('K').getContext('2d');
+const cw=420/N;
+let results=[],best=null;
+function drawBest(){
+ if(!best)return;
+ cT.clearRect(0,0,420,420);cK.clearRect(0,0,420,420);
+ for(let i=0;i<N;i++)for(let j=0;j<N;j++){
+  cT.fillStyle=col(best.T[i*N+j]);cT.fillRect(i*cw,j*cw,cw+0.5,cw+0.5);
+  const kap=kappa(i,j,best.ki,best.kr);
+  const f=Math.min(Math.max((Math.log10(kap)+4)/5,0),1);
+  cK.fillStyle=`rgb(${Math.round(20+200*f)},${Math.round(20+80*(1-f))},${Math.round(40+60*(1-f))})`;
+  cK.fillRect(i*cw,j*cw,cw+0.5,cw+0.5);}
+ cT.strokeStyle='#9db8d6';cT.setLineDash([4,4]);
+ cT.beginPath();cT.arc(210,210,0.2*420,0,7);cT.stroke();
+ cT.beginPath();cT.arc(210,210,0.4*420,0,7);cT.stroke();cT.setLineDash([]);}
+function fillTable(){
+ const tbl=$('table');
+ tbl.innerHTML='<tr><th>inner</th><th>ring</th><th>objective</th><th>interior |∇T|</th><th>far-field mismatch</th></tr>';
+ results.forEach((r,idx)=>{
+  const tr=document.createElement('tr');
+  if(r===best)tr.className='best';
+  tr.innerHTML=`<td>${r.ki}</td><td>${r.kr}</td><td>${r.obj.toFixed(4)}</td><td>${r.grad.toFixed(4)}</td><td>${r.mm.toExponential(2)}</td>`;
+  tr.addEventListener('click',()=>{best=r;drawBest();fillTable();});
+  tbl.appendChild(tr);});}
+$('run').addEventListener('click',()=>{
+ results=[];best=null;
+ $('status').textContent='running…';
+ let idx=0;
+ function next(){
+  if(idx>=INNERS.length*RINGS.length){
+   results.sort((a,b)=>a.obj-b.obj);
+   best=results[0];
+   drawBest();fillTable();
+   $('status').textContent=`done — best: inner=${best.ki}, ring=${best.kr}, obj=${best.obj.toFixed(4)}`;
+   return;}
+  const ki=INNERS[Math.floor(idx/RINGS.length)],kr=RINGS[idx%RINGS.length];
+  results.push(run(ki,kr));
+  $('status').textContent=`${idx+1}/12 — inner=${ki}, ring=${kr}`;
+  idx++;
+  setTimeout(next,10);}
+ next();});
+</script>
+<footer class="bf">
+<span>COOLING WITH HEAT · docs/simulations/pde-metamaterial.html</span>
+<span class="gold">ILLUSTRATIVE MODEL OUTPUT — VALIDATE AGAINST harness PHYSICS BEFORE DESIGN USE</span>
+</footer>
+</body>
+</html>

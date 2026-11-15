@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hot-driven cold spot — boundary control (hand-built, live solver)</title>
+<link rel="stylesheet" href="blueprint.css">
+</head>
+<body>
+<header class="tb">
+<div>
+<div class="tb-title">COOLING WITH HEAT — APPLICATION SIMULATION SHEET</div>
+<div class="tb-sub">standalone HTML · vanilla-JS live solver · no build step, no dependencies</div>
+</div>
+<div class="tb-r">
+<div class="tb-doc">DOC&nbsp;&nbsp;<span class="tb-path">docs/simulations/pde-coldspot.html</span></div>
+<div class="tb-meta">SHEET 1 OF 1&nbsp;&nbsp;·&nbsp;&nbsp;REV A&nbsp;&nbsp;·&nbsp;&nbsp;27 SEP 2026</div>
+<div class="tb-stamp">MODEL SHEET · ALL UNITS SI · NOT FOR MANUFACTURE</div>
+</div>
+</header>
+<p class="dim"><a href="index.html">← all hand-built simulations</a> · <code>docs/simulations/pde-coldspot.html</code> — hand-written, live solver</p>
+<h1>Hot-driven cold spot — boundary control</h1>
+<p class="dim">Tracked avenue §10.2. Control is hand-picked, not optimised (optimizer deferred — stated honestly).</p>
+
+<div class="panel">
+<h2 style="border:none;margin:0 0 6px">1 · The setup</h2>
+<p>Unit square, all walls Dirichlet T=1.0. Gaussian sink source −A·exp(−r²/(2·0.08²)) at centre, α=0.01,
+40×40 explicit. Two side-by-side canvases: left no control (A=0), right with sink amplitude slider.
+Target disc r&lt;0.15 mean temperature compared live.</p>
+<div class="controls">
+<label>sink A <input id="A" type="range" min="0" max="4" step="0.1" value="2"> <span id="AV">2.0</span></label>
+<button id="play">⏸ pause</button>
+</div>
+<canvas id="left" width="420" height="420"></canvas><canvas id="right" width="420" height="420"></canvas>
+<table>
+<tr><th>target mean (no control)</th><td id="tLeft">–</td></tr>
+<tr><th>target mean (with sink)</th><td id="tRight">–</td></tr>
+<tr><th>Δ achieved</th><td id="delta">–</td></tr>
+</table>
+</div>
+
+<script>
+const $=id=>document.getElementById(id);
+const N=40,dx=1/N,ALPHA=0.01;
+let A=2,T0=new Float64Array(N*N),T1=new Float64Array(N*N),playing=true,t=0;
+function dt(){return 0.9*dx*dx/(4*ALPHA);}
+function step(){const h=dt();
+ for(let s=0;s<2;s++){t+=h;
+  for(let i=0;i<N;i++)for(let j=0;j<N;j++){
+   const k=i*N+j;
+   const l=j===0?1:T0[k-1],r=j===N-1?1:T0[k+1];
+   const u=i===0?1:T0[k-N],d=i===N-1?1:T0[k+N];
+   T0[k]+=h*ALPHA*(l+r+u+d-4*T0[k])/(dx*dx);
+   const l1=j===0?1:T1[k-1],r1=j===N-1?1:T1[k+1];
+   const u1=i===0?1:T1[k-N],d1=i===N-1?1:T1[k+N];
+   const x=(i+0.5)/N,y=(j+0.5)/N;
+   const src=-A*Math.exp(-((x-0.5)**2+(y-0.5)**2)/(2*0.08**2));
+   T1[k]+=h*(ALPHA*(l1+r1+u1+d1-4*T1[k])/(dx*dx)+src);}}
+ return h;}
+function col(v){const f=Math.min(Math.max(v,0),1);
+ const stops=[[13,13,31],[59,15,112],[140,29,64],[199,92,20],[249,200,70]];
+ const x=f*4,i=Math.min(Math.floor(x),3),u=x-i;
+ const c=stops[i].map((v2,k2)=>Math.round(v2+u*(stops[i+1][k2]-v2)));
+ return `rgb(${c[0]},${c[1]},${c[2]}`;}
+const cL=$('left').getContext('2d'),cR=$('right').getContext('2d');
+const cw=420/N;
+function draw(){
+ cL.clearRect(0,0,420,420);cR.clearRect(0,0,420,420);
+ let mL=0,mR=0,cnt=0;
+ for(let i=0;i<N;i++)for(let j=0;j<N;j++){
+  const x=(i+0.5)/N,y=(j+0.5)/N;
+  cL.fillStyle=col(T0[i*N+j]);cL.fillRect(i*cw,j*cw,cw+0.5,cw+0.5);
+  cR.fillStyle=col(T1[i*N+j]);cR.fillRect(i*cw,j*cw,cw+0.5,cw+0.5);
+  if(Math.hypot(x-0.5,y-0.5)<0.15){mL+=T0[i*N+j];mR+=T1[i*N+j];cnt++;}}
+ mL/=Math.max(cnt,1);mR/=Math.max(cnt,1);
+ // target circle
+ cL.strokeStyle='#9db8d6';cL.setLineDash([4,4]);
+ cL.beginPath();cL.arc(210,210,0.15*420,0,7);cL.stroke();cL.setLineDash([]);
+ cR.strokeStyle='#9db8d6';cR.setLineDash([4,4]);
+ cR.beginPath();cR.arc(210,210,0.15*420,0,7);cR.stroke();cR.setLineDash([]);
+ $('tLeft').textContent=mL.toFixed(3);
+ $('tRight').textContent=mR.toFixed(3);
+ $('delta').textContent=(mL-mR).toFixed(3);}
+$('A').addEventListener('input',e=>{A=parseFloat(e.target.value);$('AV').textContent=A.toFixed(1);});
+$('play').addEventListener('click',()=>{playing=!playing;$('play').textContent=playing?'⏸ pause':'▶ play';});
+T0.fill(1);T1.fill(1);draw();
+(function loop(){if(playing)step();draw();requestAnimationFrame(loop);})();
+</script>
+<footer class="bf">
+<span>COOLING WITH HEAT · docs/simulations/pde-coldspot.html</span>
+<span class="gold">ILLUSTRATIVE MODEL OUTPUT — VALIDATE AGAINST harness PHYSICS BEFORE DESIGN USE</span>
+</footer>
+</body>
+</html>

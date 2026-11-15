@@ -1,0 +1,197 @@
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&display=swap');
+
+/* ============================================================================
+   BLUEPRINT SHEET — shared stylesheet for docs/simulations/*.html
+   Engineering drawing-sheet aesthetic: blueprint-blue field with fine grid,
+   white linework, monospace type, gold annotations, title block, thin-border
+   tables (parts-list style), double-line drawing frames.
+
+   Design tokens
+   -------------------------------------------------------------------------- */
+:root{
+  --sheet:        #173d64;                    /* base blueprint blue          */
+  --sheet-deep:   #0f2c50;                    /* panels / vessel fills        */
+  --grid-minor:   rgba(148,196,240,.07);
+  --grid-major:   rgba(148,196,240,.13);
+  --line:         #dfeafa;                    /* primary linework / body text */
+  --line-strong:  #f6faff;
+  --line-dim:     rgba(223,234,250,.34);
+  --line-faint:   rgba(223,234,250,.16);
+  --ann:          #a7c2de;                    /* annotation grey-blue         */
+  --gold:         #f2c14e;                    /* gold annotation              */
+  --gold-strong:  #ffd24a;
+  --cool:         #8fdcff;                    /* cooling / Q_cool             */
+  --ok:           #7fdfae;
+  --bad:          #ff9d9d;
+  --violet:       #c9b4ff;
+  --mono: "IBM Plex Mono","JetBrains Mono","Cascadia Mono","SF Mono",
+          ui-monospace,Menlo,Consolas,"Liberation Mono",monospace;
+}
+
+/* ----------------------------------------------------------------------------
+   Sheet: blueprint field, fine + major grid, fixed drawing frame
+   -------------------------------------------------------------------------- */
+body{
+  background-color:var(--sheet);
+  background-image:
+    radial-gradient(ellipse 120% 70% at 50% -10%, rgba(96,160,224,.16), transparent 62%),
+    linear-gradient(var(--grid-major) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-major) 1px, transparent 1px),
+    linear-gradient(var(--grid-minor) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-minor) 1px, transparent 1px);
+  background-size:100% 100%,120px 120px,120px 120px,24px 24px,24px 24px;
+  background-attachment:fixed;
+  color:var(--line);
+  font-family:var(--mono);
+  font-size:13px;
+  line-height:1.6;
+  max-width:1240px;
+  margin:0 auto;
+  padding:30px 44px 64px;
+}
+/* double drawing frame pinned to the viewport */
+body::before{
+  content:"";position:fixed;inset:9px;
+  border:2px solid rgba(223,234,250,.75);
+  pointer-events:none;z-index:2147483000;
+}
+body::after{
+  content:"";position:fixed;inset:15px;
+  border:1px solid rgba(223,234,250,.26);
+  pointer-events:none;z-index:2147483000;
+}
+::selection{background:rgba(242,193,78,.35);color:var(--line-strong)}
+
+/* ----------------------------------------------------------------------------
+   Title block (injected header) and footer block
+   -------------------------------------------------------------------------- */
+.tb{
+  display:flex;justify-content:space-between;gap:20px;align-items:stretch;
+  border:1px solid var(--line-dim);border-left:3px solid var(--gold);
+  background:rgba(9,30,56,.42);
+  padding:11px 16px;margin:0 0 20px;
+}
+.tb-title{font-size:13.5px;font-weight:700;letter-spacing:.14em;color:var(--line-strong)}
+.tb-sub{font-size:10.5px;color:var(--ann);letter-spacing:.06em;margin-top:3px}
+.tb-r{display:flex;flex-direction:column;gap:2px;justify-content:center;
+      text-align:right;font-size:10.5px;letter-spacing:.08em;color:var(--ann);white-space:nowrap}
+.tb-doc{color:var(--line)}
+.tb-doc .tb-path{color:var(--gold-strong)}
+.tb-meta{color:var(--line)}
+.tb-stamp{color:var(--gold);font-weight:600;letter-spacing:.1em}
+.bf{
+  border:1px solid var(--line-dim);border-left:3px solid var(--gold);
+  background:rgba(9,30,56,.42);
+  padding:8px 16px;margin-top:26px;
+  font-size:10.5px;letter-spacing:.08em;color:var(--ann);
+  display:flex;justify-content:space-between;gap:14px;flex-wrap:wrap;
+}
+.bf .gold{color:var(--gold)}
+@media (max-width:760px){
+  .tb{flex-direction:column;gap:6px}
+  .tb-r{text-align:left;white-space:normal}
+}
+
+/* ----------------------------------------------------------------------------
+   Headings — drawing title + uppercase section labels
+   -------------------------------------------------------------------------- */
+h1{
+  font-size:19px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;
+  color:var(--line-strong);margin:6px 0 8px;padding-bottom:10px;
+  border-bottom:1px solid var(--line-dim);
+  border-image:linear-gradient(90deg,var(--gold) 0 96px,var(--line-dim) 96px) 1;
+}
+h2{
+  font-size:12.5px;font-weight:700;letter-spacing:.17em;text-transform:uppercase;
+  color:var(--line);margin:26px 0 10px;padding-bottom:7px;
+  border-bottom:1px solid var(--line-dim);
+  border-image:linear-gradient(90deg,var(--gold) 0 64px,var(--line-dim) 64px) 1;
+}
+h3{font-size:13.5px;font-weight:700;letter-spacing:.04em;color:var(--line-strong);margin:14px 0 6px}
+b,strong{color:var(--line-strong);font-weight:700}
+
+/* ----------------------------------------------------------------------------
+   Links, inline code, annotation text
+   -------------------------------------------------------------------------- */
+a{color:var(--gold-strong);text-decoration:none;border-bottom:1px solid rgba(242,193,78,.35)}
+a:hover{color:var(--gold);border-bottom-color:var(--gold)}
+code{
+  font-family:var(--mono);font-size:12px;color:#f0d48a;
+  background:rgba(242,193,78,.08);border:1px solid rgba(242,193,78,.25);
+  border-radius:2px;padding:0 5px;
+}
+.dim{color:var(--ann);font-size:12px}
+.warn{color:var(--gold-strong)}
+.ok{color:var(--ok)}
+.bad{color:var(--bad)}
+.win{color:var(--ok)}
+.lose{color:var(--bad)}
+.big{font-size:19px;font-weight:700;letter-spacing:.03em}
+
+/* ----------------------------------------------------------------------------
+   Drawing boxes (.panel, .card) — double-line frame, square corners
+   -------------------------------------------------------------------------- */
+.panel,.card{
+  background:rgba(10,31,58,.42);
+  border:1px solid var(--line-dim);
+  border-radius:0;
+  padding:13px 18px;margin:15px 0;
+  box-shadow:0 0 0 4px var(--sheet),0 0 0 5px var(--line-faint);
+}
+.card{padding:12px 16px}
+.card h3{margin:0 0 4px}
+.card p{margin:6px 0;font-size:12.5px}
+
+/* chips — spec tags like drawing notes */
+.chips span{
+  display:inline-block;background:rgba(223,234,250,.05);
+  border:1px solid var(--line-dim);border-radius:2px;
+  padding:2px 8px;margin:2px;font-size:11px;letter-spacing:.05em;color:var(--ann);
+}
+
+/* ----------------------------------------------------------------------------
+   Tables — parts-list styling: thin white borders, shaded header row
+   -------------------------------------------------------------------------- */
+table{border-collapse:collapse;width:100%;font-size:12px;margin:8px 0}
+th,td{border:1px solid rgba(223,234,250,.22);padding:5px 9px;text-align:left;vertical-align:top}
+th{
+  color:var(--ann);font-weight:600;letter-spacing:.05em;
+  background:rgba(223,234,250,.05);border-bottom-color:rgba(223,234,250,.4);
+}
+td{color:var(--line)}
+tr.best{background:rgba(242,193,78,.08)}
+
+/* ----------------------------------------------------------------------------
+   Controls — engineering console styling
+   -------------------------------------------------------------------------- */
+.controls{display:flex;gap:12px;align-items:center;flex-wrap:wrap;font-size:12.5px;margin:8px 0}
+.controls label{color:var(--ann);letter-spacing:.03em}
+button{
+  font-family:var(--mono);font-size:12.5px;
+  background:rgba(223,234,250,.07);color:var(--line);
+  border:1px solid var(--line-dim);border-radius:2px;
+  padding:4px 12px;cursor:pointer;letter-spacing:.05em;
+  transition:border-color .15s,color .15s;
+}
+button:hover{border-color:var(--gold);color:var(--gold-strong)}
+select{
+  font-family:var(--mono);font-size:12.5px;
+  background:var(--sheet-deep);color:var(--line);
+  border:1px solid var(--line-dim);border-radius:2px;padding:4px 8px;
+}
+input[type=range]{accent-color:var(--gold);vertical-align:middle}
+
+/* ----------------------------------------------------------------------------
+   Figures — charts drawn directly on the sheet grid, thin frame
+   -------------------------------------------------------------------------- */
+canvas,svg{
+  display:block;width:100%;height:auto;
+  background:transparent;border:1px solid var(--line-dim);
+  border-radius:0;margin:10px 0;
+}
+
+/* ----------------------------------------------------------------------------
+   Flow animation — marching dashes along pipes / energy streams
+   -------------------------------------------------------------------------- */
+.flow{stroke-dasharray:8 7;animation:dash .9s linear infinite}
+@keyframes dash{to{stroke-dashoffset:-30}}

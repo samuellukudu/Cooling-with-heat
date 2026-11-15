@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Heat 2D — hot/cold plate (hand-built, live solver)</title>
+<link rel="stylesheet" href="blueprint.css">
+</head>
+<body>
+<header class="tb">
+<div>
+<div class="tb-title">COOLING WITH HEAT — APPLICATION SIMULATION SHEET</div>
+<div class="tb-sub">standalone HTML · vanilla-JS live solver · no build step, no dependencies</div>
+</div>
+<div class="tb-r">
+<div class="tb-doc">DOC&nbsp;&nbsp;<span class="tb-path">docs/simulations/pde-heat2d.html</span></div>
+<div class="tb-meta">SHEET 1 OF 1&nbsp;&nbsp;·&nbsp;&nbsp;REV A&nbsp;&nbsp;·&nbsp;&nbsp;27 SEP 2026</div>
+<div class="tb-stamp">MODEL SHEET · ALL UNITS SI · NOT FOR MANUFACTURE</div>
+</div>
+</header>
+<p class="dim"><a href="index.html">← all hand-built simulations</a> · <code>docs/simulations/pde-heat2d.html</code> — hand-written, live solver</p>
+<h1>Heat 2D — hot left, cold right: approach to the linear steady gradient</h1>
+<p class="dim">Frozen-diffheat scenario <code>pde-heat2d</code>, live JS solver.</p>
+
+<div class="panel">
+<h2 style="border:none;margin:0 0 6px">1 · The setup</h2>
+<p>Square plate 1×1, initially 0 °C. Left edge held at 100 °C, right edge at 0 °C, top and bottom insulated.
+Explicit 5-point Laplacian on a 40×40 grid; dt from the CFL limit, displayed. The field approaches the
+linear steady gradient T = 100(1−x) — mean 50 °C. Heat in on the left, out on the right, flux arrows ∝
+live boundary fluxes.</p>
+<div class="controls">
+<label>α <input id="alpha" type="range" min="0.002" max="0.05" step="0.001" value="0.01"> <span id="alphaV">0.01</span></label>
+<button id="play">⏸ pause</button><button id="reset">↺ reset</button>
+<span class="dim" id="state">–</span>
+</div>
+<canvas id="plot" width="860" height="400"></canvas>
+<svg viewBox="0 0 860 70">
+<rect x="10" y="12" width="840" height="16" rx="2" fill="#0f2c50" stroke="#6f9cc9"/>
+<rect id="fluxL" x="10" y="12" width="0" height="16" fill="#ffd24a"/>
+<text x="10" y="46" fill="#ffd24a" font-size="11" id="fluxLlab">heat in –</text>
+<rect x="10" y="52" width="840" height="4" fill="#0f2c50" stroke="#6f9cc9"/>
+<rect id="fluxR" x="10" y="52" width="0" height="4" fill="#8fdcff"/>
+<text x="10" y="68" fill="#8fdcff" font-size="11" id="fluxRlab">heat out –</text>
+</svg>
+<p class="dim" id="readout">–</p>
+</div>
+
+<script>
+const $=id=>document.getElementById(id);
+const N=40,L=1,dx=L/N;
+let alpha=0.01,T=new Float64Array(N*N),Tnew=new Float64Array(N*N),playing=true,t=0;
+function dt(){return 0.9*dx*dx/(4*alpha);}
+function step(){const h=dt();
+ for(let s=0;s<4;s++){t+=h;
+  for(let i=0;i<N;i++)for(let j=0;j<N;j++){
+   const k=i*N+j;
+   const l=j===0?100:T[k-1],r=j===N-1?0:T[k+1];
+   const u=i===0?T[k]:T[k-N],d=i===N-1?T[k]:T[k+N];
+   Tnew[k]=T[k]+h*alpha*(l+r+u+d-4*T[k])/(dx*dx);}
+  T.set(Tnew);}
+ return h;}
+function col(v){const f=Math.min(Math.max(v/100,0),1);
+ const stops=[[13,13,31],[59,15,112],[140,29,64],[199,92,20],[249,200,70]];
+ const x=f*4,i=Math.min(Math.floor(x),3),u=x-i;
+ const c=stops[i].map((v2,k2)=>Math.round(v2+u*(stops[i+1][k2]-v2)));
+ return `rgb(${c[0]},${c[1]},${c[2]})`;}
+const cv=$('plot'),cx=cv.getContext('2d');
+const cw=860/N,ch=360/N,ox=40,oy=20;
+function draw(){
+ cx.clearRect(0,0,860,400);
+ for(let i=0;i<N;i++)for(let j=0;j<N;j++){
+  cx.fillStyle=col(T[i*N+j]);cx.fillRect(ox+j*cw,oy+i*ch,cw+0.5,ch+0.5);}
+ // boundary labels
+ cx.fillStyle='#9db8d6';cx.font='11px ui-monospace, Menlo, Consolas, monospace';
+ cx.fillText('100 °C',ox-38,oy+180);cx.fillText('0 °C',ox+N*cw+4,oy+180);
+ cx.fillText('t = '+t.toFixed(2)+' · dt = '+dt().toExponential(2),ox,14);
+ // mean
+ let m=0;for(let k=0;k<N*N;k++)m+=T[k];m/=N*N;
+ // L2 to steady
+ let l2=0;for(let i=0;i<N;i++)for(let j=0;j<N;j++){const d=T[i*N+j]-100*(1-j/(N-1));l2+=d*d;}l2=Math.sqrt(l2/N/N);
+ // boundary fluxes
+ let fL=0;for(let i=0;i<N;i++)fL+=alpha*(100-T[i*N])/dx;fL/=N;
+ let fR=0;for(let i=0;i<N;i++)fR+=alpha*T[i*N+N-1]/dx;fR/=N;
+ const fmax=Math.max(fL,fR,1e-9);
+ $('fluxL').setAttribute('width',(fL/fmax*840).toFixed(1));
+ $('fluxR').setAttribute('width',(fR/fmax*840).toFixed(1));
+ $('fluxLlab').textContent='heat in  '+fL.toFixed(2)+' (left boundary, per unit length)';
+ $('fluxRlab').textContent='heat out  '+fR.toFixed(2)+' (right boundary)';
+ $('readout').textContent=`mean T = ${m.toFixed(1)} °C → 50.0 · L2 to linear steady = ${l2.toExponential(2)}`;
+ $('state').textContent='t = '+t.toFixed(2);}
+function reset(){T.fill(0);for(let i=0;i<N;i++)T[i*N]=100;t=0;draw();}
+$('alpha').addEventListener('input',e=>{alpha=parseFloat(e.target.value);$('alphaV').textContent=alpha.toFixed(3);});
+$('play').addEventListener('click',()=>{playing=!playing;$('play').textContent=playing?'⏸ pause':'▶ play';});
+$('reset').addEventListener('click',reset);
+reset();
+(function loop(){if(playing)step();draw();requestAnimationFrame(loop);})();
+</script>
+<footer class="bf">
+<span>COOLING WITH HEAT · docs/simulations/pde-heat2d.html</span>
+<span class="gold">ILLUSTRATIVE MODEL OUTPUT — VALIDATE AGAINST harness PHYSICS BEFORE DESIGN USE</span>
+</footer>
+</body>
+</html>

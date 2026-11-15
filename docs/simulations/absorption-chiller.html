@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Absorption chiller — hand-built LiBr/H2O simulation</title>
+<link rel="stylesheet" href="blueprint.css">
+</head>
+<body>
+<header class="tb">
+<div>
+<div class="tb-title">COOLING WITH HEAT — APPLICATION SIMULATION SHEET</div>
+<div class="tb-sub">standalone HTML · vanilla-JS live solver · no build step, no dependencies</div>
+</div>
+<div class="tb-r">
+<div class="tb-doc">DOC&nbsp;&nbsp;<span class="tb-path">docs/simulations/absorption-chiller.html</span></div>
+<div class="tb-meta">SHEET 1 OF 1&nbsp;&nbsp;·&nbsp;&nbsp;REV A&nbsp;&nbsp;·&nbsp;&nbsp;27 SEP 2026</div>
+<div class="tb-stamp">MODEL SHEET · ALL UNITS SI · NOT FOR MANUFACTURE</div>
+</div>
+</header>
+<p class="dim"><a href="index.html">← all hand-built simulations</a> · <code>docs/simulations/absorption-chiller.html</code></p>
+<h1>Absorption chiller — liquid sorption turns 85 °C heat into 7 °C cold</h1>
+<p class="dim">Model: single-effect LiBr/H₂O-class lumped cycle (same form as <code>harness.physics.absorption</code>):
+COP_ideal = ((T_gen−T_cond)/T_gen)·(T_evap/(T_cond−T_evap)), derated by pair effectiveness ε;
+capacity from concentration spread Δx = clip(a·(T_gen−T_cond) − b·(T_cond−T_evap), 0, Δx_max).
+Calibration anchor: 7/30/85 °C LiBr-H₂O → COP ≈ 0.70 (ideal 1.87 × ε 0.37).</p>
+
+<div class="panel">
+<h2 style="border:none;margin:0 0 6px">1 · The loop (four vessels + solution circuit)</h2>
+<p><b>Generator (85 °C waste/solar heat in):</b> boils water vapour out of the LiBr solution — solution concentrates.</p>
+<p><b>Condenser (30 °C tower water):</b> vapour condenses, heat rejected. <b>Evaporator (7 °C chilled water):</b>
+liquid flashes at low pressure, absorbing the building's heat — <b>this is the cooling</b>.
+<b>Absorber (30 °C):</b> concentrated solution re-absorbs the vapour (more heat rejected), diluted solution pumps back
+to the generator through the recuperating heat exchanger. No compressor — the <b>thermal compressor</b> is the
+solution circuit driven by Q_gen.</p>
+</div>
+
+<h2>2 · Live machine — drag the generator temperature</h2>
+<div class="panel">
+<div class="controls">
+<label>working pair <select id="pair"><option value="LiBr-H2O">LiBr-H₂O (solar/HVAC standard, ε 0.37)</option><option value="NH3-H2O">NH₃-H₂O (low-grade tolerant, ε 0.30)</option><option value="LiCl-H2O">LiCl-H₂O (peaky, ε 0.40)</option></select></label>
+<label>T_gen <input id="tgen" type="range" min="50" max="120" step="1" value="85"> <span id="tgenV">85 °C</span></label>
+<label>T_cond <input id="tcond" type="range" min="25" max="45" step="1" value="30"> <span id="tcondV">30 °C</span></label>
+</div>
+<svg viewBox="0 0 860 360">
+<text x="12" y="22" fill="#e2edf9" font-size="14" font-weight="bold">Solution + refrigerant circuit (line widths ∝ flow/energy)</text>
+<!-- vessels -->
+<rect x="330" y="50" width="200" height="80" rx="2" fill="#4a3a14" stroke="#ffd24a"/>
+<text x="342" y="74" fill="#ffd24a" font-size="12">GENERATOR</text><text x="342" y="94" fill="#e2edf9" font-size="12" id="genLab">85 °C</text><text x="342" y="112" fill="#9db8d6" font-size="11" id="qgenLab">–</text>
+<rect x="620" y="50" width="170" height="80" rx="2" fill="#14406b" stroke="#7d9cba"/>
+<text x="632" y="74" fill="#e2edf9" font-size="12">CONDENSER</text><text x="632" y="94" fill="#9db8d6" font-size="12" id="condLab">30 °C</text><text x="632" y="112" fill="#9db8d6" font-size="11">reject</text>
+<rect x="620" y="200" width="170" height="80" rx="2" fill="#0e3d61" stroke="#8fdcff"/>
+<text x="632" y="224" fill="#8fdcff" font-size="12">EVAPORATOR</text><text x="632" y="244" fill="#e2edf9" font-size="12">7 °C</text><text x="632" y="262" fill="#e2edf9" font-size="11" id="qevLab">–</text>
+<rect x="330" y="200" width="200" height="80" rx="2" fill="#14406b" stroke="#7d9cba"/>
+<text x="342" y="224" fill="#e2edf9" font-size="12">ABSORBER</text><text x="342" y="244" fill="#9db8d6" font-size="12" id="absLab">30 °C</text><text x="342" y="262" fill="#9db8d6" font-size="11">reject</text>
+<rect x="40" y="200" width="170" height="80" rx="2" fill="#0f2c50" stroke="#6f9cc9"/>
+<text x="52" y="224" fill="#e2edf9" font-size="12">SOLUTION HX</text><text x="52" y="244" fill="#9db8d6" font-size="11">recuperator</text><text x="52" y="262" fill="#e2edf9" font-size="11" id="dxLab">–</text>
+<!-- flows -->
+<line id="fGen" x1="430" y1="50" x2="430" y2="30" stroke="#ffd24a" stroke-width="10" class="flow"/>
+<text x="445" y="42" fill="#ffd24a" font-size="11">Q_gen in</text>
+<line id="fGC" x1="530" y1="90" x2="620" y2="90" stroke="#e2edf9" stroke-width="6" class="flow"/>
+<text x="545" y="80" fill="#9db8d6" font-size="10">vapour</text>
+<line id="fCE" x1="705" y1="130" x2="705" y2="200" stroke="#8fdcff" stroke-width="6" class="flow"/>
+<text x="715" y="168" fill="#8fdcff" font-size="10">liquid</text>
+<line id="fEA" x1="620" y1="240" x2="530" y2="240" stroke="#8fdcff" stroke-width="6" class="flow"/>
+<text x="545" y="230" fill="#8fdcff" font-size="10">vapour + Q_evap</text>
+<line id="fRich" x1="330" y1="262" x2="210" y2="262" stroke="#c9b4ff" stroke-width="6" class="flow"/>
+<line id="fLean" x1="210" y1="218" x2="330" y2="218" stroke="#c9b4ff" stroke-width="6" class="flow"/>
+<text x="225" y="245" fill="#c9b4ff" font-size="10">solution loop</text>
+<text x="330" y="320" fill="#e2edf9" font-size="13" id="copLine">–</text>
+<text x="330" y="342" fill="#9db8d6" font-size="11" id="idealLine">–</text>
+</svg>
+<p class="dim" id="degLab">–</p>
+</div>
+
+<h2>3 · The degeneracy — why low-grade heat needs the right pair</h2>
+<div class="panel">
+<canvas id="chart" width="860" height="280"></canvas>
+<p class="dim">COP vs T_gen (55–120 °C) for all three pairs at your T_cond. The kink where each curve hits zero is the
+band bottom: Δx = 0, no circulation, no cooling. NH₃-H₂O survives lower T_gen — the same "low-grade tolerant"
+ranking signal as the adsorption tables.</p>
+<table><tr><th>check</th><th>LiBr-H₂O 7/30/85 °C</th><th>this page</th></tr>
+<tr><td>COP</td><td>≈ 0.69 (gate)</td><td id="chkCop">–</td></tr>
+<tr><td>Δx</td><td>≈ 0.060</td><td id="chkDx">–</td></tr>
+<tr><td>SCP (600 s)</td><td>≈ 249 W/kg-sol</td><td id="chkScp">–</td></tr></table>
+</div>
+
+<script>
+const PAIRS={"LiBr-H2O":{eps:0.37,a:0.00145,b:0.00085,dxm:0.12},"NH3-H2O":{eps:0.30,a:0.002,b:0.0006,dxm:0.15},"LiCl-H2O":{eps:0.40,a:0.0012,b:0.0009,dxm:0.10}};
+const TEV=7;
+function hfg(tK){const Tc=647.1,Tr=373.15,Hr=2256400;const t=Math.min(tK,Tc-1);return Hr*Math.pow((Tc-t)/(Tc-Tr),0.321);}
+function sim(Tg,Tc,pair){const P=PAIRS[pair];
+ const Te=TEV+273.15,Tk=Tc+273.15,TgK=Tg+273.15;
+ const eng=(TgK-Tk)/TgK, fri=Te/Math.max(Tk-Te,1e-6);
+ const ideal=(Tg>Tc&&Tc>TEV)?Math.max(eng*fri,0):0;
+ const dx=Math.min(Math.max(P.a*(Tg-Tc)-P.b*(Tc-TEV),0),P.dxm);
+ const qe=dx*hfg(TEV+273.15), base=dx>0?P.eps*ideal:0;
+ const qg=dx>0?qe/Math.max(base,1e-12):0;
+ return{COP:qg>0?qe/qg:0,SCP:qe/600,dx,ideal,qe,qg,eps:P.eps};}
+const $=id=>document.getElementById(id);
+function upd(){const pair=$('pair').value,Tg=parseFloat($('tgen').value),Tc=parseFloat($('tcond').value);
+ $('tgenV').textContent=Tg+' °C';$('tcondV').textContent=Tc+' °C';
+ const s=sim(Tg,Tc,pair);
+ $('genLab').textContent=Tg+' °C · '+pair;$('qgenLab').textContent='Q_gen '+(s.qg/1000).toFixed(1)+' kJ/kg';
+ $('condLab').textContent=Tc+' °C · reject';$('absLab').textContent=Tc+' °C · reject';
+ $('qevLab').textContent='Q_evap '+(s.qe/1000).toFixed(1)+' kJ/kg @7 °C';
+ $('dxLab').textContent='Δx = '+s.dx.toFixed(4)+(s.dx<=0?' — STALLED':'');
+ $('copLine').textContent=`COP ${s.COP.toFixed(3)}  (= ${(s.qe/1000).toFixed(1)} / ${(s.qg/1000).toFixed(1)} kJ/kg)   ·   SCP ${s.SCP.toFixed(0)} W/kg-sol   ·   Δx ${s.dx.toFixed(4)}`;
+ $('idealLine').textContent=`ideal (Novikov) ${s.ideal.toFixed(2)} × ε ${s.eps} = ${(s.eps*s.ideal).toFixed(3)}${s.dx<=0?'  → 0 (no circulation)':''}`;
+ $('degLab').textContent=s.dx<=0?`⛔ Below the band bottom at T_gen ${Tg} °C / T_cond ${Tc} °C: Δx = 0, solution pump circulates nothing, Q_evap = 0. Raise T_gen or switch to NH₃-H₂O.`:
+  (s.dx<0.02?`⚠ Weak circulation (Δx ${s.dx.toFixed(4)}): running, but starved — every extra °C of T_gen pays almost linearly here.`:`✓ Healthy circulation: ${(s.qe/1000).toFixed(1)} kJ/kg of 7 °C cooling per kg of solution per cycle.`);
+ const w=4+22*Math.min(s.qg/300000,1),wc=4+22*Math.min(s.qe/300000,1);
+ $('fGen').setAttribute('stroke-width',w.toFixed(1));
+ ['fGC','fCE','fEA','fRich','fLean'].forEach(id=>$(id).setAttribute('stroke-width',(s.dx<=0?2:(3+14*Math.min(s.dx/0.1,1))).toFixed(1)));
+ $('fEA').setAttribute('stroke-width',wc.toFixed(1));
+ // chart
+ const cv=$('chart').getContext('2d');cv.clearRect(0,0,860,280);
+ cv.fillStyle='#9db8d6';cv.font='12px ui-monospace, Menlo, Consolas, monospace';cv.fillText('COP vs T_gen 55–120 °C · vertical cursor = your T_gen',12,18);
+ cv.strokeStyle='#6f9cc9';cv.beginPath();cv.moveTo(60,30);cv.lineTo(60,250);cv.lineTo(840,250);cv.stroke();
+ const X=t=>60+(t-55)/65*780, Y=c=>250-Math.min(c,1.2)/1.2*210;
+ const cols={"LiBr-H2O":"#ffd24a","NH3-H2O":"#8fdcff","LiCl-H2O":"#c9b4ff"};
+ for(const [name,col] of Object.entries(cols)){cv.strokeStyle=col;cv.lineWidth=name===pair?3:1.5;cv.beginPath();
+  for(let t=55;t<=120;t+=1){const v=sim(t,Tc,name).COP;const x=X(t),y=Y(v);t===55?cv.moveTo(x,y):cv.lineTo(x,y);}cv.stroke();
+  cv.fillStyle=col;cv.fillText(name, X(112), Y(sim(112,Tc,name).COP)-8);}
+ cv.strokeStyle='#fff';cv.beginPath();cv.moveTo(X(Tg),30);cv.lineTo(X(Tg),250);cv.stroke();
+ // gate check at 7/30/85 LiBr
+ const g=sim(85,30,'LiBr-H2O');
+ $('chkCop').textContent=g.COP.toFixed(3);$('chkDx').textContent=g.dx.toFixed(4);$('chkScp').textContent=g.SCP.toFixed(0)+' W/kg-sol';}
+$('pair').addEventListener('change',upd);$('tgen').addEventListener('input',upd);$('tcond').addEventListener('input',upd);
+upd();
+</script>
+<footer class="bf">
+<span>COOLING WITH HEAT · docs/simulations/absorption-chiller.html</span>
+<span class="gold">ILLUSTRATIVE MODEL OUTPUT — VALIDATE AGAINST harness PHYSICS BEFORE DESIGN USE</span>
+</footer>
+</body>
+</html>

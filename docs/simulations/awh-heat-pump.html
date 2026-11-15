@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Air-water heat (AWH) — adsorption heat pump (hand-built)</title>
+<link rel="stylesheet" href="blueprint.css">
+</head>
+<body>
+<header class="tb">
+<div>
+<div class="tb-title">COOLING WITH HEAT — APPLICATION SIMULATION SHEET</div>
+<div class="tb-sub">standalone HTML · vanilla-JS live solver · no build step, no dependencies</div>
+</div>
+<div class="tb-r">
+<div class="tb-doc">DOC&nbsp;&nbsp;<span class="tb-path">docs/simulations/awh-heat-pump.html</span></div>
+<div class="tb-meta">SHEET 1 OF 1&nbsp;&nbsp;·&nbsp;&nbsp;REV A&nbsp;&nbsp;·&nbsp;&nbsp;27 SEP 2026</div>
+<div class="tb-stamp">MODEL SHEET · ALL UNITS SI · NOT FOR MANUFACTURE</div>
+</div>
+</header>
+<p class="dim"><a href="index.html">← all hand-built simulations</a> · <code>docs/simulations/awh-heat-pump.html</code> — hand-written</p>
+<h1>Air-water heat (AWH) — adsorption heat pump</h1>
+<p class="dim">From anchor notes: CAU-10-H and AlPO-18 are common heat-pump / AWH candidates. The adsorption
+heat pump uses the same D–A cycle as cooling but runs "backwards": low-grade heat drives desorption, and the
+adsorption step delivers high-grade heat. COP_heat = Q_delivered / Q_regeneration.</p>
+
+<div class="panel">
+<h2 style="border:none;margin:0 0 6px">1 · The cycle</h2>
+<p>Evaporator at T_evap (water source, e.g. 10 °C), condenser at T_cond (heat delivery, e.g. 50 °C),
+regenerator at T_reg (waste heat, e.g. 80 °C). The bed adsorbs at T_evap (heat released to the water source),
+is heated to T_reg (desorption, heat input), then condenses at T_cond (heat delivered to the load).
+COP_heat = (Q_ads + Q_cond) / Q_reg. The same D–A physics as the cooling cycle, but the objective is
+heat delivery, not cooling.</p>
+<div class="controls">
+<label>T_evap <input id="te" type="range" min="5" max="25" step="0.5" value="10"> <span id="teV">10 °C</span></label>
+<label>T_cond <input id="tc" type="range" min="35" max="70" step="0.5" value="50"> <span id="tcV">50 °C</span></label>
+<label>T_reg <input id="tr" type="range" min="60" max="120" step="1" value="80"> <span id="trV">80 °C</span></label>
+<label>material <select id="mat"><option value="CAU-10-H">CAU-10-H (MOF, AWH candidate)</option><option value="AlPO-18">AlPO-18 (aluminophosphate)</option><option value="silica">Silica gel RD</option><option value="13X">Zeolite 13X</option></select></label>
+</div>
+<canvas id="plot" width="860" height="280"></canvas>
+<table>
+<tr><th>Q_ads</th><td id="qads">–</td><th>Q_cond</th><td id="qcond">–</td><th>Q_reg</th><td id="qreg">–</td></tr>
+<tr><th>COP_heat</th><td id="cop">–</th><th>Δq</th><td id="dq">–</th><th>mode</th><td id="mode">–</td></tr>
+</table>
+<p class="dim">COP_heat &gt; 1 means the pump delivers more heat than the regeneration input — the difference
+comes from the evaporator (water source). This is the heat-pump analogue of the cooling cycle.</p>
+</div>
+
+<script>
+const $=id=>document.getElementById(id);
+const R=8.314,CPS=1000,CPL=4184;
+function psat(tK){const tC=tK-273.15;if(tC<100)return 611.2*Math.exp(17.502*tC/(240.97+tC));return Math.pow(10,8.10765-1750.286/(235+tC))*133.322;}
+function hfg(tK){const Tc=647.1,Tr=373.15,Hr=2256400;const t=Math.min(tK,Tc-1);return Hr*Math.pow((Tc-t)/(Tc-Tr),0.321);}
+function da(tK,p,q,E,n){const r=Math.max(psat(tK)/p,1);return q*Math.exp(-Math.pow(R*tK*Math.log(r)/E,n));}
+const MATS={"CAU-10-H":{q:0.33,E:6500,n:1.8,Q:2.7e6},"AlPO-18":{q:0.30,E:8000,n:1.8,Q:2.8e6},"silica":{q:0.35,E:4500,n:1.8,Q:2.5e6},"13X":{q:0.28,E:14000,n:1.8,Q:3.5e6}};
+function sim(te,tc,tr,mat){const M=MATS[mat];
+ const tE=te+273.15,tC=tc+273.15,tR=tr+273.15;
+ const pE=psat(tE),pC=psat(tC),hE=hfg(tE),hC=hfg(tC);
+ // adsorb at T_evap, p_evap
+ const qA=da(tE,pE,M.q,M.E,M.n);
+ // desorb at T_reg, p_cond
+ const qD=da(tR,pC,M.q,M.E,M.n);
+ const dq=Math.max(0,qA-qD);
+ // heats
+ const qAds=dq*hE; // heat released at evaporator (adsorption)
+ const qCond=dq*hC; // heat released at condenser
+ // regeneration: sensible + isosteric
+ const qReg=(CPS+qA*CPL)*(tR-tE)+dq*M.Q;
+ const cop=(qAds+qCond)/qReg;
+ return{qAds,qCond,qReg,cop,dq};}
+function draw(){
+ const te=parseFloat($('te').value),tc=parseFloat($('tc').value),tr=parseFloat($('tr').value),mat=$('mat').value;
+ $('teV').textContent=te.toFixed(1)+' °C';$('tcV').textContent=tc.toFixed(1)+' °C';$('trV').textContent=tr+' °C';
+ const r=sim(te,tc,tr,mat);
+ $('qads').textContent=(r.qAds/1000).toFixed(1)+' kJ/kg';
+ $('qcond').textContent=(r.qCond/1000).toFixed(1)+' kJ/kg';
+ $('qreg').textContent=(r.qReg/1000).toFixed(1)+' kJ/kg';
+ $('cop').textContent=r.cop.toFixed(3);
+ $('dq').textContent=r.dq.toFixed(4)+' kg/kg';
+ $('mode').textContent=r.cop>1?'heat pump (COP>1)':'heat engine (COP<1)';
+ // Sankey-like bar chart
+ const cv=$('plot'),cx=cv.getContext('2d');
+ cx.clearRect(0,0,860,280);
+ cx.fillStyle='#9db8d6';cx.font='12px ui-monospace, Menlo, Consolas, monospace';
+ cx.fillText('Q_reg in → Q_ads + Q_cond out (kJ/kg)',10,18);
+ const qmax=Math.max(r.qReg,r.qAds+r.qCond,1);
+ const bw=200;
+ // Q_reg
+ cx.fillStyle='#ffd24a';cx.fillRect(50,250-r.qReg/qmax*200,bw,r.qReg/qmax*200);
+ cx.fillText('Q_reg',50,265);
+ // Q_ads
+ cx.fillStyle='#8fdcff';cx.fillRect(300,250-r.qAds/qmax*200,bw,r.qAds/qmax*200);
+ cx.fillText('Q_ads',300,265);
+ // Q_cond
+ cx.fillStyle='#7fdfae';cx.fillRect(550,250-r.qCond/qmax*200,bw,r.qCond/qmax*200);
+ cx.fillText('Q_cond',550,265);
+ // COP
+ cx.fillStyle='#e2edf9';cx.font='16px ui-monospace, Menlo, Consolas, monospace';
+ cx.fillText('COP_heat = '+r.cop.toFixed(3),50,40);}
+$('te').addEventListener('input',draw);
+$('tc').addEventListener('input',draw);
+$('tr').addEventListener('input',draw);
+$('mat').addEventListener('change',draw);
+draw();
+</script>
+<footer class="bf">
+<span>COOLING WITH HEAT · docs/simulations/awh-heat-pump.html</span>
+<span class="gold">ILLUSTRATIVE MODEL OUTPUT — VALIDATE AGAINST harness PHYSICS BEFORE DESIGN USE</span>
+</footer>
+</body>
+</html>

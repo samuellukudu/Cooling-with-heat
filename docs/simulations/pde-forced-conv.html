@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Forced convection — channel + chip (hand-built, live solver)</title>
+<link rel="stylesheet" href="blueprint.css">
+</head>
+<body>
+<header class="tb">
+<div>
+<div class="tb-title">COOLING WITH HEAT — APPLICATION SIMULATION SHEET</div>
+<div class="tb-sub">standalone HTML · vanilla-JS live solver · no build step, no dependencies</div>
+</div>
+<div class="tb-r">
+<div class="tb-doc">DOC&nbsp;&nbsp;<span class="tb-path">docs/simulations/pde-forced-conv.html</span></div>
+<div class="tb-meta">SHEET 1 OF 1&nbsp;&nbsp;·&nbsp;&nbsp;REV A&nbsp;&nbsp;·&nbsp;&nbsp;27 SEP 2026</div>
+<div class="tb-stamp">MODEL SHEET · ALL UNITS SI · NOT FOR MANUFACTURE</div>
+</div>
+</header>
+<p class="dim"><a href="index.html">← all hand-built simulations</a> · <code>docs/simulations/pde-forced-conv.html</code> — hand-written, live solver</p>
+<h1>Forced convection — channel flow over a heated chip</h1>
+<p class="dim">Frozen-diffheat scenario <code>pde-forced-conv</code>, live JS solver. One-way coupling: flow prescribed, not solved.</p>
+
+<div class="panel">
+<h2 style="border:none;margin:0 0 6px">1 · The setup</h2>
+<p>Channel [0,4]×[0,1], uniform horizontal flow u=(U,0). Cold Dirichlet inlet/outlet (T=0), insulated top/bottom.
+Gaussian chip source at (2.0, 0.15). dT/dt = α∇²T − U·dT/dx + S(x,y). First-order upwind advection +
+5-point diffusion, explicit Euler. Defaults: U=1.0, α=0.01 (frozen DEFAULT_ALPHA), grid 72×18 live.</p>
+<div class="controls">
+<label>U <input id="U" type="range" min="0" max="3" step="0.05" value="1"> <span id="UV">1.00</span></label>
+<label>chip power <input id="amp" type="range" min="0" max="5" step="0.1" value="2"> <span id="ampV">2.0</span></label>
+<button id="play">⏸ pause</button><button id="reset">↺ reset</button>
+</div>
+<canvas id="plot" width="860" height="240"></canvas>
+<p class="dim" id="readout">–</p>
+</div>
+
+<script>
+const $=id=>document.getElementById(id);
+const NX=72,NY=18,LX=4,LY=1,dx=LX/NX,dy=LY/NY,ALPHA=0.01;
+let U=1,amp=2,T=new Float64Array(NX*NY),Tnew=new Float64Array(NX*NY),playing=true,t=0;
+function dt(){return Math.min(0.9*dx*dx/(4*ALPHA),0.9*dx/U);}
+function step(){const h=dt();
+ for(let s=0;s<3;s++){t+=h;
+  for(let i=0;i<NX;i++)for(let j=0;j<NY;j++){
+   const k=i*NY+j;
+   const l=j===0?0:T[k-1],r=j===NY-1?0:T[k+1];
+   const u=i===0?T[k]:T[k-NY],d=i===NX-1?T[k]:T[k+NY];
+   // upwind advection: U>0 means flow left→right, so dT/dx ≈ (T[k]-T[k-1])/dx
+   const adv=U>0?(T[k]-l)/dx:(r-T[k])/dx;
+   const src=amp*Math.exp(-((i*dx-2)**2+(j*dy-0.15)**2)/(2*0.08**2));
+   Tnew[k]=T[k]+h*(ALPHA*(l+r+u+d-4*T[k])/(dx*dx)-U*adv+src);}
+  T.set(Tnew);}
+ return h;}
+function col(v){const f=Math.min(Math.max(v/8,0),1);
+ const stops=[[13,13,31],[59,15,112],[140,29,64],[199,92,20],[249,200,70]];
+ const x=f*4,i=Math.min(Math.floor(x),3),u=x-i;
+ const c=stops[i].map((v2,k2)=>Math.round(v2+u*(stops[i+1][k2]-v2)));
+ return `rgb(${c[0]},${c[1]},${c[2]}`;}
+const cv=$('plot'),cx=cv.getContext('2d');
+const cw=860/NX,ch=200/NY,ox=0,oy=20;
+function draw(){
+ cx.clearRect(0,0,860,240);
+ for(let i=0;i<NX;i++)for(let j=0;j<NY;j++){
+  cx.fillStyle=col(T[i*NY+j]);cx.fillRect(ox+i*cw,oy+j*ch,cw+0.5,ch+0.5);}
+ // velocity glyphs
+ cx.strokeStyle='#e2edf9';cx.lineWidth=1;
+ for(let i=2;i<NX;i+=8)for(let j=2;j<NY;j+=4){
+  const x=ox+i*cw,y=oy+j*ch;
+  cx.beginPath();cx.moveTo(x,y);cx.lineTo(x+U*8,y);cx.stroke();}
+ // chip marker
+ cx.strokeStyle='#ffd24a';cx.lineWidth=2;
+ cx.strokeRect(ox+2/dx*cw-4,oy+0.15/dy*ch-4,8,8);
+ cx.fillStyle='#9db8d6';cx.font='11px ui-monospace, Menlo, Consolas, monospace';
+ cx.fillText('chip',ox+2/dx*cw-8,oy+0.15/dy*ch-8);
+ // readouts
+ let peak=0,out=0;
+ for(let i=0;i<NX;i++)for(let j=0;j<NY;j++){peak=Math.max(peak,T[i*NY+j]);if(i===NX-1)out+=T[i*NY+j];}
+ out/=NY;
+ const Pe=U*LX/ALPHA;
+ $('readout').textContent=`Pe = ${Pe.toFixed(0)} (${Pe>10?'advection-dominated':'diffusion-dominated'}) · chip peak = ${peak.toFixed(1)} °C · outlet mean = ${out.toFixed(2)} °C · t = ${t.toFixed(2)}`;
+ cx.fillText('U = '+U.toFixed(2)+' m/s',ox,14);}
+function reset(){T.fill(0);t=0;draw();}
+$('U').addEventListener('input',e=>{U=parseFloat(e.target.value);$('UV').textContent=U.toFixed(2);});
+$('amp').addEventListener('input',e=>{amp=parseFloat(e.target.value);$('ampV').textContent=amp.toFixed(1);});
+$('play').addEventListener('click',()=>{playing=!playing;$('play').textContent=playing?'⏸ pause':'▶ play';});
+$('reset').addEventListener('click',reset);
+reset();
+(function loop(){if(playing)step();draw();requestAnimationFrame(loop);})();
+</script>
+<footer class="bf">
+<span>COOLING WITH HEAT · docs/simulations/pde-forced-conv.html</span>
+<span class="gold">ILLUSTRATIVE MODEL OUTPUT — VALIDATE AGAINST harness PHYSICS BEFORE DESIGN USE</span>
+</footer>
+</body>
+</html>

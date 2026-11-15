@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Heat 3D — cube slices (hand-built, live solver)</title>
+<link rel="stylesheet" href="blueprint.css">
+</head>
+<body>
+<header class="tb">
+<div>
+<div class="tb-title">COOLING WITH HEAT — APPLICATION SIMULATION SHEET</div>
+<div class="tb-sub">standalone HTML · vanilla-JS live solver · no build step, no dependencies</div>
+</div>
+<div class="tb-r">
+<div class="tb-doc">DOC&nbsp;&nbsp;<span class="tb-path">docs/simulations/pde-heat3d.html</span></div>
+<div class="tb-meta">SHEET 1 OF 1&nbsp;&nbsp;·&nbsp;&nbsp;REV A&nbsp;&nbsp;·&nbsp;&nbsp;27 SEP 2026</div>
+<div class="tb-stamp">MODEL SHEET · ALL UNITS SI · NOT FOR MANUFACTURE</div>
+</div>
+</header>
+<p class="dim"><a href="index.html">← all hand-built simulations</a> · <code>docs/simulations/pde-heat3d.html</code> — hand-written, live solver</p>
+<h1>Heat 3D — cube: three mid-planes animated together</h1>
+<p class="dim">Frozen-diffheat scenario <code>pde-heat3d</code>, live JS solver. N=16 per side (20³ in the frozen run — live JS stays at 16³ for 60 fps).</p>
+
+<div class="panel">
+<h2 style="border:none;margin:0 0 6px">1 · The setup</h2>
+<p>Unit cube, initially 0 °C. Left face (x=0) held at 100 °C, right face (x=1) at 0 °C, all other faces insulated.
+Explicit 7-point Laplacian on a 16³ grid. Three mid-planes (xy at mid-z, xz at mid-y, yz at mid-x) are shown
+side by side — the yz plane is the one driven by the boundary condition; the other two show the same gradient
+extrapolated through the insulated directions.</p>
+<div class="controls">
+<label>α <input id="alpha" type="range" min="0.002" max="0.05" step="0.001" value="0.01"> <span id="alphaV">0.01</span></label>
+<button id="play">⏸ pause</button><button id="reset">↺ reset</button>
+<span class="dim" id="state">–</span>
+</div>
+<canvas id="cxy" width="270" height="270"></canvas><canvas id="cxz" width="270" height="270"></canvas><canvas id="cyz" width="270" height="270"></canvas>
+<p class="dim" id="readout">–</p>
+</div>
+
+<script>
+const $=id=>document.getElementById(id);
+const N=16,dx=1/N;
+let alpha=0.01,T=new Float64Array(N*N*N),Tnew=new Float64Array(N*N*N),playing=true,t=0;
+function dt(){return 0.9*dx*dx/(6*alpha);}
+function step(){const h=dt();
+ for(let s=0;s<2;s++){t+=h;
+  for(let i=0;i<N;i++)for(let j=0;j<N;j++)for(let k=0;k<N;k++){
+   const a=i*N*N+j*N+k;
+   const l=j===0?100:T[a-1],r=j===N-1?0:T[a+1];
+   const u=i===0?T[a]:T[a-N*N],d=i===N-1?T[a]:T[a+N*N];
+   const f=k===0?T[a]:T[a-N],b=k===N-1?T[a]:T[a+N];
+   Tnew[a]=T[a]+h*alpha*(l+r+u+d+f+b-6*T[a])/(dx*dx);}
+  T.set(Tnew);}
+ return h;}
+function col(v){const f=Math.min(Math.max(v/100,0),1);
+ const stops=[[13,13,31],[59,15,112],[140,29,64],[199,92,20],[249,200,70]];
+ const x=f*4,i=Math.min(Math.floor(x),3),u=x-i;
+ const c=stops[i].map((v2,k2)=>Math.round(v2+u*(stops[i+1][k2]-v2)));
+ return `rgb(${c[0]},${c[1]},${c[2]})`;}
+const cvs=[['cxy',N*N],['cxz',0],['cyz',0]].map(([id])=>[$(id).getContext('2d'),id]);
+function drawSlice(cx2,id){
+ const m=270/N,ox=10,oy=10;
+ cx2.clearRect(0,0,270,270);
+ const mid=N>>1;
+ for(let i=0;i<N;i++)for(let j=0;j<N;j++){
+  let v;
+  if(id==='cxy')v=T[i*N*N+mid*N+j];
+  else if(id==='cxz')v=T[i*N*N+j*N+mid];
+  else v=T[mid*N*N+i*N+j];
+  cx2.fillStyle=col(v);cx2.fillRect(ox+j*m,oy+i*m,m+0.5,m+0.5);}
+ cx2.fillStyle='#9db8d6';cx2.font='9px ui-monospace, Menlo, Consolas, monospace';
+ cx2.fillText(id,ox,oy-2);}
+const cxs=cvs.map(([c])=>c);
+function draw(){
+ for(let k=0;k<3;k++)drawSlice(cxs[k],cvs[k][1]);
+ let m=0;for(let a=0;a<N*N*N;a++)m+=T[a];m/=N**3;
+ let l2=0;for(let i=0;i<N;i++)for(let j=0;j<N;j++)for(let k=0;k<N;k++){
+  const d=T[i*N*N+j*N+k]-100*(1-j/(N-1));l2+=d*d;}l2=Math.sqrt(l2/N**3);
+ $('readout').textContent=`global mean = ${m.toFixed(1)} °C → 50.0 · L2 to steady = ${l2.toExponential(2)} · t = ${t.toFixed(2)} · dt = ${dt().toExponential(2)}`;
+ $('state').textContent='t = '+t.toFixed(2);}
+function reset(){T.fill(0);for(let i=0;i<N;i++)for(let k=0;k*N;k++)T[i*N*N+k]=100;t=0;draw();}
+$('alpha').addEventListener('input',e=>{alpha=parseFloat(e.target.value);$('alphaV').textContent=alpha.toFixed(3);});
+$('play').addEventListener('click',()=>{playing=!playing;$('play').textContent=playing?'⏸ pause':'▶ play';});
+$('reset').addEventListener('click',reset);
+reset();
+(function loop(){if(playing)step();draw();requestAnimationFrame(loop);})();
+</script>
+<footer class="bf">
+<span>COOLING WITH HEAT · docs/simulations/pde-heat3d.html</span>
+<span class="gold">ILLUSTRATIVE MODEL OUTPUT — VALIDATE AGAINST harness PHYSICS BEFORE DESIGN USE</span>
+</footer>
+</body>
+</html>

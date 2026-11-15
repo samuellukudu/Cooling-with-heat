@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CPU cold-plate assist — hand-built adsorption simulation</title>
+<link rel="stylesheet" href="blueprint.css">
+</head>
+<body>
+<header class="tb">
+<div>
+<div class="tb-title">COOLING WITH HEAT — APPLICATION SIMULATION SHEET</div>
+<div class="tb-sub">standalone HTML · vanilla-JS live solver · no build step, no dependencies</div>
+</div>
+<div class="tb-r">
+<div class="tb-doc">DOC&nbsp;&nbsp;<span class="tb-path">docs/simulations/cpu-cold-plate.html</span></div>
+<div class="tb-meta">SHEET 1 OF 1&nbsp;&nbsp;·&nbsp;&nbsp;REV A&nbsp;&nbsp;·&nbsp;&nbsp;27 SEP 2026</div>
+<div class="tb-stamp">MODEL SHEET · ALL UNITS SI · NOT FOR MANUFACTURE</div>
+</div>
+</header>
+<p class="dim"><a href="index.html">← all hand-built simulations</a> · hand-written file <code>docs/simulations/cpu-cold-plate.html</code> — no generator</p>
+<h1>CPU / electronics cold-plate assist — where 75 °C heat becomes cooling</h1>
+<p class="dim">Application <code>cpu</code>: T_evap 18 °C · T_cond 35 °C · T_des 75 °C · half-cycle 120 s · fluid 60–85 °C · SCP weight 0.45 (power density case)</p>
+
+<div class="panel">
+<h2 style="border:none;margin:0 0 6px">1 · The plumbing (this application only)</h2>
+<p><b>Heat out of the chip:</b> a 65 W CPU dumps to a water cold plate (~22 °C return). That water is the
+<b>cooling load</b> — it is chilled in the evaporator at 18 °C saturation (p ≈ 2.06 kPa), boiling the refrigerant.</p>
+<p><b>Heat into the machine:</b> a separate 60–85 °C loop (rack exhaust recovery, slider below) heats the bed to 75 °C
+to <b>desorb</b> vapour. The vapour condenses at 35 °C (dry-cooler reject), throttles to the evaporator, and the
+twin bed — cooled back to 35 °C — <b>adsorbs</b> it, sustaining suction on the evaporator. That is the whole trick:
+high-grade heat makes low pressure, low pressure makes cold.</p>
+<p><b>Heat rejected:</b> adsorption heat + condensation heat leave at 35 °C to the dry cooler. Energy balance always:
+Q_rej = Q_in + Q_cool.</p>
+</div>
+
+<h2>2 · Live heat flows — widths ∝ power</h2>
+<div class="panel">
+<svg viewBox="0 0 860 300" id="sankey">
+<text x="12" y="22" fill="#e2edf9" font-size="14" font-weight="bold">Heat IN → cooling OUT (live, this bed + material)</text>
+<!-- source -->
+<rect x="15" y="64" width="170" height="72" rx="2" fill="#123457" stroke="#ffd24a"/>
+<text x="30" y="84" fill="#ffd24a" font-size="12">WASTE HEAT IN</text>
+<text x="30" y="104" fill="#e2edf9" font-size="12" id="qInLab">–</text>
+<text x="30" y="122" fill="#9db8d6" font-size="11" id="srcLab">rack loop 78 °C</text>
+<!-- machine -->
+<rect x="330" y="52" width="200" height="188" rx="2" fill="#0f2c50" stroke="#6f9cc9"/>
+<text x="345" y="74" fill="#e2edf9" font-size="12">TWIN-BED MACHINE</text>
+<text x="345" y="94" fill="#9db8d6" font-size="11" id="bedState">A adsorbing · B desorbing</text>
+<text x="345" y="114" fill="#8fdcff" font-size="11" id="copLab">COP –</text>
+<text x="345" y="134" fill="#e2edf9" font-size="11" id="scpLab">SCP –</text>
+<text x="345" y="154" fill="#9db8d6" font-size="11">Δq (working cap.)</text>
+<text x="345" y="172" fill="#e2edf9" font-size="11" id="dqLab">–</text>
+<text x="345" y="200" fill="#9db8d6" font-size="11">thin 1.2 mm bed · 120 s</text>
+<text x="345" y="218" fill="#9db8d6" font-size="11">switch — fast valves</text>
+<!-- load -->
+<rect x="670" y="64" width="175" height="72" rx="2" fill="#123457" stroke="#8fdcff"/>
+<text x="680" y="84" fill="#8fdcff" font-size="12">COOLING TO CHIP</text>
+<text x="680" y="104" fill="#e2edf9" font-size="12" id="qCoolLab">–</text>
+<text x="680" y="122" fill="#9db8d6" font-size="11">cold plate 18 °C evap</text>
+<!-- reject -->
+<rect x="330" y="252" width="225" height="40" rx="2" fill="#123457" stroke="#7d9cba"/>
+<text x="345" y="277" fill="#9db8d6" font-size="12" id="qRejLab">REJECT –</text>
+<line id="fIn" x1="190" y1="95" x2="330" y2="95" stroke="#ffd24a" stroke-width="10" class="flow"/>
+<line id="fCool" x1="530" y1="95" x2="670" y2="95" stroke="#8fdcff" stroke-width="10" class="flow"/>
+<line id="fRej" x1="430" y1="240" x2="430" y2="252" stroke="#7d9cba" stroke-width="10"/>
+</svg>
+<div class="controls">
+<label>material <select id="mat">
+<option value="MIL-100">MIL-100 (COP 0.64 · SCP 4662 W/kg)</option>
+<option value="CuBTC">CuBTC (COP 0.63 · SCP 3913 W/kg)</option>
+<option value="silica">Silica gel RD anchor</option>
+</select></label>
+<label>source loop <input id="src" type="range" min="60" max="85" step="1" value="78"> <span id="srcV">78 °C</span></label>
+</div>
+<p class="dim">Equilibrium cycle (Magnus psat + Watson h_fg + D–A uptake, hx = 1.35 metal penalty).
+T_des follows the source slider — starve the source toward 60 °C and watch Δq and COP sag.</p>
+</div>
+
+<h2>3 · The bed itself — live finite-difference simulation (not a replay)</h2>
+<div class="panel">
+<p>This canvas integrates a <b>real (toy) transient model</b> in JS, specific to this app: 14 cells across a
+<b>1.2 mm</b> silica/MOF coating, FTCS conduction (α = 3.2e-7 m²/s), convective wall to the HTF fluid,
+and LDF uptake dq/dt = k·(q*−q) with k = 0.05 s⁻¹ (fast — this app punishes slow kinetics).
+Adsorb half: wall = 35 °C, vapour = p_evap(18 °C). Desorb half: wall = source slider, vapour = p_cond(35 °C).
+Cell colour = temperature, cyan dots = adsorbed water. 120 s halves — watch the thermal wave cross in seconds.</p>
+<div class="controls"><button id="play">⏸ pause</button><span class="dim" id="phase">–</span>
+<label>fluid <input id="fluid" type="range" min="60" max="85" step="1" value="78"> <span id="fluidV">78 °C</span></label></div>
+<canvas id="bed" width="860" height="300"></canvas>
+<p class="dim" id="bedStats">–</p>
+</div>
+
+<h2>4 · Numbers (reference T2 sweep, equilibrium, hx 1.35)</h2>
+<div class="panel"><table>
+<tr><th>rank (cpu)</th><th>material</th><th>COP</th><th>SCP W/kg</th><th>note</th></tr>
+<tr><td>1</td><td>MIL-160</td><td>0.69</td><td>2351</td><td class="warn">⚠ out-of-window (fit ≤ 40 °C)</td></tr>
+<tr><td>2</td><td>MIL-100</td><td>0.64</td><td>4662</td><td>best honest row</td></tr>
+<tr><td>3</td><td>CuBTC</td><td>0.63</td><td>3913</td><td></td></tr>
+<tr><td>17/21</td><td>Zeolite 13X</td><td>—</td><td>—</td><td>too slow/weak here</td></tr>
+</table>
+<p class="dim">H2.2 schedule gate ran on this profile (60–85 °C band, compressed 30-min load): optimized switching bought
+COP +17% / SCP +9% over the fixed schedule; extra source sinusoids <i>lost</i> cooling (film disconnect).</p>
+</div>
+
+<script>
+// ---- physics twin (Magnus <100C / Antoine above, Watson 0.321, D-A) ----
+const R=8.314, CPS=1000, CPL=4184, HX=1.35;
+function psat(tK){const tC=tK-273.15;if(tC<100)return 611.2*Math.exp(17.502*tC/(240.97+tC));return Math.pow(10,8.10765-1750.286/(235+tC))*133.322;}
+function hfg(tK){const Tc=647.1,Tr=373.15,Hr=2256400;const t=Math.min(tK,Tc-1);return Hr*Math.pow((Tc-t)/(Tc-Tr),0.321);}
+function da(tK,p,qSat,E,n){const r=Math.max(psat(tK)/p,1);const A=R*tK*Math.log(r);return qSat*Math.exp(-Math.pow(A/E,n));}
+const TE=18, TC=35, CYC=120;
+const MATS={
+ "MIL-100":{q:0.3551899,E:3691.808,n:2.708416,Q:2.4717425e6},
+ "CuBTC":{q:0.4910407,E:6299.312,n:1.961696,Q:2.3329079e6},
+ "silica":{q:0.35,E:4500,n:1.8,Q:2.5e6}};
+function cycle(Tdes,m){const tE=TE+273.15,tC=TC+273.15,tD=Tdes+273.15;
+ const pE=psat(tE),pC=psat(tC),h=hfg(tE);
+ const qA=da(tC,pE,m.q,m.E,m.n),qD=da(tD,pC,m.q,m.E,m.n);
+ const dq=Math.max(0,qA-qD),qc=dq*h;
+ const qin=HX*((CPS+qA*CPL)*(tD-tC)+dq*m.Q);
+ return{COP:qin>0?qc/qin:0,SCP:qc/CYC,dq,qc,qin};}
+const $=id=>document.getElementById(id);
+function updateSankey(){const m=MATS[$('mat').value];const Ts=parseFloat($('src').value);
+ $('srcV').textContent=Ts+' °C';$('srcLab').textContent='rack loop '+Ts+' °C';
+ const c=cycle(Ts,m);
+ $('qInLab').textContent=(c.qin/1000).toFixed(1)+' kJ/kg heat in';
+ $('qCoolLab').textContent=(c.qc/1000).toFixed(1)+' kJ/kg cooling';
+ $('copLab').textContent='COP '+c.COP.toFixed(3)+'  (= cool/in)';
+ $('scpLab').textContent='SCP '+c.SCP.toFixed(0)+' W/kg  (/120 s)';
+ $('dqLab').textContent='Δq = '+c.dq.toFixed(4)+' kg/kg';
+ $('qRejLab').textContent='REJECT '+((c.qin+c.qc)/1000).toFixed(1)+' kJ/kg @35 °C';
+ const wIn=6+34*Math.min(c.qin/120000,1),wC=6+34*Math.min(c.qc/120000,1);
+ $('fIn').setAttribute('stroke-width',wIn.toFixed(1));$('fCool').setAttribute('stroke-width',wC.toFixed(1));
+ $('fRej').setAttribute('stroke-width',(6+20*Math.min((c.qin+c.qc)/240000,1)).toFixed(1));}
+$('mat').addEventListener('change',updateSankey);$('src').addEventListener('input',()=>{updateSankey();fluidT=parseFloat($('src').value);$('fluid').value=fluidT;$('fluidV').textContent=fluidT+' °C';});
+
+// ---- live bed model (FTCS + LDF), 14 cells, L=1.2mm ----
+const N=14, L=0.0012, dx=L/N, AL=3.2e-7, K=0.05, DT=0.25;
+let T=new Array(N).fill(35), q=new Array(N).fill(0.05);
+let t=0, half=CYC, adsorb=true, playing=true, fluidT=78;
+$('fluid').addEventListener('input',e=>{fluidT=parseFloat(e.target.value);$('fluidV').textContent=fluidT+' °C';$('src').value=fluidT;updateSankey();});
+$('play').addEventListener('click',()=>{playing=!playing;$('play').textContent=playing?'⏸ pause':'▶ play';});
+const cv=$('bed'), cx=cv.getContext('2d');
+function step(){const m=MATS[$('mat').value];
+ const wallT=adsorb?TC:fluidT;
+ const pVap=adsorb?psat(TE+273.15):psat(TC+273.15);
+ const h=hfg(TE+273.15);
+ let Qc=0;
+ const NS=Math.ceil(AL*DT/(0.45*dx*dx)), hs=DT/NS; // FTCS substeps: α·Δt/dx² ≤ 0.45 (else the field blows up)
+ for(let s=0;s<4;s++){ // 4×0.25 s per frame
+  for(let u=0;u<NS;u++){
+   t+=hs; if(t>=half){t=0;adsorb=!adsorb;}
+   const Tn=T.slice();
+   for(let i=0;i<N;i++){
+    const tK=T[i]+273.15;
+    const qs=da(tK,pVap,m.q,m.E,m.n);
+    const dqdt=K*(qs-q[i]); q[i]+=dqdt*hs;
+    if(adsorb)Qc+=Math.max(0,dqdt)*h*hs;
+    // conduction
+    const Tl=i===0?wallT:Tn[i-1], Tr=i===N-1?Tn[i]:Tn[i+1]; // vapor side ~insulated
+    const lap=(Tl-2*Tn[i]+Tr)/(dx*dx);
+    T[i]=Tn[i]+hs*(AL*lap + (m.Q/(CPS+q[i]*CPL))*dqdt*0.15);
+    // wall convection pull on first cell
+    if(i===0)T[i]+=hs*2.0*(wallT-T[i]);
+  }}}
+ return Qc;}
+function color(tC){const f=Math.min(Math.max((tC-18)/(85-18),0),1);
+ return`rgb(${Math.round(20+225*f)},${Math.round(60+80*(1-f))},${Math.round(140-80*f)})`;}
+function draw(){const m=MATS[$('mat').value];
+ $('phase').textContent=(adsorb?'● ADSORBING — wall 35 °C, sucking vapour at '+ (psat(TE+273.15)/1000).toFixed(2)+' kPa':'● DESORBING — wall '+fluidT+' °C, pushing vapour to condenser');
+ $('bedState').textContent=(adsorb?'A adsorbing · B desorbing':'A desorbing · B adsorbing');
+ cx.clearRect(0,0,860,300);
+ cx.fillStyle='#9db8d6';cx.font='12px ui-monospace, Menlo, Consolas, monospace';
+ cx.fillText('HTF '+ (adsorb?TC:fluidT) +' °C',20,20);cx.fillText('adsorbent 1.2 mm (14 cells, T-coloured)',150,20);
+ cx.fillText('vapour pipe '+(adsorb?'← to bed':'→ to condenser'),640,20);
+ // fluid channel
+ cx.fillStyle=adsorb?'#2e7ea6':'#c99b2f';cx.fillRect(20,40,50,200);
+ // cells
+ const cw=520/N;
+ for(let i=0;i<N;i++){cx.fillStyle=color(T[i]);cx.fillRect(90+i*cw,40,cw-1,200);
+  const n=Math.round(5*q[i]/m.q);
+  cx.fillStyle='#9fe4ff';
+  for(let d=0;d<n;d++){cx.beginPath();cx.arc(90+i*cw+cw/2,70+d*34,5,0,7);cx.fill();}}
+ // pipe
+ cx.fillStyle='#0f2c50';cx.fillRect(660,40,60,200);cx.strokeStyle='#8fdcff';cx.strokeRect(660,40,60,200);
+ cx.fillStyle='#e2edf9';cx.font='12px ui-monospace, Menlo, Consolas, monospace';
+ const qm=(q.reduce((a,b)=>a+b,0)/N);
+ cx.fillText('q̄ = '+qm.toFixed(3)+' kg/kg',660,260);
+ cx.fillText('T wall→vap: '+T[0].toFixed(1)+' → '+T[N-1].toFixed(1)+' °C',90,260);
+ $('bedStats').textContent='t in half: '+t.toFixed(0)+' / '+half+' s · mean bed '+ (T.reduce((a,b)=>a+b,0)/N).toFixed(1) +' °C · q̄ '+qm.toFixed(4)+' kg/kg · thin bed + k=0.05/s is why SCP survives a 120 s switch.';}
+function loop(){if(playing){step();draw();}requestAnimationFrame(loop);}
+updateSankey();draw();loop();
+</script>
+<footer class="bf">
+<span>COOLING WITH HEAT · docs/simulations/cpu-cold-plate.html</span>
+<span class="gold">ILLUSTRATIVE MODEL OUTPUT — VALIDATE AGAINST harness PHYSICS BEFORE DESIGN USE</span>
+</footer>
+</body>
+</html>

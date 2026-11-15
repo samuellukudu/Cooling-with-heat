@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Material junction — heat-to-work proxy (hand-built, live solver)</title>
+<link rel="stylesheet" href="blueprint.css">
+</head>
+<body>
+<header class="tb">
+<div>
+<div class="tb-title">COOLING WITH HEAT — APPLICATION SIMULATION SHEET</div>
+<div class="tb-sub">standalone HTML · vanilla-JS live solver · no build step, no dependencies</div>
+</div>
+<div class="tb-r">
+<div class="tb-doc">DOC&nbsp;&nbsp;<span class="tb-path">docs/simulations/pde-junction.html</span></div>
+<div class="tb-meta">SHEET 1 OF 1&nbsp;&nbsp;·&nbsp;&nbsp;REV A&nbsp;&nbsp;·&nbsp;&nbsp;27 SEP 2026</div>
+<div class="tb-stamp">MODEL SHEET · ALL UNITS SI · NOT FOR MANUFACTURE</div>
+</div>
+</header>
+<p class="dim"><a href="index.html">← all hand-built simulations</a> · <code>docs/simulations/pde-junction.html</code> — hand-written, live solver</p>
+<h1>Material junction — steady ΔT proxy across a conductivity jump</h1>
+<p class="dim">Tracked avenue §10.3. Steady ΔT proxy for the heat-to-work avenue, not a device.</p>
+
+<div class="panel">
+<h2 style="border:none;margin:0 0 6px">1 · The setup</h2>
+<p>1-D rod L=1, Dirichlet 1/0 ends, N=64 explicit with spatially varying α(x): left half αL slider, right half
+αR slider (defaults 0.01 | 0.001), vs uniform rod (0.01) overlaid dashed. Steady-state comparison after t=30
+(fast-forward button). The kink at the junction is the signal: flux is continuous, temperature gradient is not.</p>
+<div class="controls">
+<label>α_left <input id="aL" type="range" min="0.001" max="0.05" step="0.001" value="0.01"> <span id="aLV">0.010</span></label>
+<label>α_right <input id="aR" type="range" min="0.001" max="0.05" step="0.001" value="0.001"> <span id="aRV">0.001</span></label>
+<button id="ff">⏩ fast-forward to steady</button>
+<button id="play">⏸ pause</button>
+</div>
+<canvas id="plot" width="860" height="300"></canvas>
+<table>
+<tr><th>steady ΔT across junction (junction rod)</th><td id="dropJ">–</td></tr>
+<tr><th>steady ΔT across same cells (uniform rod)</th><td id="dropU">–</td></tr>
+<tr><th>interface flux</th><td id="flux">–</td></tr>
+</table>
+</div>
+
+<script>
+const $=id=>document.getElementById(id);
+const N=64,L=1,dx=L/N;
+let aL=0.01,aR=0.001,T=new Float64Array(N),Tu=new Float64Array(N),playing=true,t=0;
+function alpha(i){return i<N/2?aL:aR;}
+function dt(){return 0.9*dx*dx/(2*Math.max(aL,aR));}
+function step(){const h=dt();
+ for(let s=0;s<4;s++){t+=h;
+  for(let i=0;i<N;i++){
+   const l=i===0?1:T[i-1],r=i===N-1?0:T[i+1];
+   T[i]+=h*alpha(i)*(l-2*T[i]+r)/(dx*dx);
+   const lu=i===0?1:Tu[i-1],ru=i===N-1?0:Tu[i+1];
+   Tu[i]+=h*0.01*(lu-2*Tu[i]+ru)/(dx*dx);}}
+ return h;}
+const cv=$('plot'),cx=cv.getContext('2d');
+function draw(){
+ cx.clearRect(0,0,860,300);
+ cx.strokeStyle='#6f9cc9';cx.beginPath();cx.moveTo(50,20);cx.lineTo(50,260);cx.lineTo(840,260);cx.stroke();
+ cx.fillStyle='#9db8d6';cx.font='11px ui-monospace, Menlo, Consolas, monospace';
+ cx.fillText('1.0',30,30);cx.fillText('0.0',30,262);cx.fillText('x',820,278);
+ // uniform dashed
+ cx.setLineDash([6,5]);cx.strokeStyle='#9db8d6';cx.lineWidth=1;cx.beginPath();
+ for(let i=0;i<N;i++){const x=i/(N-1),px=50+x*790,py=260-Tu[i]*240;i?cx.lineTo(px,py):cx.moveTo(px,py);}
+ cx.stroke();cx.setLineDash([]);
+ // junction
+ cx.lineWidth=2.5;cx.strokeStyle='#ffd24a';cx.beginPath();
+ for(let i=0;i<N;i++){const x=i/(N-1),px=50+x*790,py=260-T[i]*240;i?cx.lineTo(px,py):cx.moveTo(px,py);}
+ cx.stroke();
+ // junction marker
+ cx.strokeStyle='#ff9d9d';cx.beginPath();cx.moveTo(50+0.5*790,20);cx.lineTo(50+0.5*790,260);cx.stroke();
+ cx.fillStyle='#9db8d6';cx.fillText('junction',50+0.5*790-20,14);
+ // readouts
+ const j=N/2;
+ const dropJ=T[j-2]-T[j+2],dropU=Tu[j-2]-Tu[j+2];
+ const flux=aL*(T[j-1]-T[j-2])/dx;
+ $('dropJ').textContent=dropJ.toFixed(4);
+ $('dropU').textContent=dropU.toFixed(4);
+ $('flux').textContent=flux.toFixed(4);
+ cx.fillText('t = '+t.toFixed(1),50,14);}
+function ff(){for(let s=0;s<2000;s++)step();draw();}
+$('aL').addEventListener('input',e=>{aL=parseFloat(e.target.value);$('aLV').textContent=aL.toFixed(3);T.fill(0);Tu.fill(0);t=0;draw();});
+$('aR').addEventListener('input',e=>{aR=parseFloat(e.target.value);$('aRV').textContent=aR.toFixed(3);T.fill(0);Tu.fill(0);t=0;draw();});
+$('ff').addEventListener('click',ff);
+$('play').addEventListener('click',()=>{playing=!playing;$('play').textContent=playing?'⏸ pause':'▶ play';});
+T[0]=1;Tu[0]=1;draw();
+(function loop(){if(playing)step();draw();requestAnimationFrame(loop);})();
+</script>
+<footer class="bf">
+<span>COOLING WITH HEAT · docs/simulations/pde-junction.html</span>
+<span class="gold">ILLUSTRATIVE MODEL OUTPUT — VALIDATE AGAINST harness PHYSICS BEFORE DESIGN USE</span>
+</footer>
+</body>
+</html>
