@@ -150,3 +150,53 @@ def test_field_errors_runs(cond_vec):
                        x, t, cond_vec,
                        np.asarray(T_pred) + 1.0, np.asarray(q_pred))
     assert err["rel_l2_T"] > 0.0 and np.isfinite(err["mae_T_K"])
+
+
+# ---------------------------------------------------------------------------
+# Stage C: real-condition hardening (physics-only batches from real rows)
+# ---------------------------------------------------------------------------
+
+def test_stage_c_batches_real_params_no_labels():
+    from corpus import load_real_conditions
+    from train_pinn import stage_c_batches
+
+    real_conds, report = load_real_conditions(max_rows=3)
+    assert report["n_conditions"] >= 1
+    cfg = TrainConfig(steps=0, steps_c=0, samples_per_row=2,
+                      n_colloc=32, n_bc=16, n_ic=16, seed=0)
+    batches, sc = stage_c_batches(real_conds, cfg, seed=1)
+    assert len(batches) == 2 * report["n_conditions"] == sc["n_batches"]
+    for b in batches:
+        assert b["cond"].shape == (COND_DIM,)
+        # physics-only: no field labels anywhere in the batch
+        assert "x_data" not in b and "uT_data" not in b
+        for k in ("x_colloc", "t_colloc", "t_bc", "x_ic"):
+            assert jnp.isfinite(b[k]).all(), k
+        phys = decode_condition(b["cond"])
+        # the sampled operating point must sit inside the declared envelope
+        assert 50.0 <= float(phys["t_f_c"]) <= 90.0
+        assert 1.5e3 <= float(phys["p_pa"]) <= 9.0e3
+        assert 25.0 <= float(phys["t_init_c"]) <= 40.0
+        assert 0.05 <= float(phys["q_init_frac"]) <= 1.0
+    assert np.isfinite(sc["n_clipped_values"])
+
+
+def test_stage_c_training_smoke():
+    from corpus import load_real_conditions, preset_configs
+    from train_pinn import stage_c_batches
+
+    data, _ = build_corpus(preset_configs()[:1], n_data_per_config=100,
+                           seed=0, n_cells=8, dt_s=None, n_steps=100)
+    real_conds, _ = load_real_conditions(max_rows=2)
+    cfg = TrainConfig(width=16, depth=2, steps=10, steps_c=5, ramp_steps=5,
+                      n_colloc=32, n_bc=16, n_ic=16, samples_per_row=1, seed=0)
+    batches = make_batches(data, np.asarray(data["conds"]), cfg, seed=1)
+    real_batches, _ = stage_c_batches(real_conds, cfg, seed=2)
+    params, history = train(batches, cfg, log_every=0, real_batches=real_batches)
+    stages = [h.get("stage") for h in history]
+    assert stages[:cfg.steps] == ["AB"] * cfg.steps
+    assert stages[cfg.steps:] == ["C"] * cfg.steps_c
+    for h in history[cfg.steps:]:
+        assert np.isfinite(h["total"]) and np.isfinite(h["real_pde"])
+    leaves = jax.tree_util.tree_leaves(params)
+    assert all(bool(jnp.all(jnp.isfinite(p))) for p in leaves)
