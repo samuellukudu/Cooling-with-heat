@@ -108,20 +108,50 @@ Each stage gates the next.
    (real-condition collocation), rel-L2 + residual gates from
    `eval/pinn_metrics.py`. Gate: matches the Bed1D solver within the V3
    oracle-limit tolerance.
-   *2026-11-15:* stage C implemented (`train_pinn.stage_c_batches` — real
-   D–A rows, sampled operating envelope, physics-only batches; thickness
-   sampled inside the synthetic envelope after the row placeholder proved
-   10× out-of-envelope) + the N1 gate runner (`eval/pinn_gate.py`, exit-code
-   gated). First honest verdict on the 6k+500-step model: **5/8 gates pass**
-   — super-resolution (0.072/0.050), real-row residual honesty (0.29/0.03),
-   exact gradient agreement — but **field interpolation at unseen operating
-   points fails** (rel-L2 T 0.102 vs 0.05) and the adsorption-direction
-   cooling proxy has the wrong sign. Diagnosis: the synthetic corpus trains
-   ONE operating point per family and stage C carries no field labels —
-   interpolation must come from operating-point diversity in the *cheap
-   synthetic* stage, not from physics-only collocation. Next: widen
-   `preset_configs` across the operating envelope (rollouts are
-   milliseconds), retrain, re-gate.
+   *2026-11-15, round 1:* stage C implemented (`train_pinn.stage_c_batches`
+   — real D–A rows, sampled operating envelope, physics-only batches;
+   thickness sampled inside the synthetic envelope after the row placeholder
+   proved 10× out-of-envelope) + the N1 gate runner (`eval/pinn_gate.py`,
+   exit-code gated). First honest verdict on the 6k+500-step model: **5/8
+   gates pass** — field interpolation at unseen operating points fails
+   (rel-L2 T 0.102 vs 0.05); the "wrong-sign cooling proxy" was later found
+   to be a GATE bug (it indexed a silica desorption preset as the adsorption
+   proxy).
+   *2026-11-15 night, rounds 2–8 (one session, reported as-is):*
+   - **r2 (op-point diversity):** `preset_configs` widened 2→6 operating
+     points/family (+ shared `OP_ENVELOPE` for corpus/stage-C/gate). T
+     interpolation 0.102 → 0.055 — the diagnosed fix worked. q still 0.13.
+   - **r3/r4 (capacity + steps):** w96 and 10k steps each improved T
+     (~0.040) but degraded q (0.16 → 0.21) and the free sigmoid q-head even
+     lost the uptake sign. The free head is capacity-limited in the wrong
+     place.
+   - **r5 (structured D–A head):** `q = q*(T_net, P; q_sat, E, n) + f` — the
+     exponential is analytic in the net's own temperature (GeoField lesson:
+     feed the Polanyi structure, never learn it). Required a critical
+     gradient fix: XLA's pow backward turns the saturated-region clamp
+     (A = 0 exactly) into `0·inf = NaN`, poisoning every gradient — the
+     exponent argument is now floored at 1e-9 (forward-identical, and the
+     zero gradient there is the true physics: q is flat at saturation). Also
+     deleted the psat_fn plumbing: one differentiable two-branch psat clone
+     lives in the model, test-pinned to the harness.
+   - **r6 (dense sweep):** 24 op points/family (seeded LHS) × 2 thicknesses
+     = 96 configs. T stayed ~0.041 — the T plateau is MODEL-limited, not
+     sampling-limited. Gate perturbations rescaled to the dense spacing.
+   - **r7 (stage C ×4):** real-row energy residual 0.56 → 0.31, T best of
+     night (0.0268) — but q exploded to 1.1 on near-dry silica states.
+   - **r8 (log-space correction):** `q = q*·exp(s)`, s = tanh·4 — the
+     correction dies with q* in the dry tail and covers charge ratios e⁴≈55.
+     Gate q-metric floored at 0.25·q_sat (well-posedness: rel-L2 on a
+     ‖q‖≈0.03 field is meaningless). Verdict **6/8: rel-L2 T 0.031 PASS,
+     superres/residuals/grad/cooling-sign PASS, rel-L2 q 0.63 FAIL**
+     (silica-family-wide; 13X interpolates). mae_q ~0.07–0.16 kg/kg at
+     mae_T ~2–4 K — for soft adsorbents (shallow D–A) the lag correction
+     itself is the error, not T transmission.
+   **Bottom line:** T interpolation is fixed; the structured head made all
+   physics gates robust; the open gate is field-q accuracy for soft
+   adsorbents. Next lever (architectural, next session): per-family T-level
+   normalization and a lag-aware correction parameterization (the LDF ODE
+   gives f ≈ −(1/k)·dq*/dt analytically — feed that structure).
 2. **RL on TwoBed (H2.4/H3)** — PPO with a schedule action space on
    `TwoBedSchedule-v0` under time-varying/stochastic source profiles;
    baseline = H2.2 optimized fixed schedules. Gate: beats the schedule
@@ -135,6 +165,18 @@ Each stage gates the next.
    `harness/rl_h24.py` runs floors (nominal / best-fixed / per-seed oracle)
    → PPO → the policy-vs-floor table; the 20k-step run's verdict is
    reported as-is (pass or fail) in `data_cache/rl/h24_report.json`.
+   **Verdict (4.75 h run, reported as-is): both gates FAIL.** Means —
+   nominal 0.951, best-fixed 0.999, per-seed oracle 1.000, policy 0.961:
+   the policy beats nominal (+1.1%) but loses to the best-fixed schedule,
+   and on 2/16 seeds it collapses to exactly the nominal output. Diagnosis:
+   the best-fixed schedule (optimized once on the reference scenario)
+   generalizes to ≈oracle on every eval seed — the scenario band leaves
+   ≈0.1% headroom for ANY adaptive controller, so the gate asked for a
+   margin that doesn't exist in this band. This quantifies the H2.2
+   finding: next step is redesigning the band/task, not training longer —
+   widen scenario diversity (or move to within-episode dynamic control
+   where a fixed schedule genuinely fails), so that adaptation has real
+   headroom to win.
 3. **Data coverage lift (parallel)** — persist the OPTIMADE bulk MOF pull,
    MOFSimplify stability tables, wire the IZA pore table into features;
    re-run Stage-1 baseline; matched-coverage is the gate (50/156 → majority).

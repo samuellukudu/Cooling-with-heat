@@ -33,6 +33,18 @@ Physics (harness/DESIGN.md §4.2, ``harness.physics.bed1d``)::
     far  (x=L):  dT/dx = 0
     IC: T(x,0) = T_init, q(x,0) = q_init
 
+Structured uptake head (2026-11-15, round-5): the network does NOT rediscover
+the Dubinin–Astakhov exponential — ``q = q*(T_net, P; q_sat, E, n) + f``, with
+the D–A term computed analytically from the predicted temperature field and a
+free correction field ``f`` carrying only the smooth LDF lag / initial-charge
+transient. GeoField lesson (ROADMAP reference architecture): feed explicit
+engineering features (the Polanyi potential ``A = RT·ln(Psat/P)``) instead of
+asking a coordinate MLP to interpolate an exponential between operating
+points — the round-2..4 sweep measured exactly that failure (q rel-L2 0.133 →
+0.206 as capacity/steps grew, while T improved). The internal saturation
+pressure is a differentiable Magnus clone of
+``harness.physics.thermo.water_sat_pressure_pa``, pinned to it by test.
+
 Pure JAX + optax (Adam lives in the training module). No equinox/flax
 dependency: the parameter tree is a plain dict, the whole model is
 ``jit``/``vmap``/``grad`` compatible, and it runs on CPU now / GPU
@@ -52,6 +64,7 @@ T_MID_K = 360.0
 T_HALF_K = 90.0  # network output covers [270, 450] K
 Q_MAX_KG_KG = 1.5  # network q output covers [0, 1.5] kg/kg
 C_PL_J_KG_K = 4184.0  # adsorbed-phase specific heat (matches thermo.CP_LIQUID)
+S_LOG_MAX = 4.0  # log-space uptake correction covers charge ratios up to e^4 ≈ 55
 
 # Conditioning vector. (key, lo, hi, log-scale). Decoded values are physical;
 # the network always sees [-1, 1]. Log-scale follows the GeoField lesson for
@@ -139,14 +152,70 @@ def _trunk(params: Params, z: jax.Array) -> jax.Array:
     return h
 
 
+def _water_psat_pa(T: jax.Array) -> jax.Array:
+    """Differentiable clone of ``harness.physics.thermo.water_sat_pressure_pa``.
+
+    Two-branch like the harness (Magnus below 100 °C, Antoine above — the
+    corpus reaches ~121 °C through Q_st self-heating, so the second branch
+    is load-bearing). The uptake head needs psat INSIDE the network graph;
+    pinned to the harness implementation by ``test_psat_matches_harness``.
+    """
+    t_c = T - 273.15
+    magnus = 611.2 * jnp.exp(17.502 * t_c / (240.97 + t_c))
+    log10_p_mmhg = 8.10765 - 1750.286 / (235.0 + t_c)
+    antoine = (10.0 ** log10_p_mmhg) * 133.322
+    return jnp.where(t_c < 100.0, magnus, antoine)
+
+
+def q_equilibrium(T: jax.Array, p_pa: jax.Array, q_sat: jax.Array,
+                  e_char: jax.Array, n_da: jax.Array) -> jax.Array:
+    """Dubinin–Astakhov equilibrium uptake at (T, p) — the exact D–A form.
+
+    Used by the structured uptake head inside the network graph; identical
+    expression to ``harness.physics.thermo.da_uptake`` with the internal
+    differentiable psat (ratio clamped ≥ 1 like the harness).
+
+    Gradient safety: the exponent argument ``x = A/E`` is floored at 1e-9.
+    In the saturated region (``p ≥ Psat(T)``) the potential is exactly 0, and
+    XLA's pow backward (``n·exp(n·log x)/x``) turns ``x = 0`` into ``0·inf =
+    NaN`` — one saturated collocation point poisoned every gradient (seen
+    2026-11-15: batch-4 params went NaN on the first training step series).
+    Forward values are unchanged (``exp(−(1e-9)^n) = 1``); the zero floor
+    also encodes the true physics — q is FLAT at saturation, so d q/dT and
+    d q/dp are legitimately zero there.
+    """
+    from harness.physics.thermo import GAS_CONSTANT  # noqa: PLC0415 — import-light
+
+    p_sat = _water_psat_pa(T)
+    ratio = jnp.maximum(p_sat / p_pa, 1.0)
+    potential = GAS_CONSTANT * T * jnp.log(ratio)
+    x = jnp.maximum(potential / e_char, 1e-9)
+    return q_sat * jnp.exp(-(x ** n_da))
+
+
 def predict_Tq(params: Params, x_hat: jax.Array, t_hat: jax.Array,
                cond: jax.Array) -> tuple[jax.Array, jax.Array]:
-    """Single query point -> ``(T [K], q [kg/kg])``. Pure; vmap over points."""
+    """Single query point -> ``(T [K], q [kg/kg])``. Pure; vmap over points.
+
+    Structured uptake head (round 8, log-space correction): ``q = q*(T_net, P)
+    · exp(s)`` — the D–A equilibrium term is analytic in the predicted
+    temperature (the exponential is never learned), and the free correction
+    ``s`` acts MULTIPLICATIVELY in log space (GeoField lesson: log-space
+    heads for wide-range quantities). ``s ∈ [−S, S]`` covers initial-charge
+    ratios up to ``e^S`` (regenerated beds carry q_init/q_eq ≈ 50), and the
+    correction dies with q* itself in the dry tail — an additive head cannot
+    do that (measured: it injected ~0.1 kg/kg where the truth was ~0.03).
+    Gradients flow through both branches (decode is differentiable), so the
+    PDE residuals and directional feedback are unchanged in shape.
+    """
     z = jnp.concatenate([jnp.reshape(x_hat, (1,)), jnp.reshape(t_hat, (1,)), cond])
     h = _trunk(params, z)
     T = T_MID_K + jnp.tanh((h @ params["WT"] + params["bT"])[0]) * T_HALF_K
-    q = jax.nn.sigmoid((h @ params["Wq"] + params["bq"])[0]) * Q_MAX_KG_KG
-    return T, q
+    phys = decode_condition(cond)
+    q_star = q_equilibrium(T, phys["p_pa"], phys["q_sat_kg_kg"],
+                           phys["e_char_j_mol"], phys["n_da"])
+    s = jnp.tanh((h @ params["Wq"] + params["bq"])[0]) * S_LOG_MAX
+    return T, q_star * jnp.exp(s)
 
 
 def predict_normalized(params: Params, x_hat: jax.Array, t_hat: jax.Array,
@@ -164,25 +233,15 @@ predict_normalized_batch = jax.vmap(predict_normalized, in_axes=(None, 0, 0, Non
 # Physics residuals (autodiff through the surrogate = the PINN core)
 # ---------------------------------------------------------------------------
 
-def _da_uptake(T: jax.Array, p: jax.Array, q_sat: jax.Array,
-               e_char: jax.Array, n: jax.Array,
-               psat_fn) -> jax.Array:
-    from harness.physics.thermo import GAS_CONSTANT  # local: keeps module import-light
-
-    p_sat = psat_fn(T)
-    ratio = jnp.maximum(p_sat / p, 1.0)
-    potential = GAS_CONSTANT * T * jnp.log(ratio)
-    return q_sat * jnp.exp(-((potential / e_char) ** n))
-
-
 def pinn_residuals(params: Params, x_hat: jax.Array, t_hat: jax.Array,
-                   cond: jax.Array, psat_fn) -> dict[str, jax.Array]:
+                   cond: jax.Array) -> dict[str, jax.Array]:
     """Normalized PDE residuals at one query point (interior of the slab).
 
     Returns raw fields plus ``r_energy`` / ``r_ldf`` normalized to ~O(1) so a
     single physics weight applies across materials. All terms differentiate
     w.r.t. ``cond`` (decode is differentiable) — this is the directional
-    feedback path.
+    feedback path. ``q_star`` is the same structured-head D–A term the
+    network's ``q`` decomposes into (one psat implementation everywhere).
     """
     phys = decode_condition(cond)
     L = phys["L_m"]
@@ -213,7 +272,8 @@ def pinn_residuals(params: Params, x_hat: jax.Array, t_hat: jax.Array,
     d2T_dx2 = d2T_dx_hat2 / (L * L)
     dq_dt = dq_dt_hat / t_phase
 
-    q_star = _da_uptake(T, P, phys["q_sat_kg_kg"], phys["e_char_j_mol"], phys["n_da"], psat_fn)
+    q_star = q_equilibrium(T, P, phys["q_sat_kg_kg"],
+                           phys["e_char_j_mol"], phys["n_da"])
     cap = rho * (c_s + C_PL_J_KG_K * q)
 
     energy = cap * dT_dt - k_eff * d2T_dx2 - rho * dq_dt * q_st
@@ -269,8 +329,8 @@ def data_loss(params: Params, x_hat: jax.Array, t_hat: jax.Array,
 
 
 def physics_loss(params: Params, x_hat: jax.Array, t_hat: jax.Array,
-                 cond: jax.Array, psat_fn) -> dict[str, jax.Array]:
-    res = jax.vmap(lambda xh, th: pinn_residuals(params, xh, th, cond, psat_fn))(x_hat, t_hat)
+                 cond: jax.Array) -> dict[str, jax.Array]:
+    res = jax.vmap(lambda xh, th: pinn_residuals(params, xh, th, cond))(x_hat, t_hat)
     l_energy = jnp.mean(res["r_energy"] ** 2)
     l_ldf = jnp.mean(res["r_ldf"] ** 2)
     return {"energy": l_energy, "ldf": l_ldf, "total": l_energy + l_ldf}
@@ -287,13 +347,13 @@ def initial_loss(params: Params, x_hat: jax.Array, cond: jax.Array) -> jax.Array
 
 
 def total_loss(params: Params, batch: dict[str, jax.Array], weights: dict[str, float],
-               psat_fn) -> tuple[jax.Array, dict[str, jax.Array]]:
+               ) -> tuple[jax.Array, dict[str, jax.Array]]:
     """Joint loss. ``batch`` holds one condition's point sets; per-config
     training loops over configs (each config = one broad-model example)."""
     cond = batch["cond"]
     l_data = data_loss(params, batch["x_data"], batch["t_data"], cond,
                        batch["uT_data"], batch["uq_data"])
-    phys = physics_loss(params, batch["x_colloc"], batch["t_colloc"], cond, psat_fn)
+    phys = physics_loss(params, batch["x_colloc"], batch["t_colloc"], cond)
     l_bc = boundary_loss(params, batch["t_bc"], cond)
     l_ic = initial_loss(params, batch["x_ic"], cond)
     total = (weights["data"] * l_data + weights["pde"] * phys["total"]
@@ -304,10 +364,11 @@ def total_loss(params: Params, batch: dict[str, jax.Array], weights: dict[str, f
 
 
 __all__ = [
-    "COND_DIM", "COND_KEYS", "COND_SPEC", "C_PL_J_KG_K",
+    "COND_DIM", "COND_KEYS", "COND_SPEC", "C_PL_J_KG_K", "S_LOG_MAX",
     "Q_MAX_KG_KG", "T_HALF_K", "T_MID_K",
     "bc_residuals", "boundary_loss", "data_loss", "decode_condition",
     "encode_condition", "ic_residuals", "initial_loss", "init_params",
     "physics_loss", "pinn_residuals", "predict_Tq", "predict_batch",
-    "predict_normalized", "predict_normalized_batch", "total_loss",
+    "predict_normalized", "predict_normalized_batch", "q_equilibrium",
+    "total_loss",
 ]

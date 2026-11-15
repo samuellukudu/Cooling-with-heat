@@ -26,26 +26,37 @@ import jax.numpy as jnp
 import numpy as np
 
 
-def rel_l2(pred: np.ndarray, true: np.ndarray) -> float:
+def rel_l2(pred: np.ndarray, true: np.ndarray, *, denom_floor: float = 0.0) -> float:
+    """Relative L2 with an optional well-posedness floor on the denominator.
+
+    ``denom_floor`` bounds the norm from below (in the field's own units) so
+    near-zero fields don't explode the ratio — needed for uptake on near-dry
+    beds, where the true field norm → 0 and even honest absolute errors read
+    as rel-L2 ≫ 1 (2026-11-15, dense-sweep round: silica desorption from
+    70–90 °C beds carries ‖q‖ ≈ 0.03 kg/kg). The N1 gate floors q at
+    0.25·q_sat per condition; T (never near zero in K) is unaffected.
+    """
     pred = np.asarray(pred, dtype=np.float64)
     true = np.asarray(true, dtype=np.float64)
-    denom = float(np.sqrt(np.mean(true ** 2)))
+    denom = max(float(np.sqrt(np.mean(true ** 2))), float(denom_floor))
     return float(np.sqrt(np.mean((pred - true) ** 2)) / (denom + 1e-18))
 
 
 def field_errors(predict_fn, x_hat: np.ndarray, t_hat: np.ndarray,
                  cond: jax.Array, T_true: np.ndarray,
-                 q_true: np.ndarray) -> dict[str, float]:
+                 q_true: np.ndarray, *,
+                 q_denom_floor: float = 0.0) -> dict[str, float]:
     """Relative-L2 field errors of one condition's test points."""
     T_pred, q_pred = predict_fn(x_hat, t_hat, cond)
     return {"rel_l2_T": rel_l2(np.asarray(T_pred), T_true),
-            "rel_l2_q": rel_l2(np.asarray(q_pred), q_true),
+            "rel_l2_q": rel_l2(np.asarray(q_pred), q_true,
+                               denom_floor=q_denom_floor),
             "mae_T_K": float(np.mean(np.abs(np.asarray(T_pred) - T_true))),
             "mae_q": float(np.mean(np.abs(np.asarray(q_pred) - q_true)))}
 
 
 def residual_summary(residual_fn, x_hat: np.ndarray, t_hat: np.ndarray,
-                     cond: jax.Array, psat_fn) -> dict[str, float]:
+                     cond: jax.Array) -> dict[str, float]:
     """Mean |residual| of energy/LDF over query points (no labels needed)."""
     import sys  # noqa: PLC0415
     from pathlib import Path  # noqa: PLC0415
@@ -54,7 +65,7 @@ def residual_summary(residual_fn, x_hat: np.ndarray, t_hat: np.ndarray,
     from bed_pinn import pinn_residuals  # noqa: PLC0415
 
     res = jax.vmap(lambda xh, th: pinn_residuals(
-        residual_fn, xh, th, cond, psat_fn))(jnp.asarray(x_hat), jnp.asarray(t_hat))
+        residual_fn, xh, th, cond))(jnp.asarray(x_hat), jnp.asarray(t_hat))
     return {"mean_abs_r_energy": float(jnp.mean(jnp.abs(res["r_energy"]))),
             "mean_abs_r_ldf": float(jnp.mean(jnp.abs(res["r_ldf"])))}
 

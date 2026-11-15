@@ -37,7 +37,7 @@ def test_gate_report_complete_and_finite(tiny_ckpt):
     assert set(report) == {"ckpt", "created_unix", "scope", "field_interp",
                            "superres", "residual_honesty", "grad_agreement",
                            "cooling_proxy", "gates", "overall_pass"}
-    assert len(report["field_interp"]) == 4  # 2 families × 1 unseen condition
+    assert len(report["field_interp"]) == len(preset_configs())  # 1 gate config per sweep preset
     for err in report["field_interp"].values():
         assert np.isfinite(err["rel_l2_T"]) and err["rel_l2_T"] > 0.0
         assert np.isfinite(err["rel_l2_q"])
@@ -56,3 +56,15 @@ def test_gate_report_complete_and_finite(tiny_ckpt):
 def test_gate_ckpt_missing_raises(tmp_path):
     with pytest.raises(FileNotFoundError):
         run_gate(tmp_path / "nope.npz", n_real_rows=1, n_steps=20)
+
+
+def test_direction_presets_pick_real_phases():
+    """Pin the round-1 cooling-proxy bug: [1] was a silica DES preset."""
+    from pinn_gate import _direction_presets
+
+    des, ads = _direction_presets()
+    assert des["t_f_c"] > des["t_init_c"] and ads["t_f_c"] < ads["t_init_c"]
+    # the adsorption proxy must be the zeolite (cools), not a silica des preset
+    assert ads["name"].startswith("13X")
+    assert des["name"].startswith("silica")
+    assert des["q_init_kg_kg"] is None and ads["q_init_kg_kg"] is None

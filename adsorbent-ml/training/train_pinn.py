@@ -33,9 +33,11 @@ import sys
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))  # harness (solver oracle) + data builders
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "models"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "data"))
 from bed_pinn import (COND_SPEC, Q_MAX_KG_KG, T_HALF_K, T_MID_K, boundary_loss,
                       encode_condition, ic_residuals, init_params,
                       initial_loss, physics_loss, total_loss)
+from corpus import OP_ENVELOPE
 
 
 @dataclass
@@ -58,11 +60,15 @@ class TrainConfig:
     steps_c: int = 500
     lr_c: float = 3e-4
     samples_per_row: int = 2
-    # Operating-point envelope for real rows (inside COND_SPEC bounds; spans
-    # the four application profiles' fluid bands and evaporator pressures).
-    op_t_f_c: tuple[float, float] = (50.0, 90.0)
-    op_p_pa: tuple[float, float] = (1.5e3, 9.0e3)
-    op_t_init_c: tuple[float, float] = (25.0, 40.0)
+    # Operating-point envelope for real rows: the same hull the synthetic
+    # sweep (corpus.OP_ENVELOPE) trains, so stage C physics and stage A/B
+    # data see one consistent condition manifold. Inside COND_SPEC bounds;
+    # spans the application profiles' fluid bands and condenser/evaporator
+    # pressures. t_init reaches 90 °C because the adsorption phase starts
+    # from a freshly regenerated (hot) bed.
+    op_t_f_c: tuple[float, float] = OP_ENVELOPE["t_f_c"]
+    op_p_pa: tuple[float, float] = OP_ENVELOPE["p_pa"]
+    op_t_init_c: tuple[float, float] = OP_ENVELOPE["t_init_c"]
     op_q_init_frac: tuple[float, float] = (0.05, 1.0)
     op_t_phase_s: tuple[float, float] = (60.0, 600.0)
     # Thickness sampled within the synthetic training envelope. The rows'
@@ -87,14 +93,14 @@ def _to_normalized_targets(data: dict) -> tuple[jax.Array, jax.Array]:
     return uT.astype(jnp.float32), uq.astype(jnp.float32)
 
 
-def _physics_total_loss(params, batch, weights, psat_fn):
+def _physics_total_loss(params, batch, weights):
     """Physics-only objective (no data term): PDE + BC + IC on one condition.
 
     Real-condition rows carry NO field labels, so stage C must never touch
     ``data_loss`` — an empty-array data term would mean-reduce to NaN.
     """
     phys = physics_loss(params, batch["x_colloc"], batch["t_colloc"],
-                        batch["cond"], psat_fn)
+                        batch["cond"])
     l_bc = boundary_loss(params, batch["t_bc"], batch["cond"])
     l_ic = initial_loss(params, batch["x_ic"], batch["cond"])
     total = (weights["pde"] * phys["total"] + weights["bc"] * l_bc
@@ -191,7 +197,7 @@ def stage_c_batches(real_conds: list[dict], cfg: TrainConfig,
 
 
 def train(batches: list[dict], cfg: TrainConfig, *, log_every: int = 200,
-          psat_fn=None, real_batches: list[dict] | None = None
+          real_batches: list[dict] | None = None
           ) -> tuple[dict, list[dict]]:
     """Full training run (A→B ramp, then optional stage C). Returns ``(params, history)``.
 
@@ -199,10 +205,6 @@ def train(batches: list[dict], cfg: TrainConfig, *, log_every: int = 200,
     the docstring contract) + one real-condition physics-only batch. History
     entries carry ``stage`` ("AB" | "C").
     """
-    if psat_fn is None:
-        from harness.physics.thermo import water_sat_pressure_pa  # noqa: PLC0415
-
-        psat_fn = water_sat_pressure_pa
     key = jax.random.PRNGKey(cfg.seed)
     params = init_params(key, width=cfg.width, depth=cfg.depth)
     schedule = optax.cosine_decay_schedule(cfg.lr, cfg.steps, alpha=0.05)
@@ -214,7 +216,7 @@ def train(batches: list[dict], cfg: TrainConfig, *, log_every: int = 200,
         weights = {"data": cfg.w_data, "pde": w_pde,
                    "bc": cfg.w_bc, "ic": cfg.w_ic}
         (loss, aux), grads = jax.value_and_grad(total_loss, has_aux=True)(
-            params, batch, weights, psat_fn)
+            params, batch, weights)
         updates, opt_state = opt.update(grads, opt_state, params)
         return optax.apply_updates(params, updates), opt_state, aux
 
@@ -222,7 +224,7 @@ def train(batches: list[dict], cfg: TrainConfig, *, log_every: int = 200,
     def step_real(params, opt_state, batch, w_pde):
         weights = {"pde": w_pde, "bc": cfg.w_bc, "ic": cfg.w_ic}
         (loss, aux), grads = jax.value_and_grad(_physics_total_loss, has_aux=True)(
-            params, batch, weights, psat_fn)
+            params, batch, weights)
         updates, opt_state = opt.update(grads, opt_state, params)
         return optax.apply_updates(params, updates), opt_state, aux
 
@@ -256,7 +258,7 @@ def train(batches: list[dict], cfg: TrainConfig, *, log_every: int = 200,
             weights = {"data": cfg.w_data, "pde": w_pde,
                        "bc": cfg.w_bc, "ic": cfg.w_ic}
             (loss, aux), grads = jax.value_and_grad(total_loss, has_aux=True)(
-                params, batch, weights, psat_fn)
+                params, batch, weights)
             updates, opt_state = opt_c.update(grads, opt_state, params)
             return optax.apply_updates(params, updates), opt_state, aux
 
@@ -264,7 +266,7 @@ def train(batches: list[dict], cfg: TrainConfig, *, log_every: int = 200,
         def step_c_real(params, opt_state, batch, w_pde):
             weights = {"pde": w_pde, "bc": cfg.w_bc, "ic": cfg.w_ic}
             (loss, aux), grads = jax.value_and_grad(_physics_total_loss, has_aux=True)(
-                params, batch, weights, psat_fn)
+                params, batch, weights)
             updates, opt_state = opt_c.update(grads, opt_state, params)
             return optax.apply_updates(params, updates), opt_state, aux
 

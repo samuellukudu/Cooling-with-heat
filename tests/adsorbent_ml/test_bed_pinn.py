@@ -12,24 +12,17 @@ import pytest
 import jax
 import jax.numpy as jnp
 
-from bed_pinn import (COND_DIM, Q_MAX_KG_KG, T_HALF_K, T_MID_K,
+from bed_pinn import (COND_DIM, Q_MAX_KG_KG, S_LOG_MAX, T_HALF_K, T_MID_K,
                       bc_residuals, boundary_loss, decode_condition,
                       encode_condition, ic_residuals, init_params,
                       initial_loss, physics_loss, pinn_residuals,
                       predict_Tq, predict_batch, total_loss)
-from corpus import (build_corpus, family_split, preset_configs,
+from corpus import (OP_ENVELOPE, build_corpus, family_split, preset_configs,
                     rollout_kwargs, rollout_phase_fields)
 from pinn_metrics import field_errors, grad_agreement
 from train_pinn import TrainConfig, make_batches, train
 
 jax.config.update("jax_enable_x64", False)
-
-
-@pytest.fixture
-def psat_fn():
-    from harness.physics.thermo import water_sat_pressure_pa
-
-    return water_sat_pressure_pa
 
 
 @pytest.fixture
@@ -62,16 +55,61 @@ def test_apply_shapes_bounds_resolution_invariance(cond_vec):
         T, q = predict_batch(params, x, t, cond_vec)
         assert T.shape == (n,) and q.shape == (n,)
         assert bool(jnp.all((T >= T_MID_K - T_HALF_K) & (T <= T_MID_K + T_HALF_K)))
-        assert bool(jnp.all((q >= 0.0) & (q <= Q_MAX_KG_KG)))
+        # structured log-space head: q = q_eq · exp(s) ≥ 0 by construction;
+        # the trained 0..q_sat bound comes from data/IC, not the raw net
+        assert bool(jnp.all(q >= 0.0))
     T0, _ = predict_Tq(params, jnp.asarray(0.3), jnp.asarray(0.7), cond_vec)
     assert T0.shape == ()
 
 
-def test_residuals_finite_and_grads_flow(cond_vec, psat_fn):
+def test_psat_matches_harness():
+    """The uptake head's internal psat must equal the harness's (two-branch)."""
+    from harness.physics.thermo import water_sat_pressure_pa
+
+    from bed_pinn import _water_psat_pa
+
+    for t_k in (270.0, 300.0, 340.0, 372.0, 373.15, 380.0, 420.0, 450.0):
+        mine = float(_water_psat_pa(jnp.asarray(t_k)))
+        ref = float(water_sat_pressure_pa(jnp.asarray(t_k)))
+        assert mine == pytest.approx(ref, rel=1e-5), t_k
+
+
+def test_structured_uptake_head_decomposition(cond_vec):
+    """q decomposes as q_eq(T_net, p) + f — the exponential is never learned."""
+    from bed_pinn import q_equilibrium
+
+    params = init_params(jax.random.PRNGKey(3), width=16, depth=2)
+    x = jnp.linspace(0.05, 0.95, 7)
+    t = jnp.linspace(0.0, 0.9, 7)
+    T, q = predict_batch(params, x, t, cond_vec)
+    phys = decode_condition(cond_vec)
+    q_star = q_equilibrium(T, phys["p_pa"], phys["q_sat_kg_kg"],
+                           phys["e_char_j_mol"], phys["n_da"])
+    # log-space correction: q = q* · exp(s), s ∈ [−S, S], and q ≥ 0 always
+    ratio = q / q_star
+    assert bool(jnp.all((ratio >= jnp.exp(-S_LOG_MAX) - 1e-4)
+                        & (ratio <= jnp.exp(S_LOG_MAX) + 1e-4)))
+    assert bool(jnp.all(q >= 0.0))
+    # q responds to pressure through the ANALYTIC term: raising p at the same
+    # predicted T must raise the equilibrium part (Polanyi potential shrinks)
+    p_hi = phys["p_pa"] * 3.0
+    from bed_pinn import COND_KEYS
+
+    phys_raw = decode_condition(cond_vec)
+    vals = {k: float(phys_raw[k]) for k in COND_KEYS}
+    vals["p_pa"] = float(p_hi)
+    T2, q2 = predict_batch(params, x, t, encode_condition(vals))
+    q_star_hi = q_equilibrium(T2, vals["p_pa"], phys["q_sat_kg_kg"],
+                              phys["e_char_j_mol"], phys["n_da"])
+    # equilibrium stroke direction: higher p -> higher q* at the same T
+    assert float(jnp.mean(q_star_hi)) > float(jnp.mean(q_star))
+
+
+def test_residuals_finite_and_grads_flow(cond_vec):
     params = init_params(jax.random.PRNGKey(1), width=16, depth=2)
     x = jnp.asarray(0.4)
     t = jnp.asarray(0.6)
-    res = pinn_residuals(params, x, t, cond_vec, psat_fn)
+    res = pinn_residuals(params, x, t, cond_vec)
     for k in ("r_energy", "r_ldf"):
         assert jnp.isfinite(res[k]), k
     bc = bc_residuals(params, t, cond_vec)
@@ -87,7 +125,7 @@ def test_residuals_finite_and_grads_flow(cond_vec, psat_fn):
              "t_bc": jnp.linspace(0, 1, 4), "x_ic": jnp.linspace(0, 1, 4)}
     w = {"data": 1.0, "pde": 1.0, "bc": 1.0, "ic": 1.0}
     (loss, aux), grads = jax.value_and_grad(total_loss, has_aux=True)(
-        params, batch, w, psat_fn)
+        params, batch, w)
     assert jnp.isfinite(loss)
     leaves = jax.tree_util.tree_leaves(grads)
     assert all(bool(jnp.all(jnp.isfinite(g))) for g in leaves)
@@ -105,6 +143,48 @@ def test_corpus_rollout_shapes_and_physical_bounds():
     assert fields["T"].min() >= 290.0 and fields["T"].max() <= 365.0
     assert fields["q"].min() >= 0.0
     assert fields["q"].max() <= cfg["q_sat_kg_kg"] * 1.01
+
+
+def test_preset_sweep_covers_operating_envelope():
+    """Round-2 op-point diversity: the corpus hull defines the N1 gate's test.
+
+    Round 1 trained one operating point per family and field interpolation
+    failed the gate (rel-L2 T 0.102 vs 0.05). The sweep must now cover the
+    shared OP_ENVELOPE with both phase directions, explicit partial charges,
+    and the round-1 anchors preserved at indices 0/1 (tests + checkpoints).
+    """
+    presets = preset_configs()
+    assert len(presets) == 96  # 2 families × 24 op points (6 anchors + 18 LHS) × 2
+    # round-1 anchors preserved (ordering + names pinned by earlier work)
+    assert presets[0]["name"] == "silica-RD-des-L0.002"
+    assert presets[1]["name"] == "silica-RD-des-L0.005"
+    assert "13X-ads-L0.002" in {p["name"] for p in presets}
+    by_fam = {"silica": [p for p in presets if p["family"] == "silica"],
+              "zeolite": [p for p in presets if p["family"] == "zeolite"]}
+    for fam, plist in by_fam.items():
+        assert len(plist) == 48
+        for p in plist:
+            for key in ("t_f_c", "t_init_c", "p_pa"):
+                lo, hi = OP_ENVELOPE[key]
+                assert lo <= p[key] <= hi, (p["name"], key)
+        des = [p for p in plist if p["t_f_c"] > p["t_init_c"]]
+        ads = [p for p in plist if p["t_f_c"] < p["t_init_c"]]
+        # each family sweeps its own direction with margin (no near-iso points)
+        if fam == "silica":
+            assert len(des) == 48 and not ads
+            assert all(p["t_f_c"] >= p["t_init_c"] + 5.0 for p in des)
+        else:
+            assert len(ads) == 48 and not des
+            assert all(p["t_init_c"] >= p["t_f_c"] + 5.0 for p in ads)
+        # operating-point diversity on the axes the gate interpolates
+        assert len({p["t_init_c"] for p in plist}) >= 5
+        assert len({round(p["p_pa"]) for p in plist}) >= 5
+        assert any(p["q_init_kg_kg"] is not None for p in plist)
+    # every sweep point rolls out finitely (cheap: 60 steps)
+    for p in presets[::4]:
+        f = rollout_phase_fields(n_cells=8, dt_s=None, n_steps=60,
+                                 **rollout_kwargs(p))
+        assert np.all(np.isfinite(f["T"])) and np.all(np.isfinite(f["q"]))
 
 
 def test_training_smoke_loss_decreases():
@@ -174,9 +254,10 @@ def test_stage_c_batches_real_params_no_labels():
             assert jnp.isfinite(b[k]).all(), k
         phys = decode_condition(b["cond"])
         # the sampled operating point must sit inside the declared envelope
-        assert 50.0 <= float(phys["t_f_c"]) <= 90.0
-        assert 1.5e3 <= float(phys["p_pa"]) <= 9.0e3
-        assert 25.0 <= float(phys["t_init_c"]) <= 40.0
+        # (defaults = corpus.OP_ENVELOPE, shared with the synthetic sweep)
+        assert cfg.op_t_f_c[0] <= float(phys["t_f_c"]) <= cfg.op_t_f_c[1]
+        assert cfg.op_p_pa[0] <= float(phys["p_pa"]) <= cfg.op_p_pa[1]
+        assert cfg.op_t_init_c[0] <= float(phys["t_init_c"]) <= cfg.op_t_init_c[1]
         assert 0.05 <= float(phys["q_init_frac"]) <= 1.0
     assert np.isfinite(sc["n_clipped_values"])
 

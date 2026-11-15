@@ -177,29 +177,95 @@ def build_corpus(configs: list[dict], *, n_data_per_config: int, seed: int = 0,
     return data, manifest
 
 
-def preset_configs() -> list[dict]:
-    """Small anchor-based sweep: 2 materials × 2 thicknesses × 1 phase each.
+# Operating envelope shared by the synthetic sweep (preset_configs), the
+# stage-C real-row sampler (train_pinn.TrainConfig op_* defaults) and the N1
+# gate's interpolation test (eval/pinn_gate.py). One constant so the three
+# never drift apart — the gate must test INSIDE the trained hull to stay an
+# interpolation claim (not extrapolation).
+OP_ENVELOPE = {
+    "t_f_c": (25.0, 90.0),      # fluid: cold adsorption ... hot regeneration
+    "t_init_c": (25.0, 90.0),   # bed start: cold ... freshly regenerated
+    "p_pa": (1200.0, 9000.0),   # vapour: evaporator ... condenser ~44 °C
+}
 
-    Geometries are mm-scale so the CFL-derived dt keeps rollouts tractable;
-    kinetics (τ ~ 100 s) and phase horizons (~40–100 s) cover the coupled
-    thermal + uptake transient the PINN must learn. The desorption case heats
-    a saturated bed; the adsorption case cools a hot bed (strong transients
-    in opposite directions).
+
+def preset_configs() -> list[dict]:
+    """Dense envelope sweep: 2 materials × 24 operating points × 2 thicknesses.
+
+    Round-2 hardening (2026-11-15): the round-1 corpus trained ONE operating
+    point per family and the N1 gate correctly failed field interpolation
+    (rel-L2 T 0.102). Six points per family halved it (0.055); the error map
+    showed a uniform late-time T-level bias — pure cond-space interpolation
+    error, shrinking fast with sweep density while rollouts cost milliseconds.
+    Round 6 therefore densifies to 24 op points per family: the 6 hand-picked
+    anchors (corners + middle + two partial charges, first so indices 0/1
+    stay pinned) plus 18 seeded-LHS points inside OP_ENVELOPE (deterministic,
+    direction-preserving, phase margins kept). Thickness stays {2e-3, 5e-3}
+    so the gate's 3.5e-3 test remains genuine interpolation. Geometry/
+    kinetics rationale unchanged: mm-scale slabs keep the CFL-derived dt
+    tractable; horizons (~34–211 s) cover the coupled transient.
     """
     base = dict(e_char_j_mol=4500.0, n_da=1.8, k_ldf_s_1=1e-2,
                 rho_s_kg_m3=600.0, c_s_j_kg_k=1000.0, c_pl_j_kg_k=4184.0,
                 k_eff_w_m_k=0.2, h_wall_w_m2_k=200.0, q_init_kg_kg=None)
-    silica_des = dict(base, name="silica-RD-des", family="silica",
-                      q_sat_kg_kg=0.35, q_st_j_kg=2.5e6,
-                      t_init_c=30.0, t_f_c=80.0, p_pa=7380.0)
-    x13_ads = dict(base, name="13X-ads", family="zeolite",
-                   q_sat_kg_kg=0.28, q_st_j_kg=3.5e6, e_char_j_mol=14000.0,
-                   t_init_c=80.0, t_f_c=30.0, p_pa=1700.0)
+    # (t_init_c, t_f_c, p_pa, q_init_kg_kg | None) — op point 0 is the
+    # round-1 anchor, kept exactly so earlier checkpoints/tests stay valid.
+    silica_des_ops = [
+        (30.0, 80.0, 7380.0, None),
+        (25.0, 55.0, 1800.0, None),
+        (38.0, 68.0, 4500.0, None),
+        (32.0, 90.0, 9000.0, None),
+        (27.0, 75.0, 3400.0, 0.45 * 0.35),   # partial charge: mid-cycle state
+        (40.0, 60.0, 2400.0, None),          # shallow des near the cold corner
+    ]
+    x13_ads_ops = [
+        (80.0, 30.0, 1700.0, None),
+        (85.0, 25.0, 1200.0, None),
+        (60.0, 28.0, 2000.0, None),
+        (90.0, 45.0, 3200.0, None),
+        (75.0, 35.0, 1700.0, 0.10 * 0.28),   # regenerated dry bed: strong Δq
+        (70.0, 50.0, 4500.0, None),          # warm/wet corner: weak stroke
+    ]
+    # Seeded LHS densification (deterministic; same points every build).
+    rng = np.random.default_rng(20261115)
+    n_extra = 18
+    lo_t_init, hi_t_init = OP_ENVELOPE["t_init_c"]
+    lo_tf, hi_tf = OP_ENVELOPE["t_f_c"]
+    lo_p, hi_p = OP_ENVELOPE["p_pa"]
+    extra: dict[str, list[tuple[float, float, float, None]]] = {"silica": [], "zeolite": []}
+    attempts = 0
+    while sum(len(v) for v in extra.values()) < 2 * n_extra and attempts < 10000:
+        attempts += 1
+        fam = "silica" if len(extra["silica"]) < n_extra else "zeolite"
+        des = fam == "silica"
+        t_init = float(rng.uniform(lo_t_init, hi_t_init))
+        t_f = float(rng.uniform(lo_tf, hi_tf))
+        p = float(np.exp(rng.uniform(np.log(lo_p), np.log(hi_p))))
+        margin = 8.0
+        if des and t_f - t_init < margin:
+            continue
+        if not des and t_init - t_f < margin:
+            continue
+        if any(abs(t_init - a) < 2.5 and abs(t_f - b) < 2.5
+               for a, b, _p, _q in extra[fam]):
+            continue  # keep points spread in the (t_init, t_f) plane
+        extra[fam].append((round(t_init, 1), round(t_f, 1), round(p / 10.0) * 10.0, None))
+    families = (
+        ("silica-RD-des", "silica", dict(base, q_sat_kg_kg=0.35,
+                                         q_st_j_kg=2.5e6),
+         silica_des_ops + extra["silica"]),
+        ("13X-ads", "zeolite", dict(base, q_sat_kg_kg=0.28, q_st_j_kg=3.5e6,
+                                    e_char_j_mol=14000.0),
+         x13_ads_ops + extra["zeolite"]),
+    )
     out = []
-    for cfg in (silica_des, x13_ads):
-        for L_m in (2e-3, 5e-3):
-            c = dict(cfg, L_m=L_m, name=f"{cfg['name']}-L{L_m:g}")
-            out.append(c)
+    for stem, family, mat, ops in families:
+        for oi, (t_init, t_f, p, q_init) in enumerate(ops):
+            for L_m in (2e-3, 5e-3):
+                nm = f"{stem}-L{L_m:g}" if oi == 0 else f"{stem}-op{oi}-L{L_m:g}"
+                out.append(dict(mat, name=nm, family=family, L_m=L_m,
+                                t_init_c=t_init, t_f_c=t_f, p_pa=p,
+                                q_init_kg_kg=q_init))
     return out
 
 
