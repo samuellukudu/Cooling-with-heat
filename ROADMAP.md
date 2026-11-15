@@ -108,13 +108,45 @@ Each stage gates the next.
    (real-condition collocation), rel-L2 + residual gates from
    `eval/pinn_metrics.py`. Gate: matches the Bed1D solver within the V3
    oracle-limit tolerance.
+   *2026-11-15:* stage C implemented (`train_pinn.stage_c_batches` — real
+   D–A rows, sampled operating envelope, physics-only batches; thickness
+   sampled inside the synthetic envelope after the row placeholder proved
+   10× out-of-envelope) + the N1 gate runner (`eval/pinn_gate.py`, exit-code
+   gated). First honest verdict on the 6k+500-step model: **5/8 gates pass**
+   — super-resolution (0.072/0.050), real-row residual honesty (0.29/0.03),
+   exact gradient agreement — but **field interpolation at unseen operating
+   points fails** (rel-L2 T 0.102 vs 0.05) and the adsorption-direction
+   cooling proxy has the wrong sign. Diagnosis: the synthetic corpus trains
+   ONE operating point per family and stage C carries no field labels —
+   interpolation must come from operating-point diversity in the *cheap
+   synthetic* stage, not from physics-only collocation. Next: widen
+   `preset_configs` across the operating envelope (rollouts are
+   milliseconds), retrain, re-gate.
 2. **RL on TwoBed (H2.4/H3)** — PPO with a schedule action space on
    `TwoBedSchedule-v0` under time-varying/stochastic source profiles;
    baseline = H2.2 optimized fixed schedules. Gate: beats the schedule
    gate's ≈7% margin honestly (burst-tolerant duty accounting).
+   *2026-11-15:* the surface exists — `TwoBedScenario-v0` (one-step
+   contextual bandit: seeded source scenarios with IT-load bursts inside
+   the profile band, action = the 5 schedule params, reward = the H2.2
+   objective, one jit compile reused across episodes), policy persistence +
+   `evaluate_policy` on identical duty envelopes, and the V8 honesty test
+   now implemented (PPO on deterministic Cycle0D-v0 does NOT beat search).
+   `harness/rl_h24.py` runs floors (nominal / best-fixed / per-seed oracle)
+   → PPO → the policy-vs-floor table; the 20k-step run's verdict is
+   reported as-is (pass or fail) in `data_cache/rl/h24_report.json`.
 3. **Data coverage lift (parallel)** — persist the OPTIMADE bulk MOF pull,
    MOFSimplify stability tables, wire the IZA pore table into features;
    re-run Stage-1 baseline; matched-coverage is the gate (50/156 → majority).
+   *Round 1 (2026-11-15):* the `optimade-formula` rung
+   (`match_structures.match_optimade_formula`, composition cosine over the
+   2,174 cached pyrene-MOF + curated-COF candidates, exact metal sets,
+   score ≥ 0.90, ties/near-exact flagged ambiguous) lifted coverage
+   **50/156 → 63/156 (40.4%)** — the 13 new rows are the formula-named MOFs
+   (MOF-74, CAU-10, ZIF-8 compositions) and are composition-compatible, not
+   proven identities (pore descriptors stay NaN until CIF geometry lands).
+   The remaining 93 unmatched are carbons/silicas/trade names — they need
+   different corpora (carbon-specific structure sets), not more of this one.
 4. **Crystal-graph GNN (Stage 2)** — multi-head shared-latent surrogate,
    log-space heads; two-stage training (structural props first, adsorption
    heads second). Gate: beats the refreshed tabular floor and improves
